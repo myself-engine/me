@@ -1,0 +1,9 @@
+{
+  "id": "slang",
+  "version": "0.1.0",
+  "protocol": { "min": 1, "max": 1 },
+  "run": { "command": ["bun", "src/main.ts"] },
+  "permissions": [],
+  "provides": { "methods": ["normalize", "dict.list", "dict.add"] },
+  "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }
+}

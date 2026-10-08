@@ -1,0 +1,1 @@
+{ "name": "@myself/gjc", "private": true, "type": "module", "exports": { ".": "./index.ts" }, "dependencies": { "@myself/protocol": "workspace:*" } }

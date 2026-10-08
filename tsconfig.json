@@ -8,9 +8,24 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["bun"]
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "bun"
+    ]
   },
-  "include": ["protocol", "kernel", "sdk", "plugins"],
-  "exclude": ["**/node_modules", "**/dist"]
+  "include": [
+    "protocol",
+    "kernel",
+    "sdk",
+    "lib",
+    "plugins"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/dist"
+  ]
 }

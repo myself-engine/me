@@ -170,7 +170,7 @@ export class Kernel {
     try {
       proc = Bun.spawn(m.run.command, {
         cwd: resolve(m.dir, m.run.cwd ?? "."),
-        env: { ...process.env, ...(m.run.env ?? {}), MYSELF_PLUGIN_ID: m.id },
+        env: { ...process.env, ...(m.run.env ?? {}), MYSELF_PLUGIN_ID: m.id, MYSELF_DATA_DIR: join(this.opts.dataDir, "plugins", m.id) },
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",

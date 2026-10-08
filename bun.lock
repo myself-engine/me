@@ -5,6 +5,9 @@
     "": {
       "name": "myself-engine",
       "devDependencies": {
+        "@myself/kernel": "workspace:*",
+        "@myself/protocol": "workspace:*",
+        "@myself/sdk": "workspace:*",
         "@types/bun": "1.1.14",
         "typescript": "5.6.3",
       },
@@ -15,6 +18,44 @@
         "@myself/protocol": "workspace:*",
       },
       "devDependencies": {
+        "@myself/sdk": "workspace:*",
+      },
+    },
+    "lib/gjc": {
+      "name": "@myself/gjc",
+      "dependencies": {
+        "@myself/protocol": "workspace:*",
+      },
+    },
+    "plugins/gjc-head": {
+      "name": "@myself/plugin-gjc-head",
+      "dependencies": {
+        "@myself/gjc": "workspace:*",
+        "@myself/protocol": "workspace:*",
+        "@myself/sdk": "workspace:*",
+      },
+    },
+    "plugins/jev": {
+      "name": "@myself/plugin-jev",
+      "dependencies": {
+        "@myself/gjc": "workspace:*",
+        "@myself/protocol": "workspace:*",
+        "@myself/sdk": "workspace:*",
+      },
+    },
+    "plugins/slang": {
+      "name": "@myself/plugin-slang",
+      "dependencies": {
+        "@myself/gjc": "workspace:*",
+        "@myself/protocol": "workspace:*",
+        "@myself/sdk": "workspace:*",
+      },
+    },
+    "plugins/summarize": {
+      "name": "@myself/plugin-summarize",
+      "dependencies": {
+        "@myself/gjc": "workspace:*",
+        "@myself/protocol": "workspace:*",
         "@myself/sdk": "workspace:*",
       },
     },
@@ -29,7 +70,17 @@
     },
   },
   "packages": {
+    "@myself/gjc": ["@myself/gjc@workspace:lib/gjc"],
+
     "@myself/kernel": ["@myself/kernel@workspace:kernel"],
+
+    "@myself/plugin-gjc-head": ["@myself/plugin-gjc-head@workspace:plugins/gjc-head"],
+
+    "@myself/plugin-jev": ["@myself/plugin-jev@workspace:plugins/jev"],
+
+    "@myself/plugin-slang": ["@myself/plugin-slang@workspace:plugins/slang"],
+
+    "@myself/plugin-summarize": ["@myself/plugin-summarize@workspace:plugins/summarize"],
 
     "@myself/protocol": ["@myself/protocol@workspace:protocol"],
 

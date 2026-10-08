@@ -1,0 +1,24 @@
+{
+  "id": "gjc-head",
+  "version": "0.1.0",
+  "protocol": { "min": 1, "max": 1 },
+  "run": { "command": ["bun", "src/main.ts"] },
+  "permissions": [
+    "read-state",
+    "emit",
+    "subscribe",
+    "call:slang",
+    "call:summarize",
+    "call:jev",
+    "call:brgr",
+    "approve.request",
+    "network"
+  ],
+  "provides": {
+    "methods": ["chat.send"],
+    "events": ["gjc-head.message.changed", "gjc-head.guard.violation"],
+    "kinds": ["thread", "message"]
+  },
+  "subscribes": ["brgr.task.*"],
+  "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }
+}
