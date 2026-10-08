@@ -1,0 +1,4 @@
+.gjc/
+spikes/**/*.ndjson
+spikes/**/*.err
+node_modules/

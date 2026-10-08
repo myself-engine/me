@@ -86,7 +86,7 @@
 
 ## 6. head와 판정 흐름
 
-head는 **GJC**이고, 백그라운드에서 ACP 또는 json 모드로 돌며 편집 도구는 뺀다. 판정은 여러 플러그인으로 나뉜다.
+head는 **GJC**이고, 백그라운드에서 **json 모드**(`-p --mode json --no-mcp --tools <허용 목록>`)로 돈다. ACP 모드는 도구를 제한할 수 없어 head에 쓰지 않는다([검증 결과](../spikes/gjc-headless/FINDINGS.md)). 실제로 노출된 도구는 실행마다 이벤트에서 확인하고, 허용 목록 밖의 도구가 보이면 실행을 중단한다. 판정은 여러 플러그인으로 나뉜다.
 
 1. **slang 플러그인**: 사용자의 줄임말을 사전으로 치환한다. 예: `ㄱㄱ`→시작하자, `ㅇㅇ`→응, `ㄴㄴ`→아니, `ㄹㅇ`→진짜, `억까`→일부러 반대 입장에서 공격해 봐. LLM을 쓰지 않으니 비용이 없다.
 2. **summarize 플러그인**: LLM 한 번으로 영어 구조화 요약을 만든다. 이 요약이 위임 지시서의 초안이 된다.
@@ -124,7 +124,7 @@ Claude가 필요한 작업은 brgr를 통해 별도 pane의 **Claude Code**에 �
 | 런타임 | Bun (커널, 웹) |
 | 저장소 | SQLite 파일 하나 (저널 + 상태) |
 | 웹 | React + Bun 내장 번들러 |
-| head | GJC (headless, 편집 도구 제외, Anthropic 모델 제외) |
+| head | GJC json 모드 (`--no-mcp` + `--tools`, 노출 도구 감시, 기본 모델 명시 고정, Anthropic 모델 제외) |
 | 판정 | Jev via OpenRouter |
 | 위임 | brgr 플러그인이 기본, ACP는 나중에 별도 플러그인 |
 | 네트워크 | localhost 전용. 원격은 Tailscale(`tailscale serve` + 신원 헤더). 이 부분은 교체 가능해야 한다 |
@@ -143,7 +143,9 @@ Claude가 필요한 작업은 brgr를 통해 별도 pane의 **Claude Code**에 �
 
 ## 10. 미해결 (확인 전에는 사실로 다루지 않는다)
 
-- `gjc --mode acp`/`json`이 headless로 쓸 만한 구조화 이벤트를 실제로 내보내는가
+- ~~`gjc --mode acp`/`json`이 headless로 쓸 만한 구조화 이벤트를 실제로 내보내는가~~ → 둘 다 내보낸다. 편집 차단은 json 모드에서만 된다. [FINDINGS](../spikes/gjc-headless/FINDINGS.md)
+- `gjc quick-lane classify`와 Jev 판정 비교
+- GJC `--tools`에 쓸 수 있는 도구 이름 전체 목록 (head 허용 목록의 기준)
 - Jev의 실제 호출 비용 (OpenRouter 목록에 가격이 `-1`로 표시됨)
 - head가 죽었을 때의 재시작과 세션 이어 가기 (`--continue`, `--resume`)
 - head의 모델 공급자 약관: Claude가 아닌 구독을 서드파티 하네스에서 써도 되는가
