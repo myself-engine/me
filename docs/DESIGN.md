@@ -71,6 +71,9 @@
 ## 5. 플러그인
 
 ### 프로토콜
+
+상세 규격: [PROTOCOL.md](PROTOCOL.md), 타입: [`protocol/types.ts`](../protocol/types.ts)
+
 - 기본은 **자체 JSON-RPC**다. stdio 또는 Unix 소켓 위에서 돈다. 형식은 MCP와 LSP를 참고하되 이벤트, 생명주기, 권한은 우리 필요에 맞게 정의한다.
 - **MCP 어댑터**: 기존 MCP 서버를 플러그인으로 감싼다.
 - 플러그인은 별도 프로세스이고 언어는 자유다. 커널과 웹은 TypeScript, brgr는 Rust이고, 필요하면 Go나 Python도 된다.
