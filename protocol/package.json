@@ -1,0 +1,1 @@
+{ "name": "@myself/protocol", "private": true, "type": "module", "exports": { ".": "./index.ts" } }

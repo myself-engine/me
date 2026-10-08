@@ -1,4 +1,8 @@
+node_modules/
 .gjc/
 spikes/**/*.ndjson
 spikes/**/*.err
-node_modules/
+.myself/
+*.sqlite
+*.sqlite-*
+dist/

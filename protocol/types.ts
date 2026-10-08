@@ -160,6 +160,8 @@ export interface InvokeParams<P = unknown> {
   timeoutMs?: number;
   /** Omit to start a new trace (only plugins that receive user input should). */
   traceId?: string;
+  /** seq of the frame being handled when this call was made; the SDK fills it in. */
+  causationId?: number;
 }
 export type InvokeResult<R = unknown> = { result: R } | { opId: string };
 
@@ -178,6 +180,8 @@ export interface EmitParams<D = unknown> {
   /** Must start with `<own plugin id>.`. */
   name: string;
   data: D;
+  traceId?: string;
+  causationId?: number;
 }
 
 // §7

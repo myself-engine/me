@@ -1,0 +1,15 @@
+{
+  "name": "myself-engine",
+  "private": true,
+  "type": "module",
+  "workspaces": ["protocol", "kernel", "sdk", "plugins/*"],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p .",
+    "start": "bun run kernel/src/main.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "1.1.14",
+    "typescript": "5.6.3"
+  }
+}
