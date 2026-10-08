@@ -13,7 +13,7 @@ interface Thread {
   updatedAt: string;
 }
 
-type DelegationState = "awaiting-approval" | "rejected" | "delegated" | "running" | "sealed" | "accepted" | "failed";
+type DelegationState = "awaiting-approval" | "rejected" | "delegated" | "running" | "sealed" | "accepted" | "failed" | "awaiting-input" | "cancelled";
 
 interface Message {
   id: string;

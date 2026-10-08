@@ -1,0 +1,1 @@
+{ "name": "@myself/plugin-brgr", "private": true, "type": "module", "dependencies": { "@myself/sdk": "workspace:*", "@myself/protocol": "workspace:*" } }

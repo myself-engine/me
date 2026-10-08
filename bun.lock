@@ -27,6 +27,13 @@
         "@myself/protocol": "workspace:*",
       },
     },
+    "plugins/brgr": {
+      "name": "@myself/plugin-brgr",
+      "dependencies": {
+        "@myself/protocol": "workspace:*",
+        "@myself/sdk": "workspace:*",
+      },
+    },
     "plugins/gjc-head": {
       "name": "@myself/plugin-gjc-head",
       "dependencies": {
@@ -73,6 +80,8 @@
     "@myself/gjc": ["@myself/gjc@workspace:lib/gjc"],
 
     "@myself/kernel": ["@myself/kernel@workspace:kernel"],
+
+    "@myself/plugin-brgr": ["@myself/plugin-brgr@workspace:plugins/brgr"],
 
     "@myself/plugin-gjc-head": ["@myself/plugin-gjc-head@workspace:plugins/gjc-head"],
 
