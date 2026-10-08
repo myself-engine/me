@@ -134,8 +134,11 @@ const STATE_LABEL: Record<string, string> = {
   quarantined: "격리됨",
 };
 
-function Pill({ state }: { state: string }) {
-  return <span className={`pill pill-${state}`}>{STATE_LABEL[state] ?? state}</span>;
+const PLUGIN_LABEL: Record<string, string> = { running: "실행 중", starting: "시작 중", stopped: "멈춤", quarantined: "격리됨" };
+
+function Pill({ state, plugin = false }: { state: string; plugin?: boolean }) {
+  const label = (plugin ? PLUGIN_LABEL[state] : undefined) ?? STATE_LABEL[state] ?? state;
+  return <span className={`pill pill-${state}${plugin && state === "running" ? " pill-sealed" : ""}`}>{label}</span>;
 }
 
 function shortPath(p: string) {
@@ -588,7 +591,7 @@ function Overview({ s, conn, notify }: { s: State; conn: Connection | null; noti
               <div className="card-head">
                 <span className={`dot dot-${p.state}`} />
                 <strong>{p.id}</strong>
-                <Pill state={p.state} />
+                <Pill state={p.state} plugin />
               </div>
               <div className="sub">
                 v{p.version} · pid {p.pid ?? "-"} · 재시작 {p.restarts}

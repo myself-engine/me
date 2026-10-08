@@ -2,8 +2,51 @@
 
 여러 코딩 에이전트 하네스를 하나의 localhost 웹에서 지휘하는 개인용 엔진.
 
-커널은 실행기, 중계, 저널, 상태, 권한, 프로토콜만 맡는다. 웹, 위임(brgr), head(GJC), 판정(Jev)을 포함한 나머지 기능은 전부 플러그인이다.
+커널은 실행기, 중계, 저널, 상태, 권한, 프로토콜만 맡는다. 나머지 기능은 전부 플러그인이다. 웹, 위임(brgr), head(GJC), 판정(slang → summarize → jev)도 마찬가지다.
 
-설계: [docs/DESIGN.md](docs/DESIGN.md)
+- 설계: [docs/DESIGN.md](docs/DESIGN.md)
+- 플러그인 프로토콜: [docs/PROTOCOL.md](docs/PROTOCOL.md)
 
-상태: 설계 확정, 구현 전.
+## 실행
+
+```sh
+bun install
+bun start            # = bun kernel/src/main.ts myself.config.json
+```
+
+브라우저에서 http://127.0.0.1:7420 을 연다.
+
+**커널은 에이전트가 없는 Herdr pane에서 실행한다.** brgr는 위임할 때 워커 pane을 이 pane 옆에 연다. 에이전트가 실행 중인 pane에서 띄우면 위임이 실패한다.
+
+## 설정
+
+- `myself.config.json`: 공용 기본값이다. 플러그인 목록과 모델, 하네스, 포트를 담는다.
+- `myself.local.json`: 이 머신 전용 값이다. 커밋하지 않는다. 같은 구조의 일부만 적으면 덮어쓴다.
+
+```json
+{
+  "pluginConfig": {
+    "web": { "githubRepo": "<owner>/myself-engine", "projects": ["~/dev/myself-engine", "~/dev/other"] },
+    "brgr": { "ownerSession": "myself-engine:mac" }
+  }
+}
+```
+
+- 데이터: `~/.myself`. 저널과 엔티티는 `myself.sqlite`, 플러그인 로그는 `logs/`에 남는다. `MYSELF_HOME`으로 바꿀 수 있다.
+- Jev: `~/.config/myself-engine/secrets/openrouter.key`에 OpenRouter 키를 두면 Jev(`typesafe/jev-router`)로 판정한다. 키가 없으면 head 모델로 같은 형식의 대체 판정을 한다.
+
+## 제약
+
+- Claude 모델은 Claude Code 안에서만 쓴다. GJC는 Anthropic 모델을 거부한다(`lib/gjc`).
+- head는 코드를 만지지 않는다. GJC는 `--no-mcp`에 도구 없이 실행되고, 도구 실행이 감지되면 그 실행을 중단한다.
+- 위임 대상 저장소에 커밋되지 않은 변경이 있으면 brgr가 위임을 거부한다.
+
+## 개발
+
+```sh
+bun test                 # 커널, 슬랭 테스트
+bunx tsc --noEmit -p .   # 타입 검사
+bun scripts/smoke-head.ts  # 실제 모델로 head 흐름 확인 (가짜 brgr)
+```
+
+`myself.local.json`에 `"web": { "dev": true }`를 넣으면 웹 화면이 HMR로 동작한다.
