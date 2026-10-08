@@ -419,6 +419,10 @@ export class Kernel {
         return {};
       }
 
+      case "approval.list":
+        this.require(host, "approve.decide", method);
+        return this.pendingApprovals();
+
       case "journal.query":
         this.require(host, "journal.read", method);
         return this.store.query(params as JournalQueryParams);

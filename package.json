@@ -15,7 +15,7 @@
     "start": "bun run kernel/src/main.ts"
   },
   "devDependencies": {
-    "@types/bun": "1.1.14",
+    "@types/bun": "1.4.0",
     "typescript": "5.6.3",
     "@myself/kernel": "workspace:*",
     "@myself/sdk": "workspace:*",

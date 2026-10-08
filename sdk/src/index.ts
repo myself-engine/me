@@ -265,6 +265,8 @@ export class Plugin {
       return { ...decision, approvalId: res.approvalId };
     },
     decide: (approvalId: string, decision: ApprovalDecision) => this.peer.request("approval.decide", { approvalId, ...decision }),
+    list: () =>
+      this.peer.request<({ approvalId: string; requester: string } & ApprovalRequestParams)[]>("approval.list", {}),
   };
 
   journal(q: JournalQueryParams) {

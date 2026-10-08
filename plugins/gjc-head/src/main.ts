@@ -1,5 +1,6 @@
 // The head: judges each message and either answers briefly itself or delegates through brgr.
 // It never touches code: GJC runs with no tools and --no-mcp, and any tool execution aborts the run.
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { definePlugin, type CallContext } from "@myself/sdk";
 import { GjcError, runGjc, type GjcUpdate } from "@myself/gjc";
@@ -37,6 +38,7 @@ const THREAD = "gjc-head.thread";
 const MESSAGE = "gjc-head.message";
 const dataDir = process.env.MYSELF_DATA_DIR ?? ".";
 const now = () => new Date().toISOString();
+const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 const SYSTEM = [
   "You are the head of myself-engine, the user's personal orchestrator for coding agents.",
@@ -81,7 +83,7 @@ async function ensureThread(p: { threadId?: string; text: string; project?: stri
   const t: Thread = {
     id: p.threadId ?? crypto.randomUUID(),
     title: p.text.slice(0, 40),
-    project: p.project ?? (plugin.config.defaultProject as string) ?? "",
+    project: expandHome(p.project ?? (plugin.config.defaultProject as string) ?? ""),
     sessionId: null,
     createdAt: now(),
     updatedAt: now(),
@@ -97,7 +99,7 @@ async function handleSend(p: { threadId?: string; text: string; project?: string
   const threshold = (plugin.config.simpleThreshold as number) ?? 0.8;
 
   const thread = await ensureThread(p);
-  if (p.project && p.project !== thread.project) thread.project = p.project;
+  if (p.project && expandHome(p.project) !== thread.project) thread.project = expandHome(p.project);
   ctx.update({ kind: "thread", threadId: thread.id, project: thread.project });
 
   const user: Message = { id: crypto.randomUUID(), threadId: thread.id, role: "user", text: p.text, ts: now(), traceId: ctx.traceId, status: "done" };

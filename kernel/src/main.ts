@@ -14,6 +14,16 @@ interface Config {
 const configPath = resolve(process.argv[2] ?? process.env.MYSELF_CONFIG ?? "myself.config.json");
 const config = (await Bun.file(configPath).json()) as Config;
 const base = dirname(configPath);
+// Machine-specific overrides (account names, ports) live in an uncommitted sibling file.
+const localPath = join(base, "myself.local.json");
+if (await Bun.file(localPath).exists()) {
+  const local = (await Bun.file(localPath).json()) as Partial<Config>;
+  if (local.dataDir) config.dataDir = local.dataDir;
+  if (local.plugins) config.plugins = local.plugins;
+  for (const [id, cfg] of Object.entries(local.pluginConfig ?? {})) {
+    config.pluginConfig = { ...config.pluginConfig, [id]: { ...config.pluginConfig?.[id], ...cfg } };
+  }
+}
 const expand = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : resolve(base, p));
 const dataDir = expand(process.env.MYSELF_HOME ?? config.dataDir ?? "~/.myself");
 

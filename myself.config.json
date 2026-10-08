@@ -1,0 +1,23 @@
+{
+  "dataDir": "~/.myself",
+  "plugins": [
+    "plugins/slang",
+    "plugins/summarize",
+    "plugins/jev",
+    "plugins/gjc-head",
+    "plugins/brgr",
+    "plugins/web"
+  ],
+  "pluginConfig": {
+    "gjc-head": {
+      "model": "openai-codex/gpt-5.6-luna",
+      "harnesses": ["local.claude-code", "local.codex", "local.gjc", "local.opencode"],
+      "simpleThreshold": 0.8,
+      "defaultProject": "~/dev/myself-engine"
+    },
+    "summarize": { "model": "openai-codex/gpt-5.6-luna" },
+    "jev": { "fallbackModel": "openai-codex/gpt-5.6-luna", "openrouterKeyFile": "~/.config/myself-engine/secrets/openrouter.key" },
+    "brgr": { "harnesses": ["local.claude-code", "local.codex", "local.gjc", "local.opencode"] },
+    "web": { "port": 7420, "projects": ["~/dev/myself-engine"], "defaultProject": "~/dev/myself-engine" }
+  }
+}

@@ -167,6 +167,7 @@ head → 커널:  approval.request {summary, risk: "low"|"medium"|"high", payloa
 - `approval.request`는 오래 걸리는 작업이다(5절). 결정이 날 때까지 `op.end`가 오지 않는다.
 - 만료되면 `reject`로 처리한다(`note: "expired"`).
 - 요청한 플러그인과 결정한 플러그인이 같을 수 없다.
+- `approval.list`: 아직 결정되지 않은 승인 목록. 이벤트를 놓친 화면(나중에 접속한 웹 등)을 위한 것이다. 권한은 `approve.decide`다.
 
 ## 10. 저널
 

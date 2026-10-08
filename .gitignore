@@ -6,3 +6,4 @@ spikes/**/*.err
 *.sqlite
 *.sqlite-*
 dist/
+myself.local.json

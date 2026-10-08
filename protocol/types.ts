@@ -246,6 +246,8 @@ export interface PluginToKernel {
   /** Long-running: returns { opId }, resolves via op.end with ApprovalDecision. */
   "approval.request": RpcRequest<"approval.request", ApprovalRequestParams>;
   "approval.decide": RpcRequest<"approval.decide", { approvalId: string } & ApprovalDecision>;
+  /** Pending approvals, for UIs that start after the pending event. Needs approve.decide. */
+  "approval.list": RpcRequest<"approval.list", Record<string, never>>;
   "journal.query": RpcRequest<"journal.query", JournalQueryParams>;
 }
 
