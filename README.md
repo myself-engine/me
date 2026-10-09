@@ -6,6 +6,7 @@
 
 - 설계: [docs/DESIGN.md](docs/DESIGN.md)
 - 플러그인 프로토콜: [docs/PROTOCOL.md](docs/PROTOCOL.md)
+- 결정 기록: [docs/DECISIONS.md](docs/DECISIONS.md)
 
 ## 실행
 
