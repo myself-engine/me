@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v0.2.0 (2026-10-10)
+
+- ui: highlight.js core, contrast tokens, keyboard and focus, tablet and touch layout (#5, #6, #7) (1614992)
+- perf: skip unchanged entity writes, coalesce stream deltas in the journal, journal retention (#3, #4) (cb100cc)
+
 ## v0.1.0 (2026-10-10)
 
 - chore: agent rules, definition of done, e2e/shots/a11y checks, me release (#2) (54f4031)
