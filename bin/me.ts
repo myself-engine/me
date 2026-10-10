@@ -11,6 +11,7 @@
 //   me config plan | import [--write] | apply --yes   harness configs (MCP, instructions) from one source
 //   me tailscale status|on|off [--https-port N]   phone access over the tailnet (never public)
 //   me doctor [--json]                     tool versions, symlinks, plugin conformance
+//   me release [--patch] [--dry-run] [--skip-e2e]   checks, tag, restart the running me, refresh remote copies
 import { dirname, join } from "node:path";
 
 const root = join(dirname(import.meta.path), "..");
@@ -199,6 +200,16 @@ switch (cmd) {
       }
     } catch (err: any) {
       console.error(`✗ ${err.message}`);
+      process.exit(1);
+    }
+    break;
+  }
+  case "release": {
+    const { release } = await import("../tools/release/release.ts");
+    try {
+      await release({ root, bump: rest.includes("--patch") ? "patch" : "minor", dryRun: rest.includes("--dry-run"), skipE2e: rest.includes("--skip-e2e") });
+    } catch (err: any) {
+      console.error(`✗ release failed: ${err.message}`);
       process.exit(1);
     }
     break;

@@ -7,3 +7,4 @@ spikes/**/*.err
 *.sqlite-*
 dist/
 me.local.json
+.shots/
