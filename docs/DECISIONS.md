@@ -255,6 +255,12 @@
   - 토큰 hello, 상수 시간 비교, 권한 상한(`remotePermissions`)은 Unix 소켓과 같다. 주소마다 60초에 5번 실패하면 60초간 차단한다.
   - 서버에서 `me connect <플러그인 폴더> --host <Mac의 tailnet IP> --token-file <복사한 토큰>`를 실행한다. 언어와 상관없이 플러그인을 그대로 서버에서 띄워 커널에 중계하고, 끊기면 다시 접속한다.
   - 실측: Python 예시 플러그인이 TCP로 붙어 `connected` 상태와 원격 주소로 등록됐다.
+  - **실제 서버 실측 (2026-10-11)**: rapi-agent 서버(`<tailnet IP>`)에서 `me connect plugins/ops --id ops-rapi`로 서버 점검 17개(rapi systemd 서비스, postgres, 포트)를 Mac의 me에 붙였다.
+    - 권한은 `remotePermissions`대로 `read-state, emit`만 받았다.
+    - 실제로 실패 중인 `rapi-derper-portmap`(exit 3)이 빨간 카드로 떴다.
+    - Mac의 me를 다시 시작하자 서버가 스스로 다시 접속했다.
+    - 한눈에 보기는 기계별로 묶고, 정상은 칩, 문제는 카드로 보여 준다.
+  - ⬜ 서버의 `me connect`는 지금 nohup으로 돌고 있어서 서버가 재부팅되면 멈춘다. 상시 실행하려면 systemd 서비스로 등록해야 한다.
 
 ## 13. 설정과 데이터 ✅
 
