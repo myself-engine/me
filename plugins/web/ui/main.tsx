@@ -657,8 +657,26 @@ function OpsChecks({ checks }: { checks: OpsCheck[] }) {
       </h3>
       {ordered.map(([machine, list]) => (
         <div key={machine} className="machine">
-          {groups.size > 1 && <div className="machine-label">{machine}</div>}
+          {groups.size > 1 && (
+            <div className="machine-label">
+              {machine} · {list.filter((c) => c.status === "up").length}/{list.length} 정상
+            </div>
+          )}
+          {list.some((c) => c.status === "up") && (
+            <div className="up-chips" aria-label="정상">
+              {list
+                .filter((c) => c.status === "up")
+                .sort((a, b) => a.id.localeCompare(b.id))
+                .map((c) => (
+                  <span key={`${c.source ?? "ops"}/${c.id}`} className="up-chip" title={`${c.kind} · ${c.latencyMs}ms · ${c.detail}`}>
+                    <span className="dot dot-up" />
+                    {c.id}
+                  </span>
+                ))}
+            </div>
+          )}
           {[...list]
+            .filter((c) => c.status !== "up")
             .sort((a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status] || a.id.localeCompare(b.id))
             .map((c) => (
               <div key={`${c.source ?? "ops"}/${c.id}`} className={`card check check-${c.status}`}>

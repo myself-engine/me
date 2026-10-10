@@ -850,3 +850,24 @@ body {
 .machine .card + .card {
   margin-top: 8px;
 }
+
+/* Healthy checks collapse into one row of chips; only problems get full cards. */
+.up-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.up-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.up-chips + .card {
+  margin-top: 0;
+}
