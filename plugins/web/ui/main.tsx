@@ -49,7 +49,7 @@ function reducer(s: State, a: Action): State {
       messages: byId(a.data.messages, "id"),
       tasks: byId(a.data.tasks, "taskId"),
       plugins: byId(a.data.plugins, "id"),
-      checks: byId(a.data.checks ?? [], "id"),
+      checks: Object.fromEntries((a.data.checks ?? []).map((c) => [`${c.source ?? "ops"}/${c.id}`, c])),
       approvals: byId(a.data.approvals, "approvalId"),
       config: a.data.config,
       viewer: a.data.viewer ?? null,
@@ -638,28 +638,43 @@ function Composer(props: {
 const CHECK_LABEL: Record<OpsCheck["status"], string> = { up: "정상", down: "응답 없음", unknown: "알 수 없음" };
 const CHECK_ORDER: Record<OpsCheck["status"], number> = { down: 0, unknown: 1, up: 2 };
 
+const machineOf = (source?: string) => (!source || source === "ops" ? "이 Mac" : source.replace(/^ops-/, ""));
+
 function OpsChecks({ checks }: { checks: OpsCheck[] }) {
   if (checks.length === 0) return null;
-  const sorted = [...checks].sort((a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status] || a.id.localeCompare(b.id));
   const down = checks.filter((c) => c.status === "down").length;
+  // One group per machine; machines with something down come first.
+  const groups = new Map<string, OpsCheck[]>();
+  for (const c of checks) groups.set(machineOf(c.source), [...(groups.get(machineOf(c.source)) ?? []), c]);
+  const ordered = [...groups.entries()].sort(
+    ([a, xs], [b, ys]) =>
+      Math.min(...xs.map((c) => CHECK_ORDER[c.status])) - Math.min(...ys.map((c) => CHECK_ORDER[c.status])) || a.localeCompare(b),
+  );
   return (
     <section>
       <h3>
         운영 상태 {down > 0 && <span className="count bad">{down}</span>}
       </h3>
-      {sorted.map((c) => (
-        <div key={c.id} className={`card check check-${c.status}`}>
-          <div className="card-head">
-            <span className={`dot dot-${c.status}`} title={CHECK_LABEL[c.status]} />
-            <strong>{c.id}</strong>
-            <span className="harness">{c.kind}</span>
-            <span className={`pill pill-check-${c.status}`}>{CHECK_LABEL[c.status]}</span>
-            <span className="sub right" title={`마지막 확인 ${new Date(c.checkedAt).toLocaleString()}`}>
-              {c.status === "up" && `${c.latencyMs}ms · `}
-              {timeAgo(c.since) === "방금" ? "방금 전부터" : `${timeAgo(c.since)}부터`}
-            </span>
-          </div>
-          <div className="sub check-detail">{c.detail}</div>
+      {ordered.map(([machine, list]) => (
+        <div key={machine} className="machine">
+          {groups.size > 1 && <div className="machine-label">{machine}</div>}
+          {[...list]
+            .sort((a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status] || a.id.localeCompare(b.id))
+            .map((c) => (
+              <div key={`${c.source ?? "ops"}/${c.id}`} className={`card check check-${c.status}`}>
+                <div className="card-head">
+                  <span className={`dot dot-${c.status}`} title={CHECK_LABEL[c.status]} />
+                  <strong>{c.id}</strong>
+                  <span className="harness">{c.kind}</span>
+                  <span className={`pill pill-check-${c.status}`}>{CHECK_LABEL[c.status]}</span>
+                  <span className="sub right" title={`마지막 확인 ${new Date(c.checkedAt).toLocaleString()}`}>
+                    {c.status === "up" && `${c.latencyMs}ms · `}
+                    {timeAgo(c.since) === "방금" ? "방금 전부터" : `${timeAgo(c.since)}부터`}
+                  </span>
+                </div>
+                <div className="sub check-detail">{c.detail}</div>
+              </div>
+            ))}
         </div>
       ))}
     </section>

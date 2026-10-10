@@ -3,7 +3,8 @@ import type { Plugin } from "@me/sdk";
 import type { CheckRecord } from "../domain/check.ts";
 import type { CheckStore, Clock, Events } from "../ports/index.ts";
 
-export const KIND = "ops.check";
+/** Entity kind for this instance: `<plugin id>.check`, so several ops instances (one per machine) can coexist. */
+export const kindFor = (pluginId: string) => `${pluginId}.check`;
 
 export const KIND_SCHEMA = {
   type: "object",
@@ -22,9 +23,9 @@ export const KIND_SCHEMA = {
 
 export function kernelCheckStore(plugin: Plugin): CheckStore {
   return {
-    list: async () => (await plugin.entity.list<CheckRecord>({ kind: KIND, limit: 1000 })).map((d) => d.data),
+    list: async () => (await plugin.entity.list<CheckRecord>({ kind: kindFor(plugin.id), limit: 1000 })).map((d) => d.data),
     put: async (record) => {
-      await plugin.entity.upsert(KIND, record.id, record);
+      await plugin.entity.upsert(kindFor(plugin.id), record.id, record);
     },
   };
 }

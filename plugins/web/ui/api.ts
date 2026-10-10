@@ -57,6 +57,8 @@ export interface OpsCheck {
   latencyMs: number;
   checkedAt: string;
   since: string;
+  /** ops instance that reported it: "ops" for this Mac, "ops-<server>" for connected servers. */
+  source?: string;
 }
 
 export interface Approval {

@@ -15,7 +15,11 @@ mkdirSync(dataDir, { recursive: true });
 const token = crypto.randomUUID().replaceAll("-", "");
 writeFileSync(join(dataDir, "token"), token, { mode: 0o600 });
 
-const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "brgr.task", "kernel.plugin", "ops.check"]);
+const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "brgr.task", "kernel.plugin"]);
+/** ops runs once per machine (ops on this Mac, ops-<name> on servers); each owns `<id>.check`. */
+const OPS_KIND = /^(ops(?:-[a-z0-9-]+)?)\.check$/;
+const isOpsPlugin = (id: string) => id === "ops" || id.startsWith("ops-");
+const withSource = (kind: string, data: any) => ({ ...data, source: kind.match(OPS_KIND)?.[1] ?? "ops" });
 const clients = new Set<ServerWebSocket<unknown>>();
 
 const broadcast = (msg: unknown) => {
@@ -28,6 +32,11 @@ const plugin = definePlugin({
     if (name === "kernel.entity.changed" && WATCHED_KINDS.has(data.kind)) {
       const doc = await plugin.entity.get(data.kind, data.id);
       if (doc) broadcast({ type: "entity", kind: doc.kind, id: doc.id, data: doc.data });
+      return;
+    }
+    if (name === "kernel.entity.changed" && OPS_KIND.test(data.kind)) {
+      const doc = await plugin.entity.get(data.kind, data.id);
+      if (doc) broadcast({ type: "entity", kind: "ops.check", id: `${withSource(doc.kind, doc.data).source}/${doc.id}`, data: withSource(doc.kind, doc.data) });
       return;
     }
     if (name === "kernel.approval.pending" || name === "kernel.approval.decided") {
@@ -75,13 +84,22 @@ const access: AccessConfig = {
 if (access.tailscale.enabled && !access.tailscale.hostname) console.error("[web] tailscale enabled but hostname unknown; tailnet access off");
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
+/** Checks from every ops instance (this Mac and connected servers), tagged with their source. */
+async function opsChecks() {
+  const instances = (await plugin.entity.list<{ id: string }>({ kind: "kernel.plugin", limit: 200 })).map((d) => d.data.id).filter(isOpsPlugin);
+  const lists = await Promise.all(
+    instances.map((id) => plugin.entity.list({ kind: `${id}.check`, limit: 500 }).catch(() => [])),
+  );
+  return lists.flat().map((d) => ({ data: withSource(d.kind, d.data) }));
+}
+
 async function bootstrap(req: Access) {
   const [threads, messages, tasks, plugins, checks, approvals] = await Promise.all([
     plugin.entity.list({ kind: "gjc-head.thread", limit: 500 }),
     plugin.entity.list({ kind: "gjc-head.message", limit: 1000 }),
     plugin.entity.list({ kind: "brgr.task", limit: 500 }),
     plugin.entity.list({ kind: "kernel.plugin", limit: 100 }),
-    plugin.entity.list({ kind: "ops.check", limit: 500 }),
+    opsChecks(),
     plugin.approval.list(),
   ]);
   return {

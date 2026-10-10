@@ -836,3 +836,17 @@ body {
     padding-top: calc(12px + env(safe-area-inset-top));
   }
 }
+
+/* Ops checks grouped by machine. */
+.machine + .machine {
+  margin-top: 14px;
+}
+.machine-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 0 6px 2px;
+}
+.machine .card + .card {
+  margin-top: 8px;
+}

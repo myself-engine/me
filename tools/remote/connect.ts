@@ -12,6 +12,8 @@ import { loadManifest, type LoadedManifest } from "../../kernel/src/manifest.ts"
 export interface RemoteOptions {
   /** Folder with plugin.json. */
   pluginDir: string;
+  /** Registers the plugin under another id (e.g. ops-rapi), so one plugin can run on several machines. */
+  id?: string;
   /** The kernel's TCP listener (its tailnet address). */
   host: string;
   port: number;
@@ -44,7 +46,9 @@ export interface RemoteHandle {
 const FATAL = new Set<number>([ErrorCode.PermissionDenied, ErrorCode.ProtocolMismatch, -32602]);
 
 export async function runRemote(opts: RemoteOptions): Promise<RemoteHandle> {
-  const manifest = await loadManifest(join(resolve(opts.pluginDir), "plugin.json"));
+  const loaded = await loadManifest(join(resolve(opts.pluginDir), "plugin.json"));
+  if (opts.id !== undefined && !/^[a-z][a-z0-9-]*$/.test(opts.id)) throw new Error(`invalid --id ${opts.id}`);
+  const manifest = opts.id ? { ...loaded, id: opts.id } : loaded;
   const { dir: _dir, ...wire } = manifest;
   const id = manifest.id;
   const dataDir = opts.dataDir ?? process.env.ME_HOME ?? join(homedir(), ".me");

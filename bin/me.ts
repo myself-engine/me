@@ -123,12 +123,12 @@ switch (cmd) {
     const host = opt("--host");
     const port = Number(opt("--port") ?? 7421);
     if (!pluginDir || !host || !Number.isInteger(port)) {
-      console.error("usage: me connect <plugin-dir> --host <kernel tailnet ip> [--port 7421] [--token-file <file>] [--config <file.json>]");
+      console.error("usage: me connect <plugin-dir> --host <kernel tailnet ip> [--port 7421] [--id <plugin id>] [--token-file <file>] [--config <file.json>]");
       process.exit(1);
     }
     const configFile = opt("--config");
     const config = configFile ? await Bun.file(configFile).json() : undefined;
-    const handle = await runRemote({ pluginDir, host, port, tokenPath: opt("--token-file"), config });
+    const handle = await runRemote({ pluginDir, host, port, tokenPath: opt("--token-file"), config, id: opt("--id") });
     const stop = async () => {
       await handle.stop();
       process.exit(0);

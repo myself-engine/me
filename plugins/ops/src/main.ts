@@ -8,7 +8,7 @@
 // This file only wires ports to adapters; logic lives in domain/ and app/.
 import { definePlugin } from "@me/sdk";
 import { bunExec } from "./adapters/exec.ts";
-import { KIND, KIND_SCHEMA, kernelCheckStore, kernelEvents, systemClock } from "./adapters/kernel.ts";
+import { KIND_SCHEMA, kernelCheckStore, kernelEvents, kindFor, systemClock } from "./adapters/kernel.ts";
 import { createProbe } from "./adapters/probes.ts";
 import { createService, type OpsService } from "./app/service.ts";
 import { parseConfig } from "./domain/check.ts";
@@ -28,7 +28,7 @@ const plugin = definePlugin({
       store: kernelCheckStore(plugin),
       events: kernelEvents(plugin),
     });
-    await plugin.entity.registerKind(KIND, KIND_SCHEMA);
+    await plugin.entity.registerKind(kindFor(plugin.id), KIND_SCHEMA);
     await service.load();
     // Start after initialize has been answered, so the first round of upserts does not race the handshake.
     setTimeout(() => service.start(), 0);
