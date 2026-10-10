@@ -52,6 +52,16 @@
     "lib/messenger": {
       "name": "@me/messenger",
     },
+    "plugins/approval-policy": {
+      "name": "@me/plugin-approval-policy",
+      "dependencies": {
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@me/kernel": "workspace:*",
+      },
+    },
     "plugins/brgr": {
       "name": "@me/plugin-brgr",
       "dependencies": {
@@ -130,6 +140,8 @@
     "@me/kernel": ["@me/kernel@workspace:kernel"],
 
     "@me/messenger": ["@me/messenger@workspace:lib/messenger"],
+
+    "@me/plugin-approval-policy": ["@me/plugin-approval-policy@workspace:plugins/approval-policy"],
 
     "@me/plugin-brgr": ["@me/plugin-brgr@workspace:plugins/brgr"],
 

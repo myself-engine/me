@@ -1,0 +1,10 @@
+{
+  "id": "approval-policy",
+  "version": "0.1.0",
+  "protocol": { "min": 1, "max": 1 },
+  "run": { "command": ["bun", "src/main.ts"] },
+  "permissions": ["subscribe", "approve.decide"],
+  "provides": { "methods": ["rules.list", "evaluate"] },
+  "subscribes": ["kernel.approval.pending"],
+  "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }
+}

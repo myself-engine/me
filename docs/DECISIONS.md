@@ -272,7 +272,11 @@
 ## 16. 보강할 것 🟡
 
 - **summarize 지시서에 검증 기준을 넣는다.** 워커가 "무엇이 되면 끝인지"를 알게 한다(brgr `--criterion`으로 전달).
-- **서버 역할별 승인 위험 등급**: 테스트는 자동으로, 배포와 DB 쓰기는 항상 승인을 거친다.
+- **서버 역할별 승인 위험 등급**: 테스트는 자동으로, 배포와 DB 쓰기는 항상 승인을 거친다. ✅ `approval-policy` 플러그인
+  - summarize가 작업 역할(test, code, docs, research, deploy, db-write)을 판단한다. 알 수 없으면 code로 본다.
+  - head가 역할을 승인 요청에 담는다.
+  - 기본 규칙은 "gjc-head가 요청한 test 작업만 자동 승인"이다.
+  - high 위험, deploy·db-write·release·secrets 역할, 배포·마이그레이션 같은 단어가 든 요청은 규칙과 상관없이 항상 사람이 승인한다.
 - **점검 항목**
   - 외부 도구 버전을 기록한다(gjc, brgr, herdr 등). ✅ `me doctor`
   - 심링크가 원본을 가리키는지 확인한다. ✅ `me doctor`

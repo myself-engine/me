@@ -136,7 +136,15 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     const decisionPromise = approvals.request({
       summary: `${s.harness}에 위임: ${s.summaryEn}`,
       risk: s.needsCodeChange ? "medium" : "low",
-      payload: { harness: s.harness, harnesses: config.harnesses, brief, ...(criterion ? { criterion } : {}), project: thread.project, messageId: reply.id },
+      payload: {
+        harness: s.harness,
+        harnesses: config.harnesses,
+        brief,
+        ...(criterion ? { criterion } : {}),
+        ...(s.role ? { role: s.role } : {}),
+        project: thread.project,
+        messageId: reply.id,
+      },
       expiresInSec: config.approvalExpiresSec,
     });
     turn.update({ kind: "delegation", state: "awaiting-approval", harness: s.harness, brief });

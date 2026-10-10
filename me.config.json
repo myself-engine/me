@@ -6,18 +6,53 @@
     "plugins/jev",
     "plugins/gjc-head",
     "plugins/brgr",
-    "plugins/web"
+    "plugins/web",
+    "plugins/approval-policy"
   ],
   "pluginConfig": {
     "gjc-head": {
       "model": "openai-codex/gpt-5.6-luna",
-      "harnesses": ["local.claude-code", "local.codex", "local.gjc", "local.opencode"],
+      "harnesses": [
+        "local.claude-code",
+        "local.codex",
+        "local.gjc",
+        "local.opencode"
+      ],
       "simpleThreshold": 0.8,
       "defaultProject": "~/dev/me"
     },
-    "summarize": { "model": "openai-codex/gpt-5.6-luna" },
-    "jev": { "fallbackModel": "openai-codex/gpt-5.6-luna", "openrouterKeyFile": "~/.config/me/secrets/openrouter.key" },
-    "brgr": { "harnesses": ["local.claude-code", "local.codex", "local.gjc", "local.opencode"] },
-    "web": { "port": 7420, "projects": ["~/dev/me"], "defaultProject": "~/dev/me" }
+    "summarize": {
+      "model": "openai-codex/gpt-5.6-luna"
+    },
+    "jev": {
+      "fallbackModel": "openai-codex/gpt-5.6-luna",
+      "openrouterKeyFile": "~/.config/me/secrets/openrouter.key"
+    },
+    "brgr": {
+      "harnesses": [
+        "local.claude-code",
+        "local.codex",
+        "local.gjc",
+        "local.opencode"
+      ]
+    },
+    "web": {
+      "port": 7420,
+      "projects": [
+        "~/dev/me"
+      ],
+      "defaultProject": "~/dev/me"
+    },
+    "approval-policy": {
+      "rules": [
+        {
+          "name": "tests",
+          "requester": "gjc-head",
+          "payload": {
+            "role": "test"
+          }
+        }
+      ]
+    }
   }
 }

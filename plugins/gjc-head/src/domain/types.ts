@@ -28,6 +28,7 @@ export interface Summary {
   harnessReason: string;
   /** One observable English sentence saying when the work is done. */
   criterion?: string;
+  role?: string;
 }
 
 export interface Judgement {

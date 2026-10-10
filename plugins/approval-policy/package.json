@@ -1,0 +1,12 @@
+{
+  "name": "@me/plugin-approval-policy",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@me/sdk": "workspace:*",
+    "@me/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@me/kernel": "workspace:*"
+  }
+}

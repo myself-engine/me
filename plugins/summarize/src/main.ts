@@ -13,6 +13,8 @@ export interface Summary {
   harnessReason: string;
   /** One observable English sentence saying when the work is done; passed to brgr as --criterion. */
   criterion: string;
+  /** Kind of work, used by approval risk tiers (approval-policy). */
+  role: "none" | "test" | "code" | "docs" | "research" | "deploy" | "db-write";
 }
 
 const dataDir = process.env.ME_DATA_DIR ?? ".";
@@ -38,11 +40,15 @@ const plugin = definePlugin({
         '- "harness": the best worker harness id from the list for this task (pick the first if nothing stands out).',
         '- "harnessReason": a few words why.',
         '- "criterion": if work is needed, one observable English sentence that says when the work is done (e.g. "bun test passes and the README lists the new flag."); otherwise "".',
+        '- "role": one of "none", "test" (only runs or writes tests), "code", "docs", "research", "deploy" (ships or releases anything), "db-write" (changes a database). Pick the most dangerous that applies.',
       ].join("\n");
       const res = await runGjc({ prompt, model, cwd: join(dataDir, "runs"), ephemeral: true, thinking: "low", signal: ctx.signal });
       const s = parseJsonObject<Summary>(res.text);
       if (!p.harnesses.includes(s.harness)) s.harness = p.harnesses[0] ?? s.harness;
       s.criterion = typeof s.criterion === "string" ? s.criterion.trim() : "";
+      const roles = ["none", "test", "code", "docs", "research", "deploy", "db-write"] as const;
+      // Unknown roles count as code: never let a parse slip make work look safer than it is.
+      s.role = roles.includes(s.role as any) ? s.role : "code";
       return s;
     },
   },
