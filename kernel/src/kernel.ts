@@ -38,6 +38,8 @@ interface Host {
   subscriptions: string[];
   ready: Promise<void>;
   markReady: () => void;
+  /** Whether the current `ready` promise has resolved; a restart only re-arms a settled one. */
+  readySettled: boolean;
   stopping: boolean;
   /** In-memory plugins are attached by the host program and never respawned. */
   attached: boolean;
@@ -133,8 +135,8 @@ export class Kernel {
 
   private register(manifest: LoadedManifest, attached: boolean): Host | null {
     if (this.hosts.has(manifest.id)) throw new Error(`plugin already registered: ${manifest.id}`);
-    let markReady!: () => void;
-    const ready = new Promise<void>((r) => (markReady = r));
+    let resolveReady!: () => void;
+    const ready = new Promise<void>((r) => (resolveReady = r));
     const host: Host = {
       manifest,
       state: "starting",
@@ -144,7 +146,11 @@ export class Kernel {
       restarts: 0,
       subscriptions: [...(manifest.subscribes ?? [])],
       ready,
-      markReady,
+      markReady: () => {
+        host.readySettled = true;
+        resolveReady();
+      },
+      readySettled: false,
       stopping: false,
       attached,
     };
@@ -152,7 +158,7 @@ export class Kernel {
     if (PROTOCOL_VERSION < manifest.protocol.min || PROTOCOL_VERSION > manifest.protocol.max) {
       this.journal(KERNEL, "lifecycle", null, null, { pluginId: manifest.id, error: "protocol mismatch", supported: manifest.protocol });
       this.setState(host, "stopped");
-      markReady();
+      host.markReady();
       return null;
     }
     for (const kind of manifest.provides?.kinds ?? []) {
@@ -266,9 +272,16 @@ export class Kernel {
     host.restartTimes.push(now);
     host.restarts++;
     this.setState(host, "starting", { exitCode: code, restart: host.restarts });
-    let markReady!: () => void;
-    host.ready = new Promise<void>((r) => (markReady = r));
-    host.markReady = markReady;
+    // Callers already waiting on an unsettled `ready` keep waiting for this restart.
+    if (host.readySettled) {
+      let resolveReady!: () => void;
+      host.ready = new Promise<void>((r) => (resolveReady = r));
+      host.readySettled = false;
+      host.markReady = () => {
+        host.readySettled = true;
+        resolveReady();
+      };
+    }
     const delay = Math.min(250 * 2 ** (host.restartTimes.length - 1), 5_000);
     setTimeout(() => {
       if (!this.stopped) this.startProcess(host);

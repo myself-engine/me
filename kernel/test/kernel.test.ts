@@ -210,6 +210,15 @@ describe("spawned plugins", () => {
     expect(await caller.invoke<unknown>("echo-proc", "echo", { text: "proc" })).toEqual({ said: "proc", pid: expect.any(Number) });
   });
 
+  test("spawn resolves even when the process can never start", async () => {
+    const started = kernel.spawn(
+      manifest({ id: "nope", run: { command: ["bun", "x.ts"], cwd: "does-not-exist" }, restart: { policy: "on-failure", maxRestarts: 1, windowSec: 60 } }),
+    );
+    const winner = await Promise.race([started.then(() => "resolved"), Bun.sleep(8_000).then(() => "hung")]);
+    expect(winner).toBe("resolved");
+    expect(kernel.pluginState("nope")).toBe("quarantined");
+  });
+
   test("restarts a crashing plugin and quarantines it after maxRestarts", async () => {
     await kernel.spawn(
       manifest({

@@ -24,7 +24,9 @@
     "lib",
     "plugins",
     "bin",
-    "scripts"
+    "scripts",
+    "bridges",
+    "tools"
   ],
   "exclude": [
     "**/node_modules",

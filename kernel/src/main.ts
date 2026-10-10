@@ -20,6 +20,8 @@ if (await Bun.file(localPath).exists()) {
   const local = (await Bun.file(localPath).json()) as Partial<Config>;
   if (local.dataDir) config.dataDir = local.dataDir;
   if (local.plugins) config.plugins = local.plugins;
+  // Machine-specific plugins (e.g. from `me adapt`) are appended, not substituted.
+  config.plugins = [...new Set([...config.plugins, ...(((local as any).extraPlugins as string[]) ?? [])])];
   for (const [id, cfg] of Object.entries(local.pluginConfig ?? {})) {
     config.pluginConfig = { ...config.pluginConfig, [id]: { ...config.pluginConfig?.[id], ...cfg } };
   }
