@@ -1,0 +1,9 @@
+{
+  "name": "ap",
+  "kind": "cli",
+  "description": "agent-progress(ap) 계획을 읽기 전용으로 조회 — 에이전트가 지금 무엇을 하는지",
+  "commands": {
+    "status": { "argv": ["ap", "status", "--json", "--no-view", "--plan", "{plan}"], "params": { "plan": { "type": "string", "required": true, "pattern": "^[\\w:.@-]+$" } }, "parse": "json" },
+    "history": { "argv": ["ap", "history", "--no-view", "--plan", "{plan}"], "params": { "plan": { "type": "string", "required": true, "pattern": "^[\\w:.@-]+$" } }, "parse": "text" }
+  }
+}

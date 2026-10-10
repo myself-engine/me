@@ -1,0 +1,10 @@
+{
+  "name": "meter",
+  "kind": "cli",
+  "description": "meter로 하네스별 사용량·한도를 조회 (저장된 값만 읽음, 네트워크 요청 없음)",
+  "commands": {
+    "usage": { "argv": ["meter", "status", "--json"], "parse": "json" },
+    "provider": { "argv": ["meter", "status", "{provider}", "--json"], "params": { "provider": { "type": "string", "required": true, "enum": ["codex", "claude", "cursor", "deepseek", "command-code", "opencode-go"] } }, "parse": "json" },
+    "doctor": { "argv": ["meter", "doctor", "--json"], "parse": "json" }
+  }
+}

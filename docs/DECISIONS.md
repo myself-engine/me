@@ -287,8 +287,8 @@
 
 | 기존 도구 | me에서의 역할 |
 |---|---|
-| meter | 비용과 계정 라우팅 |
-| agent-progress (ap) | 관제 화면과 주의력 신호 |
+| meter | 비용과 계정 라우팅 — 🟡 1차: `meter` 레시피로 사용량 조회 가능 (`me adapt --yes meter`) |
+| agent-progress (ap) | 관제 화면과 주의력 신호 — 🟡 1차: `ap` 레시피로 계획 조회 가능 (`me adapt --yes ap`) |
 | connect-my-world-in-herdr | Herdr 연결 감시 |
 | 라피 | Discord 창구 |
 | CodeAgora | 판정과 리뷰 단계 |
@@ -304,7 +304,7 @@
 - 그다음: MCP 브리지 → `me adapt` v0 → 화면 눈 확인
 - 진행: MCP 브리지 ✅, `me adapt mcp` v0 ✅
 - 진행: `me adapt` 세 단계 모두 ✅ (2026-10-10)
-  - 1단계 마켓플레이스: `marketplace/recipes/*.json`. 지금은 git, github, filesystem 레시피가 있다. `me adapt <레시피> [--set k=v]`로 설치한다.
+  - 1단계 마켓플레이스: `marketplace/recipes/*.json`. 지금은 git, github, filesystem, meter, ap 레시피가 있다. `me adapt <레시피> [--set k=v]`로 설치한다.
   - 2단계 범용 브리지: mcp, cli. http·acp 브리지는 아직이다.
   - 3단계 에이전트 작성: `me adapt agent <이름> -- <설명>`이 brgr로 워커에게 맡기고, 적합성 테스트 통과를 완료 기준으로 둔다. 브리지로 되는 일이면 레시피를 쓰라고 지시한다.
   - 반환: `me adapt export <pluginId> -- <설명>`이 만든 어댑터를 레시피로 되돌린다. env 값(비밀)은 빼고 내보낸다.

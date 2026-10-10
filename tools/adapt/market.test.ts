@@ -17,7 +17,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 test("the shipped recipes are well-formed", async () => {
   const recipes = await listRecipes(repo);
-  expect(recipes.map((r) => r.name)).toEqual(["filesystem", "git", "github"]);
+  expect(recipes.map((r) => r.name)).toEqual(["ap", "filesystem", "git", "github", "meter"]);
   for (const r of recipes) {
     expect(r.description.length).toBeGreaterThan(0);
     if (r.kind === "mcp") expect(r.command.length).toBeGreaterThan(0);
