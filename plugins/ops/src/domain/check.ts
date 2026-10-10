@@ -80,6 +80,8 @@ export function observe(prev: CheckState, spec: Pick<CheckSpec, "id" | "kind">, 
 export interface OpsConfig {
   checks: CheckSpec[];
   intervalSec: number;
+  /** Delay before the first run, so checks of things started alongside me don't report down at boot. */
+  startDelaySec: number;
   confirm: number;
   /** Checks that were rejected, with the reason; they are reported but never run. */
   errors: { index: number; id: string | null; error: string }[];
@@ -143,6 +145,7 @@ export function parseConfig(config: Record<string, unknown> | undefined): OpsCon
   return {
     checks,
     intervalSec: posInt(config?.intervalSec, DEFAULT_INTERVAL_SEC),
+    startDelaySec: typeof config?.startDelaySec === "number" && config.startDelaySec >= 0 ? config.startDelaySec : 0,
     confirm: posInt(config?.confirm, DEFAULT_CONFIRM),
     errors,
   };

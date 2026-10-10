@@ -65,7 +65,8 @@
           "url": "http://127.0.0.1:7420/",
           "expectStatus": 200
         }
-      ]
+      ],
+      "startDelaySec": 5
     }
   }
 }

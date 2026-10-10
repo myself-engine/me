@@ -118,13 +118,27 @@ export function createService(deps: ServiceDeps) {
       return { id: spec.id, entries: history.get(spec.id)!.slice(-limit).reverse() };
     },
 
-    /** Runs everything now, then every intervalSec. */
+    /** Runs everything after startDelaySec (immediately when 0), then every intervalSec. */
     start() {
       if (stopTimer) return;
-      void runAll().catch((err) => log(`run failed: ${(err as Error).message}`));
-      stopTimer = clock.every(config.intervalSec * 1000, () => {
-        void runAll().catch((err) => log(`run failed: ${(err as Error).message}`));
+      const run = () => void runAll().catch((err) => log(`run failed: ${(err as Error).message}`));
+      const loop = () => clock.every(config.intervalSec * 1000, run);
+      if (config.startDelaySec <= 0) {
+        run();
+        stopTimer = loop();
+        return;
+      }
+      // One-shot delay built from the clock port so tests can drive it with the fake clock.
+      let stopLoop: (() => void) | null = null;
+      const stopDelay = clock.every(config.startDelaySec * 1000, () => {
+        stopDelay();
+        run();
+        stopLoop = loop();
       });
+      stopTimer = () => {
+        stopDelay();
+        stopLoop?.();
+      };
     },
 
     stop() {

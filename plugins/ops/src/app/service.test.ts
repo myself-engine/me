@@ -56,9 +56,10 @@ function scriptedProbe() {
   return { probe, answers, calls };
 }
 
-function setup(opts: { confirm?: number; intervalSec?: number; store?: MemoryStore } = {}) {
+function setup(opts: { confirm?: number; intervalSec?: number; startDelaySec?: number; store?: MemoryStore } = {}) {
   const config = parseConfig({
     intervalSec: opts.intervalSec ?? 30,
+    startDelaySec: opts.startDelaySec ?? 0,
     confirm: opts.confirm ?? 2,
     checks: [
       { id: "web", kind: "http", url: "http://127.0.0.1:1/" },
@@ -90,6 +91,23 @@ describe("scheduling", () => {
       await service.idle();
     }
     expect(calls).toHaveLength(10);
+  });
+
+  test("startDelaySec postpones the first run, then the interval continues", async () => {
+    const { service, clock, calls } = setup({ startDelaySec: 5 });
+    service.start();
+    await service.idle();
+    expect(calls).toHaveLength(0);
+    clock.advance(5_000);
+    await service.idle();
+    expect(calls).toHaveLength(2);
+    clock.advance(30_000);
+    await service.idle();
+    expect(calls).toHaveLength(4);
+    service.stop();
+    clock.advance(600_000);
+    await service.idle();
+    expect(calls).toHaveLength(4);
   });
 
   test("stop cancels the interval", async () => {

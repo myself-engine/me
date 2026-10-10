@@ -172,7 +172,10 @@ switch (cmd) {
     const ts = await import("../tools/tailscale/serve.ts");
     const [sub, ...flags] = rest;
     const at = flags.indexOf("--https-port");
-    const httpsPort = at >= 0 ? Number(flags[at + 1]) : 8443;
+    // The web plugin must know the same https port, or tailnet requests are refused as an unknown host.
+    const { loadConfig } = await import("../tools/doctor/doctor.ts");
+    const webTs = ((await loadConfig(join(root, "me.config.json"))).pluginConfig.web?.tailscale ?? {}) as { enabled?: boolean; httpsPort?: number };
+    const httpsPort = at >= 0 ? Number(flags[at + 1]) : (webTs.httpsPort ?? 8443);
     if (!["status", "on", "off"].includes(sub ?? "") || !Number.isInteger(httpsPort)) {
       console.error("usage: me tailscale status | on | off [--https-port 8443]");
       process.exit(1);
@@ -186,7 +189,10 @@ switch (cmd) {
       } else if (sub === "on") {
         const r = await ts.serveEnable(ts.DEFAULT_WEB_PORT, { httpsPort });
         console.log(r.changed ? `✓ tailnet에서 https://<기기>:${httpsPort} → 127.0.0.1:${ts.DEFAULT_WEB_PORT}` : "이미 켜져 있어요");
-        console.log("  me.local.json에 web.tailscale { enabled: true, allowedLogins: [...] }가 있어야 접속이 허용돼요");
+        if (!webTs.enabled) console.log("  ⚠️ me.local.json에 web.tailscale { enabled: true, allowedLogins: [...] }가 있어야 접속이 허용돼요");
+        if ((webTs.httpsPort ?? 443) !== httpsPort) {
+          console.log(`  ⚠️ web.tailscale.httpsPort가 ${webTs.httpsPort ?? 443}로 되어 있어요. ${httpsPort}로 맞추고 me를 다시 시작해야 접속돼요`);
+        }
       } else {
         const r = await ts.serveDisable({ httpsPort });
         console.log(r.changed ? "✓ 껐어요" : "이미 꺼져 있어요");

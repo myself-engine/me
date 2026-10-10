@@ -122,6 +122,6 @@ describe("parseConfig", () => {
   });
 
   test("tolerates missing config", () => {
-    expect(parseConfig(undefined)).toEqual({ checks: [], intervalSec: 60, confirm: 2, errors: [] });
+    expect(parseConfig(undefined)).toEqual({ checks: [], intervalSec: 60, startDelaySec: 0, confirm: 2, errors: [] });
   });
 });
