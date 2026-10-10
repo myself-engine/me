@@ -44,11 +44,11 @@ export function StatusDot({ tone, label, hideLabel = false }: { tone: Tone; labe
 export const STATE_LABEL: Record<string, string> = {
   "awaiting-approval": "승인 대기",
   rejected: "거절됨",
-  delegated: "위임됨",
+  delegated: "맡김",
   running: "작업 중",
-  sealed: "결과 도착",
-  accepted: "수락함",
-  applied: "적용·커밋됨",
+  sealed: "검토 대기",
+  accepted: "적용 중",
+  applied: "적용 완료",
   "apply-failed": "적용 실패",
   failed: "실패",
   "awaiting-input": "입력 대기",
@@ -60,6 +60,9 @@ export const STATE_LABEL: Record<string, string> = {
 
 export const stateLabel = (state: string) => STATE_LABEL[state] ?? state;
 export const shortHarness = (h: string) => h.replace(/^local\./, "");
+const TOOL_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", omp: "OMP", gjc: "GJC", opencode: "OpenCode" };
+/** The tool's product name for people: local.claude-code → Claude Code. */
+export const toolName = (h: string) => TOOL_NAMES[shortHarness(h)] ?? shortHarness(h);
 
 export function Header({ title, back, children }: { title: ReactNode; back?: string; children?: ReactNode }) {
   return (

@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Approval } from "./api.ts";
 import { useApp } from "./context.ts";
 import { chatHref } from "./routes.ts";
-import { Empty, Header, StatusDot, shortHarness, shortPath, useBusy } from "./shared.tsx";
+import { Empty, Header, StatusDot, repoName, shortPath, toolName, useBusy } from "./shared.tsx";
 import { isDelegationApproval } from "./state.ts";
 
 const RISK_LABEL: Record<Approval["risk"], string> = { low: "위험 낮음", medium: "위험 보통", high: "위험 높음" };
@@ -29,7 +29,8 @@ export function ApprovalsScreen() {
   );
 }
 
-function ApprovalCard({ a }: { a: Approval }) {
+/** One pending approval. `inline` is the in-thread variant: the user's request is right above it, so it asks instead of restating. */
+export function ApprovalCard({ a, inline = false }: { a: Approval; inline?: boolean }) {
   const { s, conn, notify } = useApp();
   const [busy, act] = useBusy(notify);
   const p = a.payload ?? {};
@@ -51,41 +52,44 @@ function ApprovalCard({ a }: { a: Approval }) {
     });
 
   return (
-    <article className="card approval">
+    <article className={`card approval${inline ? " inline" : ""}`} aria-label={inline ? "작업 맡기기 승인" : undefined}>
       <div className="card-head">
         <StatusDot tone="needs" label="승인 대기" />
         <span className={`risk risk-${a.risk}`}>{RISK_LABEL[a.risk] ?? a.risk}</span>
-        <span className="muted right">요청: {a.requester}</span>
+        {!inline && <span className="muted right">요청: {a.requester}</span>}
       </div>
-      <p className="approval-summary">{a.summary}</p>
-      {(p.brief || p.project) && (
+      <p className="approval-summary">{inline && delegation ? "이 작업을 맡길까요?" : a.summary}</p>
+      {p.project && <p className="chips"><span className="chip">📁 {repoName(p.project)}</span></p>}
+      {(p.brief || p.criterion) && (
         <details className="fold">
-          <summary>지시 내용{p.project ? ` · ${shortPath(p.project)}` : ""}</summary>
+          <summary>요청 내용{p.criterion ? " · 완료 조건" : ""}</summary>
           {p.brief && <p className="brief">{p.brief}</p>}
-          {p.criterion && <p className="brief">완료 기준: {p.criterion}</p>}
+          {p.criterion && <p className="brief">완료 조건: {p.criterion}</p>}
+          {p.project && <p className="brief muted">{shortPath(p.project)}</p>}
         </details>
       )}
       {harnesses.length > 0 && harness && (
         <label className="field">
-          <span>하네스</span>
+          <span>실행 도구</span>
           <select value={harness} disabled={busy} onChange={(e) => setPicked(e.target.value)}>
             {(harnesses.includes(harness) ? harnesses : [harness, ...harnesses]).map((h) => (
               <option key={h} value={h}>
-                {shortHarness(h)}
+                {toolName(h)}
                 {h === suggested ? " (추천)" : ""}
               </option>
             ))}
           </select>
         </label>
       )}
+      {delegation && harness && <p className="result-note muted">승인하면 이 프로젝트에서 {toolName(harness)} 작업이 시작돼요.</p>}
       <div className="actions-row">
         <button className="primary" disabled={busy || !conn} onClick={() => decide("approve")}>
-          {delegation ? "승인하고 위임" : "승인"}
+          {delegation ? "승인하고 시작" : "승인"}
         </button>
         <button className="quiet" disabled={busy || !conn} onClick={() => decide("reject")}>
           거절
         </button>
-        {message && (
+        {message && !inline && (
           <a className="link right" href={chatHref(message.threadId)}>
             대화 보기 ›
           </a>

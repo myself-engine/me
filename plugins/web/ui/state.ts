@@ -128,9 +128,9 @@ export function toneOf(state: string): Tone {
     case "running":
     case "delegated":
     case "starting":
+    case "accepted":
       return "running";
     case "applied":
-    case "accepted":
       return "done";
     case "failed":
     case "quarantined":
@@ -189,9 +189,9 @@ export function workItems(s: State): WorkItem[] {
   return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-const TONE_RANK: Record<Tone, number> = { needs: 0, running: 1, done: 2, failed: 3, muted: 4, none: 5 };
+const TONE_RANK: Record<Tone, number> = { needs: 0, running: 1, failed: 2, done: 3, muted: 4, none: 5 };
 
-/** A thread's representative status: Needs You > running > done > nothing. */
+/** A thread's representative status: Needs You > running > failed > done > nothing. Rejected and cancelled work stays quiet. */
 export function threadTone(s: State, threadId: string): Tone {
   let best: Tone = "none";
   for (const m of Object.values(s.messages)) {
@@ -202,7 +202,7 @@ export function threadTone(s: State, threadId: string): Tone {
     if (waiting) t = "needs";
     else if (task) t = toneOf(task.state);
     else if (m.status === "pending" || m.status === "streaming") t = "running";
-    if (t === "failed" || t === "muted") t = "none";
+    if (t === "muted") t = "none";
     if (TONE_RANK[t] < TONE_RANK[best]) best = t;
   }
   return best;

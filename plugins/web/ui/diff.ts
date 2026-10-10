@@ -57,3 +57,10 @@ function countLines(chunk: string) {
   }
   return { added, removed };
 }
+
+/** Whole-change totals from `git diff --stat`: the summary line when present, else the per-file rows. */
+export function diffTotals(stat: DiffStat): { files: number; added: number; removed: number } {
+  const m = stat.summary?.match(/(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/);
+  if (m) return { files: Number(m[1]), added: Number(m[2] ?? 0), removed: Number(m[3] ?? 0) };
+  return stat.files.reduce((t, f) => ({ files: t.files + 1, added: t.added + f.plus, removed: t.removed + f.minus }), { files: 0, added: 0, removed: 0 });
+}

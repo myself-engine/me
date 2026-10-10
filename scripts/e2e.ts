@@ -59,7 +59,10 @@ const brgr = definePlugin({
       }, 300);
       return { taskId };
     },
-    "task.diff": () => ({ diff: "diff --git a/NOTES.md b/NOTES.md\nnew file mode 100644\n--- /dev/null\n+++ b/NOTES.md\n@@ -0,0 +1 @@\n+hello\n", error: null }),
+    "task.diff": (p: any) =>
+      p.stat
+        ? { diff: " NOTES.md | 1 +\n 1 file changed, 1 insertion(+)\n", error: null }
+        : { diff: "diff --git a/NOTES.md b/NOTES.md\nnew file mode 100644\n--- /dev/null\n+++ b/NOTES.md\n@@ -0,0 +1 @@\n+hello\n", error: null },
     "task.accept": async (p: any) => {
       const task = tasks.get(p.taskId);
       if (!task || task.state !== "sealed") throw new Error("not sealed");
@@ -206,6 +209,14 @@ try {
   });
   if (process.argv.includes("--serve")) {
     // Leave the seeded me running for scripts/shots.ts and scripts/a11y.ts until SIGTERM.
+    // One result waiting for review, for the in-thread result card.
+    await delegate("CHANGELOG.md 파일을 만들어서 첫 항목을 적어 줘")
+      .then(async ({ approval }) => {
+        const from = inbox.length;
+        await request("approval.decide", { approvalId: approval.approvalId, decision: "approve" });
+        await waitFor((m) => inbox.indexOf(m) >= from && m.type === "entity" && m.kind === "brgr.task" && m.data.state === "sealed", 30_000, "sealed task");
+      })
+      .catch(() => {});
     await delegate("docs 폴더에 사용법 문서를 만들어 줘").catch(() => {}); // leaves one approval pending for screenshots
     const report = results.map((r) => `${r.ok ? "PASS" : "FAIL"} ${r.flow}`).join("\n");
     console.log(`${report}\nSERVE http://127.0.0.1:${port}/`);

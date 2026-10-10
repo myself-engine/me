@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 const CHROME = process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-export type Seeded = { url: string; threadId: string | null; taskId: string | null; stop: () => Promise<void> };
+export type Seeded = { url: string; threadId: string | null; taskId: string | null; resultThreadId: string | null; stop: () => Promise<void> };
 
 /** Starts a seeded me and returns its URL with one thread and one task id. Stop it with stop(); only that PID is signalled. */
 export async function startSeededMe(): Promise<Seeded> {
@@ -22,10 +22,14 @@ export async function startSeededMe(): Promise<Seeded> {
   }
   const url = buf.match(/SERVE (\S+)/)![1]!;
   const boot: any = await (await fetch(`${url}api/bootstrap`)).json();
+  // The thread whose delegation result waits for review, so the in-thread result card is covered.
+  const sealed = boot.tasks?.find((t: any) => t.state === "sealed")?.taskId;
   return {
     url,
-    threadId: boot.threads?.[0]?.id ?? null,
+    // Prefer the thread with the pending delegation approval, so the in-thread approval card is covered.
+    threadId: boot.messages?.find((m: any) => m.id === boot.approvals?.[0]?.payload?.messageId)?.threadId ?? boot.threads?.[0]?.id ?? null,
     taskId: boot.tasks?.[0]?.taskId ?? null,
+    resultThreadId: boot.messages?.find((m: any) => sealed && m.taskId === sealed)?.threadId ?? null,
     stop: async () => {
       proc.kill("SIGTERM");
       await proc.exited;
@@ -119,6 +123,7 @@ export function screens(s: Seeded): { name: string; hash: string }[] {
   return [
     { name: "chat-new", hash: "#/chat" },
     ...(s.threadId ? [{ name: "chat-thread", hash: `#/chat/${encodeURIComponent(s.threadId)}` }] : []),
+    ...(s.resultThreadId ? [{ name: "chat-result", hash: `#/chat/${encodeURIComponent(s.resultThreadId)}` }] : []),
     { name: "tasks", hash: "#/tasks" },
     ...(s.taskId ? [{ name: "task-detail", hash: `#/tasks/${encodeURIComponent(s.taskId)}` }] : []),
     { name: "approvals", hash: "#/approvals" },

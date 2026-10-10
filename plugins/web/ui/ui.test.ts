@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseDiffStat, splitDiff } from "./diff.ts";
+import { diffTotals, parseDiffStat, splitDiff } from "./diff.ts";
 import { fenceLanguage, highlight } from "./highlight.ts";
 import { isDeep, parseRoute, taskHref } from "./routes.ts";
 import { initial, reducer, threadTone, toneOf, workItems, type State } from "./state.ts";
@@ -29,6 +29,8 @@ describe("diff helpers", () => {
       { path: "img.png", changes: null, plus: 0, minus: 0 },
     ]);
     expect(s.summary).toBe("2 files changed, 9 insertions(+), 3 deletions(-)");
+    expect(diffTotals(s)).toEqual({ files: 2, added: 9, removed: 3 });
+    expect(diffTotals(parseDiffStat(" a.md | 1 +\n 1 file changed, 1 insertion(+)\n"))).toEqual({ files: 1, added: 1, removed: 0 });
   });
   test("splits a unified diff per file", () => {
     const d = "diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1,2 @@\n-a\n+b\n+c\ndiff --git a/y.md b/y.md\n+++ b/y.md\n+z\n";
@@ -46,6 +48,8 @@ describe("status tones", () => {
     expect(["sealed", "awaiting-input", "apply-failed", "awaiting-approval"].map(toneOf)).toEqual(["needs", "needs", "needs", "needs"]);
     expect(toneOf("running")).toBe("running");
     expect(toneOf("applied")).toBe("done");
+    // Accepting starts the apply; only a landed commit counts as done.
+    expect(toneOf("accepted")).toBe("running");
     expect(toneOf("failed")).toBe("failed");
     expect(toneOf("rejected")).toBe("muted");
   });
@@ -78,6 +82,16 @@ describe("status tones", () => {
     const items = workItems(s);
     expect(items.map((w) => [w.id, w.state])).toContainEqual(["approval:a1", "awaiting-approval"]);
     expect(threadTone(s, "th")).toBe("needs");
+  });
+
+  test("a failed task shows on the thread, a rejected one stays quiet", () => {
+    const base = state();
+    const s: State = { ...base, approvals: {}, tasks: { k1: { ...base.tasks.k1!, state: "failed" } } };
+    // The other turn is still pending, and running outranks a failure.
+    expect(threadTone(s, "th")).toBe("running");
+    const settled: State = { ...s, messages: { m1: s.messages.m1! } };
+    expect(threadTone(settled, "th")).toBe("failed");
+    expect(threadTone({ ...settled, tasks: { k1: { ...base.tasks.k1!, state: "rejected" } } }, "th")).toBe("none");
   });
 
   test("kernel.op entities land in state", () => {

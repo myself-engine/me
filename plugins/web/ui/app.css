@@ -1697,3 +1697,27 @@ a.dline:hover {
     padding: 10px 8px;
   }
 }
+.approval.inline {
+  margin: 4px 0;
+}
+.approval .chips {
+  margin: 0;
+}
+.result.inline {
+  margin: 4px 0;
+}
+.result-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+}
+.result-stat .plus,
+.result-stat .minus {
+  font-family: var(--mono);
+}
+.result-note {
+  margin: 0;
+  font-size: 13px;
+}

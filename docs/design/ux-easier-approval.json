@@ -1,0 +1,1 @@
+{ "gate": "design-preset", "selectedPreset": "대화에서 끝내기 (In-Thread Closure)", "approvedByUser": true, "approvedAt": "2026-10-11", "userWords": "디자인 ㅈㄴ 좋은데. 코덱스 앱 디자인도 좀 참고해보셈.", "scope": ["plugins/web/ui"], "note": "Codex app design research (GJC autoresearch, Sol) to inform rollout before implementation beyond the exemplar." }

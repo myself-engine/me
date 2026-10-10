@@ -1,9 +1,11 @@
 // 대화: thread list, the conversation itself, and the composer.
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Message } from "./api.ts";
+import type { Message, Task } from "./api.ts";
+import { ApprovalCard } from "./approvals.tsx";
 import { useApp } from "./context.ts";
+import { diffTotals, parseDiffStat } from "./diff.ts";
 import { chatHref, NEW_THREAD, taskHref } from "./routes.ts";
-import { Empty, Header, Markdown, StatusDot, elapsed, repoName, shortHarness, shortPath, stateLabel, timeAgo, useNow } from "./shared.tsx";
+import { Empty, Header, Markdown, StatusDot, elapsed, repoName, shortPath, stateLabel, timeAgo, toolName, useBusy, useNow } from "./shared.tsx";
 import { TONE_LABEL, threadTone, toneOf, turnOp, type Live } from "./state.ts";
 
 export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string) => void }) {
@@ -88,7 +90,7 @@ function Conversation(props: { threadId: string | null; project: string; setProj
         {messages.length === 0 && (
           <div className="hello">
             <h2>무엇을 할까요?</h2>
-            <p>간단한 건 바로 답하고, 작업이 필요하면 맞는 하네스에 위임할게요.</p>
+            <p>간단한 건 바로 답하고, 작업이 필요하면 맞는 실행 도구에 맡길게요.</p>
           </div>
         )}
         {messages.map((m) =>
@@ -123,7 +125,7 @@ function AssistantMessage({ m }: { m: Message }) {
   const [showThoughts, setShowThoughts] = useState(false);
   const error = m.error ?? live?.error;
 
-  const routeLabel = m.judgement ? (m.route === "direct" ? "직접 답변" : "위임") : "기록";
+  const routeLabel = m.judgement ? (m.route === "direct" ? "직접 답변" : "작업 맡기기") : "기록";
   const routeTitle = m.judgement
     ? `간단함 ${Math.round(m.judgement.simpleProb * 100)}% · ${
         m.judgement.source === "fast-path" ? "빠른 답변" : m.judgement.source === "fallback" ? "대체 판정" : "Jev"
@@ -207,7 +209,7 @@ function TurnAnnouncer({ m }: { m?: Message }) {
     const error = m.error ?? live?.error;
     if (error) text = "답변하지 못했어요";
     else if (m.status === "pending" || m.status === "streaming") text = m.text || live?.text ? "답변 작성 중" : phaseLabel(s, m, live);
-    else if (m.delegation) text = "작업을 위임했어요";
+    else if (m.delegation) text = "작업을 맡겼어요";
     else text = "답변을 마쳤어요";
   }
   // Only turns that move while the page is open are worth saying; an old finished thread stays quiet.
@@ -260,12 +262,14 @@ function DelegationLine({ m }: { m: Message }) {
   const body = (
     <>
       <StatusDot tone={tone} hideLabel />
-      <span className="dl-harness">{shortHarness(task?.harness ?? d.harness)}</span>
+      <span className="dl-harness">{toolName(task?.harness ?? d.harness)}</span>
       <span className="dl-goal">{task?.objective ?? d.brief}</span>
       <span className={`dl-state tone-text tone-${tone}`}>{stateLabel(state)}</span>
       <span className="dl-time">{time}</span>
     </>
   );
+  if (approval && !task) return <ApprovalCard a={approval} inline />;
+  if (task && RESULT_STATES.has(task.state)) return <ResultCard task={task} time={time} />;
   if (task)
     return (
       <a className="dline" href={taskHref(task.taskId)}>
@@ -284,6 +288,76 @@ function DelegationLine({ m }: { m: Message }) {
         </a>
       )}
     </div>
+  );
+}
+
+/** States where a delegation's result sits in the thread as a card instead of a line. */
+const RESULT_STATES = new Set(["sealed", "accepted", "applied", "apply-failed"]);
+
+/** First sentence of the worker's report for the card: body text over headings, markdown marks dropped. */
+const firstLine = (text: string | null) => {
+  const lines = (text ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const line = lines.find((l) => !l.startsWith("#") && !l.startsWith("```")) ?? lines[0];
+  return line?.replace(/^[#>*\-\s]+/, "").replace(/[`*_]/g, "").trim() || null;
+};
+
+/** A delegation whose result arrived: what changed, and apply or reject without leaving the thread. */
+function ResultCard({ task, time }: { task: Task; time: string }) {
+  const { conn, notify } = useApp();
+  const [busy, act] = useBusy(notify);
+  const [totals, setTotals] = useState<ReturnType<typeof diffTotals> | null>(null);
+  useEffect(() => {
+    if (!conn) return;
+    let live = true;
+    conn
+      .request("task.diff", { taskId: task.taskId, stat: true })
+      .then((r) => live && r?.diff && setTotals(diffTotals(parseDiffStat(r.diff))))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [conn, task.taskId, task.state]);
+  const tone = toneOf(task.state);
+  const summary = firstLine(task.resultText);
+  return (
+    <article className="card result inline" aria-label="작업 결과">
+      <div className="card-head">
+        <StatusDot tone={tone} label={stateLabel(task.state)} />
+        <span className="muted">{toolName(task.harness)}</span>
+        <span className="muted right">{time}</span>
+      </div>
+      {summary && <p className="approval-summary">{summary}</p>}
+      <p className="result-stat">
+        {totals ? (
+          <>
+            <span className="plus">+{totals.added}</span> <span className="minus">−{totals.removed}</span> · 파일 {totals.files}개
+          </>
+        ) : (
+          <span className="muted">변경 내용을 불러오는 중…</span>
+        )}
+        <a className="link right" href={taskHref(task.taskId)}>
+          전체 diff ›
+        </a>
+      </p>
+      {task.state === "sealed" && (
+        <>
+          <div className="actions-row">
+            <button className="primary" disabled={busy || !conn} onClick={() => act(() => conn!.request("task.accept", { taskId: task.taskId }))}>
+              변경사항 적용
+            </button>
+            <button className="quiet" disabled={busy || !conn} onClick={() => act(() => conn!.request("task.reject", { taskId: task.taskId }))}>
+              거절
+            </button>
+          </div>
+          <p className="result-note muted">적용하면 이 작업의 변경사항을 프로젝트에 넣고 커밋해요. 수정할 점은 아래 메시지로 보내 주세요.</p>
+        </>
+      )}
+      {task.state === "accepted" && <p className="result-note muted">변경사항을 적용하고 커밋하는 중이에요.</p>}
+      {task.state === "applied" && (
+        <p className="result-note">{task.commitSha ? <>커밋 <code>{task.commitSha.slice(0, 8)}</code>에 적용했어요.</> : "적용했어요."}</p>
+      )}
+      {task.state === "apply-failed" && <div className="card error">⚠️ {task.error ?? "적용하지 못했어요. 전체 diff에서 확인해 주세요."}</div>}
+    </article>
   );
 }
 
