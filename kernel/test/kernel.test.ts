@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPipePair, ErrorCode, type Manifest } from "@myself/protocol";
-import { definePlugin, type Plugin, type PluginDefinition } from "@myself/sdk";
+import { createPipePair, ErrorCode, type Manifest } from "@me/protocol";
+import { definePlugin, type Plugin, type PluginDefinition } from "@me/sdk";
 import { Kernel } from "../src/kernel.ts";
 import { validateManifest } from "../src/manifest.ts";
 
@@ -11,7 +11,7 @@ let dir: string;
 let kernel: Kernel;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "myself-kernel-"));
+  dir = mkdtempSync(join(tmpdir(), "me-kernel-"));
   kernel = new Kernel({ dataDir: dir, log: () => {} });
 });
 

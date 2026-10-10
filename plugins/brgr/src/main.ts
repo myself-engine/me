@@ -2,7 +2,7 @@
 // brgr must run from a Herdr pane with no agent in it; the kernel's own pane qualifies.
 // Owner identity is a fixed non-agent session name (config.ownerSession).
 import { hostname } from "node:os";
-import { definePlugin } from "@myself/sdk";
+import { definePlugin } from "@me/sdk";
 
 export type TaskState = "running" | "sealed" | "failed" | "awaiting-input" | "accepted" | "rejected" | "cancelled";
 
@@ -42,8 +42,8 @@ const plugin = definePlugin({
       const r = await brgr(["diff", p.taskId, ...(p.stat ? ["--stat"] : [])]);
       return { diff: r.stdout, error: r.code === 0 ? null : r.stderr.trim() };
     },
-    "task.accept": (p: { taskId: string; reason?: string }) => decide(p.taskId, "accept", p.reason ?? "accepted from myself-engine"),
-    "task.reject": (p: { taskId: string; reason?: string }) => decide(p.taskId, "reject", p.reason ?? "rejected from myself-engine"),
+    "task.accept": (p: { taskId: string; reason?: string }) => decide(p.taskId, "accept", p.reason ?? "accepted from me"),
+    "task.reject": (p: { taskId: string; reason?: string }) => decide(p.taskId, "reject", p.reason ?? "rejected from me"),
     "task.cancel": async (p: { taskId: string }) => {
       const r = await brgr(["cancel", p.taskId, "--json"]);
       if (r.code !== 0) throw new Error(r.stderr.trim() || "brgr cancel failed");
@@ -53,7 +53,7 @@ const plugin = definePlugin({
   },
 });
 
-const owner = () => (plugin.config.ownerSession as string) ?? `myself-engine:${hostname().split(".")[0]}`;
+const owner = () => (plugin.config.ownerSession as string) ?? `me:${hostname().split(".")[0]}`;
 
 async function brgr(args: string[], cwd?: string) {
   const proc = Bun.spawn(["brgr", ...args, "--owner-session", owner()], { cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore" });

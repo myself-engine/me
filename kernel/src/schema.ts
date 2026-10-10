@@ -1,6 +1,6 @@
 // Minimal JSON Schema subset for entity validation: type, required, properties.type, enum.
 // Enough to catch plugin bugs early; not a full validator.
-import type { JsonValue } from "@myself/protocol";
+import type { JsonValue } from "@me/protocol";
 
 const typeOf = (v: unknown): string =>
   v === null ? "null" : Array.isArray(v) ? "array" : Number.isInteger(v) ? "integer" : typeof v;

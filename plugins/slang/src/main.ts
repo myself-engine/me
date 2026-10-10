@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
-import { definePlugin } from "@myself/sdk";
+import { definePlugin } from "@me/sdk";
 import { DEFAULT_DICT, normalize, type SlangEntry } from "./dict.ts";
 
-const dataDir = process.env.MYSELF_DATA_DIR ?? ".";
+const dataDir = process.env.ME_DATA_DIR ?? ".";
 mkdirSync(dataDir, { recursive: true });
 const userDictPath = join(dataDir, "user-dict.json");
 

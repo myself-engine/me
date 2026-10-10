@@ -2,7 +2,7 @@
 // Safety: always --no-mcp; tools are disabled unless explicitly allowed, and any tool
 // execution outside `allowTools` aborts the run (GJC's own whitelist leaks).
 import { mkdirSync } from "node:fs";
-import { pumpLines } from "@myself/protocol";
+import { pumpLines } from "@me/protocol";
 
 export type GjcUpdate =
   | { kind: "text_delta"; delta: string }

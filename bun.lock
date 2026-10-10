@@ -5,72 +5,72 @@
     "": {
       "name": "myself-engine",
       "devDependencies": {
-        "@myself/kernel": "workspace:*",
-        "@myself/protocol": "workspace:*",
-        "@myself/sdk": "workspace:*",
+        "@me/kernel": "workspace:*",
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
         "@types/bun": "1.4.0",
         "typescript": "5.6.3",
       },
     },
     "kernel": {
-      "name": "@myself/kernel",
+      "name": "@me/kernel",
       "dependencies": {
-        "@myself/protocol": "workspace:*",
+        "@me/protocol": "workspace:*",
       },
       "devDependencies": {
-        "@myself/sdk": "workspace:*",
+        "@me/sdk": "workspace:*",
       },
     },
     "lib/gjc": {
-      "name": "@myself/gjc",
+      "name": "@me/gjc",
       "dependencies": {
-        "@myself/protocol": "workspace:*",
+        "@me/protocol": "workspace:*",
       },
     },
     "plugins/brgr": {
-      "name": "@myself/plugin-brgr",
+      "name": "@me/plugin-brgr",
       "dependencies": {
-        "@myself/protocol": "workspace:*",
-        "@myself/sdk": "workspace:*",
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
       },
     },
     "plugins/gjc-head": {
-      "name": "@myself/plugin-gjc-head",
+      "name": "@me/plugin-gjc-head",
       "dependencies": {
-        "@myself/gjc": "workspace:*",
-        "@myself/protocol": "workspace:*",
-        "@myself/sdk": "workspace:*",
+        "@me/gjc": "workspace:*",
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
       },
     },
     "plugins/jev": {
-      "name": "@myself/plugin-jev",
+      "name": "@me/plugin-jev",
       "dependencies": {
-        "@myself/gjc": "workspace:*",
-        "@myself/protocol": "workspace:*",
-        "@myself/sdk": "workspace:*",
+        "@me/gjc": "workspace:*",
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
       },
     },
     "plugins/slang": {
-      "name": "@myself/plugin-slang",
+      "name": "@me/plugin-slang",
       "dependencies": {
-        "@myself/gjc": "workspace:*",
-        "@myself/protocol": "workspace:*",
-        "@myself/sdk": "workspace:*",
+        "@me/gjc": "workspace:*",
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
       },
     },
     "plugins/summarize": {
-      "name": "@myself/plugin-summarize",
+      "name": "@me/plugin-summarize",
       "dependencies": {
-        "@myself/gjc": "workspace:*",
-        "@myself/protocol": "workspace:*",
-        "@myself/sdk": "workspace:*",
+        "@me/gjc": "workspace:*",
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
       },
     },
     "plugins/web": {
-      "name": "@myself/plugin-web",
+      "name": "@me/plugin-web",
       "dependencies": {
-        "@myself/protocol": "workspace:*",
-        "@myself/sdk": "workspace:*",
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
         "highlight.js": "11.10.0",
         "react": "18.3.1",
         "react-dom": "18.3.1",
@@ -84,35 +84,35 @@
       },
     },
     "protocol": {
-      "name": "@myself/protocol",
+      "name": "@me/protocol",
     },
     "sdk": {
-      "name": "@myself/sdk",
+      "name": "@me/sdk",
       "dependencies": {
-        "@myself/protocol": "workspace:*",
+        "@me/protocol": "workspace:*",
       },
     },
   },
   "packages": {
-    "@myself/gjc": ["@myself/gjc@workspace:lib/gjc"],
+    "@me/gjc": ["@me/gjc@workspace:lib/gjc"],
 
-    "@myself/kernel": ["@myself/kernel@workspace:kernel"],
+    "@me/kernel": ["@me/kernel@workspace:kernel"],
 
-    "@myself/plugin-brgr": ["@myself/plugin-brgr@workspace:plugins/brgr"],
+    "@me/plugin-brgr": ["@me/plugin-brgr@workspace:plugins/brgr"],
 
-    "@myself/plugin-gjc-head": ["@myself/plugin-gjc-head@workspace:plugins/gjc-head"],
+    "@me/plugin-gjc-head": ["@me/plugin-gjc-head@workspace:plugins/gjc-head"],
 
-    "@myself/plugin-jev": ["@myself/plugin-jev@workspace:plugins/jev"],
+    "@me/plugin-jev": ["@me/plugin-jev@workspace:plugins/jev"],
 
-    "@myself/plugin-slang": ["@myself/plugin-slang@workspace:plugins/slang"],
+    "@me/plugin-slang": ["@me/plugin-slang@workspace:plugins/slang"],
 
-    "@myself/plugin-summarize": ["@myself/plugin-summarize@workspace:plugins/summarize"],
+    "@me/plugin-summarize": ["@me/plugin-summarize@workspace:plugins/summarize"],
 
-    "@myself/plugin-web": ["@myself/plugin-web@workspace:plugins/web"],
+    "@me/plugin-web": ["@me/plugin-web@workspace:plugins/web"],
 
-    "@myself/protocol": ["@myself/protocol@workspace:protocol"],
+    "@me/protocol": ["@me/protocol@workspace:protocol"],
 
-    "@myself/sdk": ["@myself/sdk@workspace:sdk"],
+    "@me/sdk": ["@me/sdk@workspace:sdk"],
 
     "@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
 

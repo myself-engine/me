@@ -1,6 +1,6 @@
 // SQLite-backed journal and entity store (DESIGN §4, PROTOCOL §7, §10).
 import { Database } from "bun:sqlite";
-import type { EntityDoc, JournalEntry, JournalQueryParams, JsonValue } from "@myself/protocol";
+import type { EntityDoc, JournalEntry, JournalQueryParams, JsonValue } from "@me/protocol";
 
 export type JournalType = JournalEntry["type"];
 

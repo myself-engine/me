@@ -1,6 +1,6 @@
 // Manifest loading and permission helpers (PROTOCOL §2, §8).
 import { dirname, resolve } from "node:path";
-import type { Manifest, Permission } from "@myself/protocol";
+import type { Manifest, Permission } from "@me/protocol";
 
 const ID_RE = /^[a-z][a-z0-9-]*$/;
 

@@ -1,4 +1,4 @@
-# myself-engine
+# me
 
 여러 코딩 에이전트 하네스를 하나의 localhost 웹에서 지휘하는 개인용 엔진.
 
@@ -12,7 +12,7 @@
 
 ```sh
 bun install
-bun start            # = bun kernel/src/main.ts myself.config.json
+bun start            # = bun kernel/src/main.ts me.config.json
 ```
 
 브라우저에서 http://127.0.0.1:7420 을 연다.
@@ -21,20 +21,20 @@ bun start            # = bun kernel/src/main.ts myself.config.json
 
 ## 설정
 
-- `myself.config.json`: 공용 기본값이다. 플러그인 목록과 모델, 하네스, 포트를 담는다.
-- `myself.local.json`: 이 머신 전용 값이다. 커밋하지 않는다. 같은 구조의 일부만 적으면 덮어쓴다.
+- `me.config.json`: 공용 기본값이다. 플러그인 목록과 모델, 하네스, 포트를 담는다.
+- `me.local.json`: 이 머신 전용 값이다. 커밋하지 않는다. 같은 구조의 일부만 적으면 덮어쓴다.
 
 ```json
 {
   "pluginConfig": {
-    "web": { "githubRepo": "<owner>/myself-engine", "projects": ["~/dev/myself-engine", "~/dev/other"] },
-    "brgr": { "ownerSession": "myself-engine:mac" }
+    "web": { "githubRepo": "<owner>/me", "projects": ["~/dev/me", "~/dev/other"] },
+    "brgr": { "ownerSession": "me:mac" }
   }
 }
 ```
 
-- 데이터: `~/.myself`. 저널과 엔티티는 `myself.sqlite`, 플러그인 로그는 `logs/`에 남는다. `MYSELF_HOME`으로 바꿀 수 있다.
-- Jev: `~/.config/myself-engine/secrets/openrouter.key`에 OpenRouter 키를 두면 Jev(`typesafe/jev-router`)로 판정한다. 키가 없으면 head 모델로 같은 형식의 대체 판정을 한다.
+- 데이터: `~/.me`. 저널과 엔티티는 `me.sqlite`, 플러그인 로그는 `logs/`에 남는다. `ME_HOME`으로 바꿀 수 있다.
+- Jev: `~/.config/me/secrets/openrouter.key`에 OpenRouter 키를 두면 Jev(`typesafe/jev-router`)로 판정한다. 키가 없으면 head 모델로 같은 형식의 대체 판정을 한다.
 
 ## 제약
 
@@ -50,4 +50,4 @@ bunx tsc --noEmit -p .   # 타입 검사
 bun scripts/smoke-head.ts  # 실제 모델로 head 흐름 확인 (가짜 brgr)
 ```
 
-`myself.local.json`에 `"web": { "dev": true }`를 넣으면 웹 화면이 HMR로 동작한다.
+`me.local.json`에 `"web": { "dev": true }`를 넣으면 웹 화면이 HMR로 동작한다.

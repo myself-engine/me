@@ -4,10 +4,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerWebSocket } from "bun";
-import { definePlugin } from "@myself/sdk";
+import { definePlugin } from "@me/sdk";
 import index from "../ui/index.html";
 
-const dataDir = process.env.MYSELF_DATA_DIR ?? ".";
+const dataDir = process.env.ME_DATA_DIR ?? ".";
 mkdirSync(dataDir, { recursive: true });
 const token = crypto.randomUUID().replaceAll("-", "");
 writeFileSync(join(dataDir, "token"), token, { mode: 0o600 });
@@ -136,7 +136,7 @@ async function createIssue(traceId: string | undefined, note: string, messageId?
     task ? "\n### 위임 작업\n```json\n" + JSON.stringify(task, null, 2).slice(0, 8000) + "\n```" : "",
     "\n### 저널 (스트림 조각 제외)\n```\n" + lines.join("\n").slice(0, 40000) + "\n```",
   ].join("\n");
-  const title = `[myself] ${(note || "issue").split("\n")[0]!.slice(0, 70)}`;
+  const title = `[me] ${(note || "issue").split("\n")[0]!.slice(0, 70)}`;
   if (!repo) return { dryRun: true, title, body };
   const proc = Bun.spawn(["gh", "issue", "create", "--repo", repo, "--title", title, "--body-file", "-"], {
     stdin: new Blob([body]),

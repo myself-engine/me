@@ -22,7 +22,9 @@
     "kernel",
     "sdk",
     "lib",
-    "plugins"
+    "plugins",
+    "bin",
+    "scripts"
   ],
   "exclude": [
     "**/node_modules",

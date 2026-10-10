@@ -1,1 +1,1 @@
-{ "name": "@myself/sdk", "private": true, "type": "module", "exports": { ".": "./src/index.ts" }, "dependencies": { "@myself/protocol": "workspace:*" } }
+{ "name": "@me/sdk", "private": true, "type": "module", "exports": { ".": "./src/index.ts" }, "dependencies": { "@me/protocol": "workspace:*" } }

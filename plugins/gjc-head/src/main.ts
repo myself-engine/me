@@ -2,8 +2,8 @@
 // It never touches code: GJC runs with no tools and --no-mcp, and any tool execution aborts the run.
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { definePlugin, type CallContext } from "@myself/sdk";
-import { GjcError, runGjc, type GjcUpdate } from "@myself/gjc";
+import { definePlugin, type CallContext } from "@me/sdk";
+import { GjcError, runGjc, type GjcUpdate } from "@me/gjc";
 
 interface Thread {
   id: string;
@@ -36,12 +36,12 @@ interface Message {
 
 const THREAD = "gjc-head.thread";
 const MESSAGE = "gjc-head.message";
-const dataDir = process.env.MYSELF_DATA_DIR ?? ".";
+const dataDir = process.env.ME_DATA_DIR ?? ".";
 const now = () => new Date().toISOString();
 const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 const SYSTEM = [
-  "You are the head of myself-engine, the user's personal orchestrator for coding agents.",
+  "You are the head of me, the user's personal orchestrator for coding agents.",
   "You only talk. You never read, run, or change files; real work is delegated to worker harnesses through brgr.",
   "Reply in natural Korean, short and direct, like a messenger chat. Use markdown when it helps.",
 ].join(" ");

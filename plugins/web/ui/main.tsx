@@ -216,7 +216,7 @@ function App() {
     <div className={`app ${navOpen ? "nav-open" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
-          <span className="logo">◐</span> myself-engine
+          <span className="logo">◐</span> me
           <span className={`conn conn-${status}`} title={status} />
         </div>
         <nav className="tabs">

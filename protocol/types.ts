@@ -1,4 +1,4 @@
-// myself-engine plugin protocol v1 — type definitions only (no runtime).
+// me plugin protocol v1 — type definitions only (no runtime).
 // Spec: docs/PROTOCOL.md. Section numbers below refer to that document.
 
 export const PROTOCOL_VERSION = 1 as const;

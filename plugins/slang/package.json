@@ -1,1 +1,1 @@
-{ "name": "@myself/plugin-slang", "private": true, "type": "module", "dependencies": { "@myself/sdk": "workspace:*", "@myself/protocol": "workspace:*", "@myself/gjc": "workspace:*" } }
+{ "name": "@me/plugin-slang", "private": true, "type": "module", "dependencies": { "@me/sdk": "workspace:*", "@me/protocol": "workspace:*", "@me/gjc": "workspace:*" } }

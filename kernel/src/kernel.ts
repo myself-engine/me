@@ -21,7 +21,7 @@ import {
   type OpEndParams,
   type OpUpdateParams,
   type Permission,
-} from "@myself/protocol";
+} from "@me/protocol";
 import { hasPermission, matchPattern, type LoadedManifest } from "./manifest.ts";
 import { Store, type JournalType } from "./store.ts";
 import { validateAgainstSchema } from "./schema.ts";
@@ -82,7 +82,7 @@ export class Kernel {
   constructor(private opts: KernelOptions) {
     mkdirSync(opts.dataDir, { recursive: true });
     mkdirSync(join(opts.dataDir, "logs"), { recursive: true });
-    this.store = new Store(join(opts.dataDir, "myself.sqlite"));
+    this.store = new Store(join(opts.dataDir, "me.sqlite"));
     this.log = opts.log ?? ((m) => console.error(`[kernel] ${m}`));
     this.store.registerKind("kernel.plugin", KERNEL, { type: "object", required: ["id", "state"] });
   }
@@ -170,7 +170,7 @@ export class Kernel {
     try {
       proc = Bun.spawn(m.run.command, {
         cwd: resolve(m.dir, m.run.cwd ?? "."),
-        env: { ...process.env, ...(m.run.env ?? {}), MYSELF_PLUGIN_ID: m.id, MYSELF_DATA_DIR: join(this.opts.dataDir, "plugins", m.id) },
+        env: { ...process.env, ...(m.run.env ?? {}), ME_PLUGIN_ID: m.id, ME_DATA_DIR: join(this.opts.dataDir, "plugins", m.id) },
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",

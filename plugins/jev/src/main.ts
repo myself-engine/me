@@ -3,8 +3,8 @@
 // The question is fixed, English and positively phrased: Jev is weaker with Korean and negation.
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { definePlugin } from "@myself/sdk";
-import { parseJsonObject, runGjc } from "@myself/gjc";
+import { definePlugin } from "@me/sdk";
+import { parseJsonObject, runGjc } from "@me/gjc";
 
 export interface Judgement {
   /** Probability that the head can handle this alone with a short reply. */
@@ -17,7 +17,7 @@ export interface Judgement {
 const PROPOSITION =
   "The request can be fully satisfied by a short conversational reply, without reading, running, or changing any files or commands.";
 
-const dataDir = process.env.MYSELF_DATA_DIR ?? ".";
+const dataDir = process.env.ME_DATA_DIR ?? ".";
 const expand = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 async function viaOpenRouter(keyFile: string, model: string, state: object, signal: AbortSignal): Promise<Judgement> {
@@ -60,7 +60,7 @@ const plugin = definePlugin({
   methods: {
     judge: async (p: { summaryEn: string; needsCodeChange: boolean; scope: string }, ctx) => {
       const state = { request: p.summaryEn, needsCodeChange: p.needsCodeChange, scope: p.scope };
-      const keyFile = expand((plugin.config.openrouterKeyFile as string) ?? "~/.config/myself-engine/secrets/openrouter.key");
+      const keyFile = expand((plugin.config.openrouterKeyFile as string) ?? "~/.config/me/secrets/openrouter.key");
       if (await Bun.file(keyFile).exists()) {
         try {
           return await viaOpenRouter(keyFile, (plugin.config.jevModel as string) ?? "typesafe/jev-router", state, ctx.signal);

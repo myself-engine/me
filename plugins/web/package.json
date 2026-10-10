@@ -1,10 +1,10 @@
 {
-  "name": "@myself/plugin-web",
+  "name": "@me/plugin-web",
   "private": true,
   "type": "module",
   "dependencies": {
-    "@myself/sdk": "workspace:*",
-    "@myself/protocol": "workspace:*",
+    "@me/sdk": "workspace:*",
+    "@me/protocol": "workspace:*",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "9.0.1",

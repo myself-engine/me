@@ -1,14 +1,14 @@
 {
-  "name": "@myself/kernel",
+  "name": "@me/kernel",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@myself/protocol": "workspace:*"
+    "@me/protocol": "workspace:*"
   },
   "devDependencies": {
-    "@myself/sdk": "workspace:*"
+    "@me/sdk": "workspace:*"
   }
 }

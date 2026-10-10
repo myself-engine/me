@@ -17,9 +17,9 @@ import {
   type JournalQueryParams,
   type JsonValue,
   type LineTransport,
-} from "@myself/protocol";
+} from "@me/protocol";
 
-export { RpcError } from "@myself/protocol";
+export { RpcError } from "@me/protocol";
 
 export interface CallContext {
   traceId: string;

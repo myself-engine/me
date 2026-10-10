@@ -1,5 +1,5 @@
 {
-  "name": "myself-engine",
+  "name": "me",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -12,13 +12,16 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p .",
-    "start": "bun run kernel/src/main.ts"
+    "start": "bun bin/me.ts start me.config.json"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",
     "typescript": "5.6.3",
-    "@myself/kernel": "workspace:*",
-    "@myself/sdk": "workspace:*",
-    "@myself/protocol": "workspace:*"
+    "@me/kernel": "workspace:*",
+    "@me/sdk": "workspace:*",
+    "@me/protocol": "workspace:*"
+  },
+  "bin": {
+    "me": "bin/me.ts"
   }
 }

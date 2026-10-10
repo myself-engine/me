@@ -1,8 +1,8 @@
 // One LLM call: normalized Korean → English structured task summary (DESIGN §6 step 2).
 // The brief doubles as the delegation instruction for a worker harness.
 import { join } from "node:path";
-import { definePlugin } from "@myself/sdk";
-import { parseJsonObject, runGjc } from "@myself/gjc";
+import { definePlugin } from "@me/sdk";
+import { parseJsonObject, runGjc } from "@me/gjc";
 
 export interface Summary {
   summaryEn: string;
@@ -13,7 +13,7 @@ export interface Summary {
   harnessReason: string;
 }
 
-const dataDir = process.env.MYSELF_DATA_DIR ?? ".";
+const dataDir = process.env.ME_DATA_DIR ?? ".";
 
 const plugin = definePlugin({
   methods: {

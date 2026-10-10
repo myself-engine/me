@@ -4,12 +4,12 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPipePair } from "@myself/protocol";
-import { definePlugin } from "@myself/sdk";
-import { Kernel, loadManifest, validateManifest } from "@myself/kernel";
+import { createPipePair } from "@me/protocol";
+import { definePlugin } from "@me/sdk";
+import { Kernel, loadManifest, validateManifest } from "@me/kernel";
 
 const root = join(import.meta.dir, "..");
-const dataDir = mkdtempSync(join(tmpdir(), "myself-smoke-"));
+const dataDir = mkdtempSync(join(tmpdir(), "me-smoke-"));
 const kernel = new Kernel({
   dataDir,
   log: (m) => console.error(`[kernel] ${m}`),
@@ -63,7 +63,7 @@ async function send(text: string) {
 const results = [] as any[];
 results.push(await send("ㅎㅇ 넌 뭐하는 애야? 한 줄로"));
 decideNext = "approve";
-results.push(await send("myself-engine README에 설치 방법 섹션 추가하셈"));
+results.push(await send("me README에 설치 방법 섹션 추가하셈"));
 
 const journal = kernel.store.query({ limit: 1000 });
 console.log(`\njournal entries: ${journal.length}, types: ${[...new Set(journal.map((e) => e.type))].join(", ")}`);
