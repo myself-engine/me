@@ -871,3 +871,16 @@ body {
 .up-chips + .card {
   margin-top: 0;
 }
+
+/* Card headers wrap whole items, never mid-word (narrow screens). */
+.check .card-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.check .card-head > * {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.check .card-head .right {
+  margin-left: auto;
+}
