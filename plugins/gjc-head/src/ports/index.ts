@@ -64,6 +64,8 @@ export interface Events {
 /** One chat.send call: where its op.updates go and how it is cancelled. */
 export interface Turn {
   update(u: Record<string, unknown> & { kind: string }): void;
+  /** Standard progress phase recorded by the kernel on the op (see PROTOCOL §15). */
+  phase?(phase: string, label?: string, progress?: number): void;
   signal: AbortSignal;
   traceId: string;
 }

@@ -30,8 +30,9 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
     events: { messageChanged: async () => {}, guardViolation: async () => {} },
   };
   const head = createHead(ports, { harnesses: ["local.claude-code", "local.codex"], simpleThreshold: 0.8, approvalExpiresSec: 60, defaultProject: "/p" });
-  const turn = { update: (u: any) => updates.push(u), signal: new AbortController().signal, traceId: "tr" };
-  return { head, turn, calls, messages, updates };
+  const phases: string[] = [];
+  const turn = { update: (u: any) => updates.push(u), phase: (ph: string) => void phases.push(ph), signal: new AbortController().signal, traceId: "tr" };
+  return { head, turn, calls, messages, updates, phases };
 }
 
 describe("chat.send", () => {
@@ -43,6 +44,15 @@ describe("chat.send", () => {
     expect(calls.judge).toEqual([{ request: long }]);
     expect(calls.summarize).toHaveLength(0);
     expect(updates.some((u) => u.kind === "summary")).toBe(false);
+  });
+
+  test("reports phases in order for a direct answer and for a delegation", async () => {
+    const direct = setup({ simpleProb: 0.97 });
+    await direct.head.send({ text: "뮤텍스랑 세마포어 차이를 실제 예시 하나씩 들어서 두세 문장으로 비교 설명해 줄 수 있어?" }, direct.turn);
+    expect(direct.phases).toEqual(["understanding", "judging", "answering", "done"]);
+    const del = setup({ simpleProb: 0.05 });
+    await del.head.send({ text: "gjc-head 플러그인에 타임아웃 설정 추가하고 테스트도 써 줘" }, del.turn);
+    expect(del.phases).toEqual(["understanding", "judging", "summarizing", "awaiting-approval", "delegating", "done"]);
   });
 
   test("summarizes only after a delegate judgement, then delegates with the brief", async () => {

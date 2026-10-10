@@ -73,6 +73,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     turn.update({ kind: "message", userMessageId: user.id, messageId: reply.id });
 
     try {
+      turn.phase?.("understanding", "이해 중");
       const understood = await normalizer.normalize(p.text);
       reply.understood = understood;
       turn.update({ kind: "understood", ...understood });
@@ -83,19 +84,25 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         reply.route = "direct";
       } else {
         // Judge first (Jev, ~0.5s); the slower summary is only needed to write a delegation brief.
+        turn.phase?.("judging", "판정 중");
         reply.judgement = await judge.judge({ request: understood.normalized });
         reply.route = decideRoute({ needsCodeChange: false, simpleProb: reply.judgement.simpleProb, threshold });
       }
       turn.update({ kind: "judgement", ...reply.judgement, route: reply.route, threshold });
       if (reply.route === "delegate") {
+        turn.phase?.("summarizing", "지시서 작성 중");
         const summary = await summarizer.summarize({ original: p.text, normalized: understood.normalized, harnesses: config.harnesses, project: thread.project });
         reply.summary = summary;
         turn.update({ kind: "summary", ...summary });
       }
       await saveMessage(reply);
 
-      if (reply.route === "direct") await answerDirectly(thread, reply, p.text, turn);
+      if (reply.route === "direct") {
+        turn.phase?.("answering", "답변 작성 중");
+        await answerDirectly(thread, reply, p.text, turn);
+      }
       else await delegate(thread, reply, turn);
+      turn.phase?.("done", "완료", 1);
 
       reply.status = "done";
     } catch (err: any) {
@@ -136,6 +143,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     reply.delegation = { state: "awaiting-approval", harness: s.harness, brief, ...(criterion ? { criterion } : {}) };
     await saveMessage(reply);
 
+    turn.phase?.("awaiting-approval", "승인 대기");
     const decisionPromise = approvals.request({
       summary: `${s.harness}에 위임: ${s.summaryEn}`,
       risk: s.needsCodeChange ? "medium" : "low",
@@ -168,6 +176,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       reply.delegation.suggestedHarness = s.harness;
     }
 
+    turn.phase?.("delegating", "위임 중");
     const task = await delegator.delegate({
       harness,
       objective: brief,

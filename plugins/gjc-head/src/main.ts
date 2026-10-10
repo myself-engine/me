@@ -31,7 +31,7 @@ const plugin = definePlugin({
     await head.registerKinds();
   },
   methods: {
-    "chat.send": (p, ctx) => head.send(p, { update: ctx.update, signal: ctx.signal, traceId: ctx.traceId }),
+    "chat.send": (p, ctx) => head.send(p, { update: ctx.update, phase: ctx.phase, signal: ctx.signal, traceId: ctx.traceId }),
   },
   async onEvent(name, data) {
     if (name.startsWith("brgr.task.")) await head.onTaskEvent(data);
