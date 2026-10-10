@@ -1,4 +1,9 @@
 // Client side of the web plugin: bootstrap over HTTP, everything else over one WebSocket.
+import type { KernelOpEntity, TraceNode, TraceResult } from "@me/protocol";
+
+/** A live or recent streaming op (kernel.op entity): what is running right now and at which phase. */
+export type Op = KernelOpEntity;
+export type { TraceNode, TraceResult };
 
 export interface Thread {
   id: string;
@@ -30,11 +35,13 @@ export interface Task {
   harness: string;
   objective: string;
   project: string;
+  criterion?: string;
   state: string;
   outcome: string | null;
   resultText: string | null;
   error: string | null;
   commitSha?: string | null;
+  decisionReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,6 +53,11 @@ export interface PluginInfo {
   pid: number | null;
   restarts: number;
   permissions: string[];
+  mode?: "spawned" | "attached" | "connected";
+  remote?: { address: string; port: number };
+  /** Streaming ops this plugin is serving right now. */
+  activeOps?: number;
+  lastError?: { at: string; method: string; message: string } | null;
 }
 
 export interface OpsCheck {
@@ -82,6 +94,7 @@ export interface Bootstrap {
   messages: Message[];
   tasks: Task[];
   plugins: PluginInfo[];
+  ops: Op[];
   checks: OpsCheck[];
   approvals: Approval[];
   config: { projects: string[]; defaultProject: string; githubRepo: string | null };

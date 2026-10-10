@@ -1,0 +1,218 @@
+// 작업: delegated work by status bucket, and one task's detail with its review.
+import { useMemo, useState } from "react";
+import { useApp } from "./context.ts";
+import { Review, REVIEWABLE } from "./review.tsx";
+import { chatHref, go, taskHref } from "./routes.ts";
+import { Empty, Header, Markdown, Section, StatusDot, elapsed, repoName, shortHarness, shortPath, stateLabel, useNow } from "./shared.tsx";
+import { toneOf, workItems, type Tone, type WorkItem } from "./state.ts";
+
+const BUCKETS: { tone: Tone; label: string }[] = [
+  { tone: "needs", label: "확인 필요" },
+  { tone: "running", label: "진행 중" },
+  { tone: "done", label: "완료" },
+  { tone: "failed", label: "실패" },
+];
+
+const RUNNING = new Set(["running", "delegated", "awaiting-input", "awaiting-approval"]);
+
+/** The 12px line under a row: what happened last, in words. */
+function describe(w: WorkItem): string {
+  const t = w.task;
+  if (!t) return "위임하려면 승인이 필요해요";
+  if (t.error) return t.error;
+  switch (t.state) {
+    case "running":
+      return "워커가 작업 중이에요";
+    case "awaiting-input":
+      return "워커가 입력을 기다려요";
+    case "sealed":
+      return "결과가 도착했어요 · 리뷰하고 수락하세요";
+    case "applied":
+      return t.commitSha ? `커밋 ${t.commitSha.slice(0, 8)}에 적용됐어요` : "적용됐어요";
+    case "accepted":
+      return "수락했어요 · 적용 중";
+    case "rejected":
+      return t.decisionReason ? `거절함 · ${t.decisionReason}` : "거절했어요";
+    case "cancelled":
+      return "취소됐어요";
+    case "failed":
+      return "워커가 실패했어요";
+    default:
+      return stateLabel(t.state);
+  }
+}
+
+export function TasksScreen({ taskId, project }: { taskId: string | null; project: string | null }) {
+  return (
+    <div className={`split${taskId ? " has-detail" : ""}`}>
+      <div className="list-pane">
+        <TaskList activeId={taskId} project={project} />
+      </div>
+      <div className="detail-pane">
+        {taskId ? <TaskDetail taskId={taskId} project={project} /> : <Empty title="작업을 고르세요">왼쪽 목록에서 작업을 누르면 지시 내용과 결과를 볼 수 있어요.</Empty>}
+      </div>
+    </div>
+  );
+}
+
+function TaskList({ activeId, project }: { activeId: string | null; project: string | null }) {
+  const { s } = useApp();
+  const now = useNow(10_000);
+  const [showHidden, setShowHidden] = useState(false);
+  const all = useMemo(() => workItems(s), [s.tasks, s.approvals, s.messages]);
+  const projects = useMemo(() => [...new Set(all.map((w) => w.project).filter(Boolean))].sort(), [all]);
+  const items = project ? all.filter((w) => w.project === project) : all;
+  const hidden = items.filter((w) => toneOf(w.state) === "muted");
+
+  return (
+    <>
+      <Header title="작업">
+        {projects.length > 1 || project ? (
+          <select className="filter" value={project ?? ""} onChange={(e) => go(taskHref(null, e.target.value || null))} aria-label="프로젝트 필터">
+            <option value="">모든 프로젝트</option>
+            {[...new Set([...(project ? [project] : []), ...projects])].map((p) => (
+              <option key={p} value={p}>
+                {repoName(p)}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </Header>
+      <div className="pane-scroll">
+        {items.length === 0 && <Empty title="아직 위임한 작업이 없어요">대화에서 일을 맡기면 여기에서 상태를 볼 수 있어요.</Empty>}
+        {BUCKETS.map(({ tone, label }) => {
+          const list = items.filter((w) => toneOf(w.state) === tone);
+          if (list.length === 0) return null;
+          return (
+            <Section key={tone} label={label} count={list.length} tone={tone}>
+              <ul className="rows">
+                {list.map((w) => (
+                  <WorkRow key={w.id} w={w} on={w.id === activeId} project={project} now={now} />
+                ))}
+              </ul>
+            </Section>
+          );
+        })}
+        {hidden.length > 0 && (
+          <Section label="숨김" count={hidden.length}>
+            <button className="link pad" onClick={() => setShowHidden((v) => !v)}>
+              {showHidden ? "거절·취소한 작업 접기" : `거절·취소한 작업 ${hidden.length}개 보기`}
+            </button>
+            {showHidden && (
+              <ul className="rows">
+                {hidden.map((w) => (
+                  <WorkRow key={w.id} w={w} on={w.id === activeId} project={project} now={now} />
+                ))}
+              </ul>
+            )}
+          </Section>
+        )}
+      </div>
+    </>
+  );
+}
+
+function WorkRow({ w, on, project, now }: { w: WorkItem; on: boolean; project: string | null; now: number }) {
+  const tone = toneOf(w.state);
+  const href = w.task ? taskHref(w.id, project) : "#/approvals";
+  return (
+    <li>
+      <a className={`row-link${on ? " on" : ""}`} href={href}>
+        <StatusDot tone={tone} hideLabel />
+        <span className="row-main">
+          <span className="row-title">{w.objective}</span>
+          <span className="row-sub">
+            <span className={`tone-text tone-${tone}`}>{stateLabel(w.state)}</span> · {shortHarness(w.harness)} · {repoName(w.project)} ·{" "}
+            {elapsed(w.startedAt, RUNNING.has(w.state) ? null : w.updatedAt, now)}
+          </span>
+          <span className={`row-note${w.task?.error ? " bad" : ""}`}>{describe(w)}</span>
+        </span>
+      </a>
+    </li>
+  );
+}
+
+function TaskDetail({ taskId, project }: { taskId: string; project: string | null }) {
+  const { s } = useApp();
+  const now = useNow(5000);
+  const task = s.tasks[taskId];
+  const message = useMemo(() => Object.values(s.messages).find((m) => m.taskId === taskId), [s.messages, taskId]);
+  const back = taskHref(null, project);
+  if (!task)
+    return (
+      <div className="detail">
+        <Header title="작업" back={back} />
+        <Empty title="작업을 찾지 못했어요">지워졌거나 아직 불러오지 못한 작업이에요.</Empty>
+      </div>
+    );
+  const tone = toneOf(task.state);
+  const criterion = task.criterion || message?.delegation?.criterion;
+  return (
+    <div className="detail">
+      <Header title={task.objective.split("\n")[0]} back={back} />
+      <div className="pane-scroll detail-body">
+        <div className="task-head">
+          <StatusDot tone={tone} label={stateLabel(task.state)} />
+          <dl className="facts">
+            <div>
+              <dt>하네스</dt>
+              <dd>{shortHarness(task.harness)}</dd>
+            </div>
+            <div>
+              <dt>프로젝트</dt>
+              <dd title={task.project}>{shortPath(task.project)}</dd>
+            </div>
+            <div>
+              <dt>시작</dt>
+              <dd title={new Date(task.createdAt).toLocaleString()}>
+                {new Date(task.createdAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </dd>
+            </div>
+            <div>
+              <dt>걸린 시간</dt>
+              <dd>{elapsed(task.createdAt, RUNNING.has(task.state) ? null : task.updatedAt, now)}</dd>
+            </div>
+          </dl>
+          {message && (
+            <a className="link" href={chatHref(message.threadId)}>
+              대화 보기 ›
+            </a>
+          )}
+        </div>
+
+        {task.error && <div className="card error">⚠️ {task.error}</div>}
+
+        <details className="fold">
+          <summary>지시 내용{criterion ? " · 완료 기준" : ""}</summary>
+          <p className="brief">{task.objective}</p>
+          {criterion && <p className="brief">완료 기준: {criterion}</p>}
+        </details>
+
+        {task.resultText ? <WorkerReport text={task.resultText} /> : RUNNING.has(task.state) && <p className="muted">워커가 아직 보고하지 않았어요.</p>}
+
+        {REVIEWABLE.has(task.state) && <Review task={task} />}
+      </div>
+    </div>
+  );
+}
+
+/** The worker's own words, collapsible; a trailing unfenced diff is left to the review section. */
+function WorkerReport({ text }: { text: string }) {
+  const at = text.search(/\n?diff --git /);
+  const prose = at >= 0 && !text.slice(0, at).includes("```") ? text.slice(0, at).trim() : text;
+  const long = prose.length > 600;
+  const [open, setOpen] = useState(!long);
+  return (
+    <section className="report">
+      <h2 className="section-label">워커 보고</h2>
+      <div className={open ? "" : "clamp"}>
+        <Markdown text={prose} />
+      </div>
+      {long && (
+        <button className="link" onClick={() => setOpen((v) => !v)}>
+          {open ? "접기" : "더 보기"}
+        </button>
+      )}
+    </section>
+  );
+}

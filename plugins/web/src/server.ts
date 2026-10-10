@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerWebSocket } from "bun";
+import type { KernelOpEntity } from "@me/protocol";
 import { definePlugin } from "@me/sdk";
 import { type Access, type AccessConfig, classify, hostnameFromStatus, needsHostnameDetection, originOk, tailnetOrigin, tailscaleConfig, viewerOf } from "./access.ts";
 import { pwaResponse } from "./pwa.ts";
@@ -15,7 +16,7 @@ mkdirSync(dataDir, { recursive: true });
 const token = crypto.randomUUID().replaceAll("-", "");
 writeFileSync(join(dataDir, "token"), token, { mode: 0o600 });
 
-const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "brgr.task", "kernel.plugin"]);
+const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "brgr.task", "kernel.plugin", "kernel.op"]);
 /** ops runs once per machine (ops on this Mac, ops-<name> on servers); each owns `<id>.check`. */
 const OPS_KIND = /^(ops(?:-[a-z0-9-]+)?)\.check$/;
 const isOpsPlugin = (id: string) => id === "ops" || id.startsWith("ops-");
@@ -93,12 +94,22 @@ async function opsChecks() {
   return lists.flat().map((d) => ({ data: withSource(d.kind, d.data) }));
 }
 
+/** The kernel keeps up to 500 ops ordered by id; the UI wants the 200 most recently touched. */
+async function recentOps() {
+  const docs = await plugin.entity.list<KernelOpEntity>({ kind: "kernel.op", limit: 500 });
+  return docs
+    .map((d) => d.data)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 200);
+}
+
 async function bootstrap(req: Access) {
-  const [threads, messages, tasks, plugins, checks, approvals] = await Promise.all([
+  const [threads, messages, tasks, plugins, ops, checks, approvals] = await Promise.all([
     plugin.entity.list({ kind: "gjc-head.thread", limit: 500 }),
     plugin.entity.list({ kind: "gjc-head.message", limit: 1000 }),
     plugin.entity.list({ kind: "brgr.task", limit: 500 }),
     plugin.entity.list({ kind: "kernel.plugin", limit: 100 }),
+    recentOps(),
     opsChecks(),
     plugin.approval.list(),
   ]);
@@ -109,6 +120,7 @@ async function bootstrap(req: Access) {
     messages: messages.map((d) => d.data),
     tasks: tasks.map((d) => d.data),
     plugins: plugins.map((d) => d.data),
+    ops,
     checks: checks.map((d) => d.data),
     approvals,
     config: {
@@ -146,6 +158,8 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       return plugin.invoke("brgr", "task.reject", { taskId: m.taskId, reason: m.reason }, { timeoutMs: 120_000 });
     case "slang.add":
       return plugin.invoke("slang", "dict.add", { from: m.from, to: m.to });
+    case "trace.get":
+      return plugin.getTrace(String(m.traceId ?? ""));
     case "issue.create":
       return createIssue(m.traceId, m.note, m.messageId);
     default:

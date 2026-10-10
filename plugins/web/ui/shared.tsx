@@ -1,0 +1,145 @@
+// Small pieces every screen uses: the status dot, markdown, headers, time and path formatting.
+import { useEffect, useState, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import { TONE_LABEL, type Tone } from "./state.ts";
+
+export function Markdown({ text }: { text: string }) {
+  return (
+    <div className="md">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+/**
+ * One status mark for the whole UI: spinner = running, orange ? = needs you, green ✓ = done,
+ * red dot = failed, grey dot = cancelled/rejected. Always paired with a short text label (touch has no hover).
+ */
+export function StatusDot({ tone, label, hideLabel = false }: { tone: Tone; label?: string; hideLabel?: boolean }) {
+  const text = label ?? TONE_LABEL[tone];
+  return (
+    <span className={`status status-${tone}`}>
+      <span className="sdot" aria-hidden="true">
+        {tone === "needs" ? "?" : tone === "done" ? "✓" : ""}
+      </span>
+      {text && !hideLabel && <span className="slabel">{text}</span>}
+      {text && hideLabel && <span className="sr">{text}</span>}
+    </span>
+  );
+}
+
+export const STATE_LABEL: Record<string, string> = {
+  "awaiting-approval": "승인 대기",
+  rejected: "거절됨",
+  delegated: "위임됨",
+  running: "작업 중",
+  sealed: "결과 도착",
+  accepted: "수락함",
+  applied: "적용·커밋됨",
+  "apply-failed": "적용 실패",
+  failed: "실패",
+  "awaiting-input": "입력 대기",
+  cancelled: "취소됨",
+  starting: "시작 중",
+  stopped: "멈춤",
+  quarantined: "격리됨",
+};
+
+export const stateLabel = (state: string) => STATE_LABEL[state] ?? state;
+export const shortHarness = (h: string) => h.replace(/^local\./, "");
+
+export function Header({ title, back, children }: { title: ReactNode; back?: string; children?: ReactNode }) {
+  return (
+    <header className="bar">
+      {back && (
+        <a className="back" href={back} aria-label="뒤로">
+          ‹
+        </a>
+      )}
+      <h1 className="bar-title">{title}</h1>
+      {children && <div className="bar-right">{children}</div>}
+    </header>
+  );
+}
+
+export function Section({ label, count, tone, children }: { label: string; count?: number; tone?: Tone; children: ReactNode }) {
+  return (
+    <section className={`section${tone ? ` section-${tone}` : ""}`}>
+      <h2 className="section-label">
+        {label}
+        {count !== undefined && <span className="section-count">{count}</span>}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+export function Empty({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="empty">
+      <p className="empty-title">{title}</p>
+      {children && <p className="empty-sub">{children}</p>}
+    </div>
+  );
+}
+
+export function shortPath(p: string) {
+  const home = p.replace(/^\/Users\/[^/]+/, "~").replace(/^\/home\/[^/]+/, "~");
+  const parts = home.split("/").filter(Boolean);
+  return parts.length <= 2 ? home : `…/${parts.slice(-2).join("/")}`;
+}
+
+export const repoName = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
+
+export function timeAgo(iso: string, now = Date.now()) {
+  const d = (now - new Date(iso).getTime()) / 1000;
+  if (d < 60) return "방금";
+  if (d < 3600) return `${Math.floor(d / 60)}분 전`;
+  if (d < 86400) return `${Math.floor(d / 3600)}시간 전`;
+  return `${Math.floor(d / 86400)}일 전`;
+}
+
+/** Compact duration: 0.4초, 12초, 3분 5초, 1시간 2분. */
+export function duration(ms: number) {
+  if (ms < 1000) return `${(ms / 1000).toFixed(1)}초`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}초`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return m < 10 && s % 60 ? `${m}분 ${s % 60}초` : `${m}분`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h}시간 ${m % 60}분` : `${h}시간`;
+  return `${Math.floor(h / 24)}일`;
+}
+
+export const elapsed = (from: string, to: string | null | undefined, now: number) =>
+  duration(Math.max(0, (to ? new Date(to).getTime() : now) - new Date(from).getTime()));
+
+/** Re-renders every `ms` so elapsed times keep moving. */
+export function useNow(ms = 1000) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
+}
+
+/** Runs an async action with a busy flag, sending failures to the toast. */
+export function useBusy(notify: (m: string) => void) {
+  const [busy, setBusy] = useState(false);
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (err: any) {
+      notify(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return [busy, act] as const;
+}
