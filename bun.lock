@@ -49,6 +49,9 @@
         "@me/protocol": "workspace:*",
       },
     },
+    "lib/messenger": {
+      "name": "@me/messenger",
+    },
     "plugins/brgr": {
       "name": "@me/plugin-brgr",
       "dependencies": {
@@ -125,6 +128,8 @@
     "@me/gjc": ["@me/gjc@workspace:lib/gjc"],
 
     "@me/kernel": ["@me/kernel@workspace:kernel"],
+
+    "@me/messenger": ["@me/messenger@workspace:lib/messenger"],
 
     "@me/plugin-brgr": ["@me/plugin-brgr@workspace:plugins/brgr"],
 
