@@ -30,6 +30,8 @@ export interface ConformanceOptions {
   shutdownTimeoutMs?: number;
   /** How long to keep listening after op.end for a forbidden second one. */
   opEndGraceMs?: number;
+  /** Plugin config passed in `initialize` (what the kernel would send from pluginConfig). Default `{}`. */
+  config?: Record<string, unknown>;
 }
 
 const TIMEOUT = Symbol("timeout");
@@ -243,7 +245,7 @@ export async function runConformance(pluginDir: string, opts: ConformanceOptions
     // §3 initialize
     const init = await request(
       "initialize",
-      { protocolVersion: PROTOCOL_VERSION, pluginId: manifest.id, grantedPermissions: manifest.permissions, config: {} },
+      { protocolVersion: PROTOCOL_VERSION, pluginId: manifest.id, grantedPermissions: manifest.permissions, config: opts.config ?? {} },
       initTimeout,
     );
     const initErrs = init.kind === "result" ? validateDef(schema, "InitializeResult", init.value) : [];

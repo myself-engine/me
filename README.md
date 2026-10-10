@@ -26,7 +26,16 @@ bun bin/me.ts adapt mcp <이름> -- <MCP 서버 명령...>
 # 예: bun bin/me.ts adapt mcp notion -- npx -y @notionhq/notion-mcp-server
 ```
 
-범용 MCP 브리지(`bridges/mcp`)로 `mcp-<이름>` 플러그인을 만든다. 먼저 실제로 띄워서 도구 목록을 확인하고, 그다음 `me.local.json`에 등록한다(`extraPlugins`, `pluginConfig`). 다시 시작하면 불러온다. 다른 플러그인은 `tools.list`, `tools.call`, `resources.list`, `resources.read`로 호출한다.
+범용 MCP 브리지(`bridges/mcp`)로 `mcp-<이름>` 플러그인을 만든다. 먼저 매니페스트가 요구하는 권한(`shell`, `network`)을 보여 주고 승인을 받는다. TTY면 y/N으로 묻고, 아니면 `--yes`가 있어야 한다. 그다음 실제로 띄워서 도구 목록을 확인하고 적합성 테스트를 통과하면 `me.local.json`에 등록한다(`extraPlugins`, `pluginConfig`). 실패하면 만든 디렉터리를 지운다. 다시 시작하면 불러온다. 다른 플러그인은 `tools.list`, `tools.call`, `resources.list`, `resources.read`로 호출한다.
+
+## 점검
+
+```sh
+bun bin/me.ts doctor          # 표로 출력, 실패가 있으면 exit 1
+bun bin/me.ts doctor --json   # 기계용 출력
+```
+
+외부 도구 버전(`$ME_HOME/doctor/versions.json`에 기록하고 지난 실행과 비교), 심링크(`node_modules/@me/*`는 저장소 안을 가리켜야 함, `doctor.symlinkRoots`는 깨진 링크만), 플러그인 적합성을 확인한다. 유료 모델을 부르는 플러그인은 `doctor.skipConformance`(기본 `summarize`, `jev`, `gjc-head`)로 건너뛴다. 아무것도 고치지 않는다.
 
 ## 설정
 
