@@ -1,0 +1,46 @@
+// Wires the Discord window: kernel SDK + discord.js adapters around the app. The token is read from
+// pluginConfig.discord.tokenFile and never logged.
+import { mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { Ledger } from "@me/messenger";
+import { definePlugin } from "@me/sdk";
+import { discordJsGateway } from "./adapters/discord-js.ts";
+import { kernelPort } from "./adapters/kernel.ts";
+import { sqliteCards } from "./adapters/sqlite-cards.ts";
+import { createDiscordApp, type DiscordApp } from "./app/service.ts";
+import { parseConfig } from "./domain/config.ts";
+
+let app: DiscordApp | null = null;
+let initialized!: () => void;
+const ready = new Promise<void>((r) => (initialized = r));
+
+const plugin = definePlugin({
+  onInit: () => initialized(),
+  onEvent(name, data) {
+    // Events before start() are picked up by its backlog scan (approval.list, sealed tasks).
+    app?.onKernelEvent(name, data);
+  },
+  onShutdown() {
+    app?.stop();
+  },
+});
+
+void plugin.run();
+await ready;
+
+const config = parseConfig(plugin.config as Record<string, unknown>);
+const expand = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
+const token = readFileSync(expand(config.tokenFile), "utf8").trim();
+if (!token) throw new Error(`discord: token file ${config.tokenFile} is empty`);
+
+const dataDir = process.env.ME_DATA_DIR ?? ".";
+mkdirSync(dataDir, { recursive: true });
+const ledger = new Ledger(join(dataDir, "ledger.sqlite"));
+const gateway = discordJsGateway(token);
+const created = createDiscordApp({ gateway, kernel: kernelPort(plugin, config), ledger, cards: sqliteCards(ledger.db), config });
+
+await gateway.connect();
+await created.start();
+app = created;
+console.error(`[discord] connected as ${gateway.botUserId}`);

@@ -1,0 +1,10 @@
+{
+  "id": "discord",
+  "version": "0.1.0",
+  "protocol": { "min": 1, "max": 1 },
+  "run": { "command": ["bun", "src/main.ts"] },
+  "permissions": ["read-state", "subscribe", "call:gjc-head", "call:brgr", "approve.decide", "network"],
+  "provides": { "methods": [], "kinds": ["conversation"] },
+  "subscribes": ["kernel.approval.*", "brgr.task.*", "gjc-head.message.*"],
+  "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }
+}

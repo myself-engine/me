@@ -1,0 +1,11 @@
+{
+  "name": "@me/plugin-discord",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@me/sdk": "workspace:*",
+    "@me/protocol": "workspace:*",
+    "@me/messenger": "workspace:*",
+    "discord.js": "14.27.0"
+  }
+}
