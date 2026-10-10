@@ -7,6 +7,7 @@
 //   me adapt <recipe> [--set k=v ...] [--yes]       install a marketplace recipe (stage 1)
 //   me adapt agent <name> -- <what to adapt>        delegate writing an adapter through brgr (stage 3)
 //   me adapt export <pluginId> -- <description>     turn an adapted plugin into a recipe
+//   me connect <plugin-dir> --host <ip> [--port N]  run a plugin on this machine for a remote kernel
 //   me tailscale status|on|off [--https-port N]   phone access over the tailnet (never public)
 //   me doctor [--json]                     tool versions, symlinks, plugin conformance
 import { dirname, join } from "node:path";
@@ -108,6 +109,35 @@ switch (cmd) {
       console.error(`✗ adapt failed: ${err.message}`);
       process.exit(1);
     }
+    break;
+  }
+  case "connect": {
+    // On a server: me connect <plugin-dir> --host <kernel tailnet ip> [--port 7421] [--token-file f] [--config f.json]
+    const { runRemote } = await import("../tools/remote/connect.ts");
+    const [pluginDir, ...flags] = rest;
+    const opt = (name: string) => {
+      const i = flags.indexOf(name);
+      return i >= 0 ? flags[i + 1] : undefined;
+    };
+    const host = opt("--host");
+    const port = Number(opt("--port") ?? 7421);
+    if (!pluginDir || !host || !Number.isInteger(port)) {
+      console.error("usage: me connect <plugin-dir> --host <kernel tailnet ip> [--port 7421] [--token-file <file>] [--config <file.json>]");
+      process.exit(1);
+    }
+    const configFile = opt("--config");
+    const config = configFile ? await Bun.file(configFile).json() : undefined;
+    const handle = await runRemote({ pluginDir, host, port, tokenPath: opt("--token-file"), config });
+    const stop = async () => {
+      await handle.stop();
+      process.exit(0);
+    };
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+    await handle.done.catch((err: any) => {
+      console.error(`✗ ${err.message}`);
+      process.exit(1);
+    });
     break;
   }
   case "tailscale": {

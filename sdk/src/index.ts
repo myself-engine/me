@@ -82,7 +82,7 @@ export class Plugin {
     return this.info.config;
   }
 
-  /** Connects in over the kernel's Unix socket (exec mode B); see `connect`. */
+  /** Connects in over the kernel's Unix socket or TCP (exec mode B); see `connect`. */
   connect(opts: Omit<ConnectOptions, "plugin">) {
     return connect({ ...opts, plugin: this });
   }
@@ -309,33 +309,48 @@ export function socketTransport(path: string): LineTransport {
   return socketLineTransport(createConnection(path));
 }
 
-export interface ConnectOptions {
-  /** Defaults to $ME_HOME/kernel.sock (ME_HOME defaults to ~/.me). */
+/** NDJSON over TCP (a kernel listening on a tailnet address). */
+export function tcpTransport(host: string, port: number): LineTransport {
+  const sock = createConnection({ host, port });
+  sock.setNoDelay(true);
+  return socketLineTransport(sock);
+}
+
+export interface DialOptions {
+  /** Defaults to $ME_HOME/kernel.sock (ME_HOME defaults to ~/.me). Ignored when `tcp` is set. */
   socketPath?: string;
+  /** Dial a kernel's TCP listener instead of the Unix socket. */
+  tcp?: { host: string; port: number };
+  /** The connect token itself; otherwise it is read from `tokenPath`. */
+  token?: string;
   /** Defaults to $ME_HOME/connect.token. */
   tokenPath?: string;
   /** Sent in `hello`; the kernel validates it like a plugin.json and caps its permissions. */
   manifest: Manifest;
+}
+
+export interface ConnectOptions extends DialOptions {
   plugin: Plugin | PluginDefinition;
 }
 
 export interface Connection {
-  /** What the kernel actually granted (declared ∩ its connectPermissions). */
+  /** What the kernel actually granted (declared ∩ its connectPermissions or remotePermissions). */
   grantedPermissions: HelloResult["grantedPermissions"];
   /** Resolves when the socket closes; the plugin may then connect again under the same id. */
   done: Promise<void>;
 }
 
 /**
- * Exec mode B: dials the kernel socket, sends `hello` with the manifest and connect token, then runs the
- * plugin over the socket. Rejects with the kernel's RpcError if the hello is refused.
+ * Dials the kernel and performs `hello`. Returns the transport positioned after the handshake; the kernel
+ * sends `initialize` on it next. Rejects with the kernel's RpcError if the hello is refused, or a plain Error
+ * if the kernel closes without answering (e.g. a rate-limited address).
  */
-export async function connect(opts: ConnectOptions): Promise<Connection> {
+export async function dial(opts: DialOptions): Promise<{ transport: LineTransport; grantedPermissions: HelloResult["grantedPermissions"] }> {
   const home = process.env.ME_HOME ?? join(homedir(), ".me");
+  const token = opts.token ?? (await Bun.file(opts.tokenPath ?? join(home, "connect.token")).text()).trim();
   const socketPath = opts.socketPath ?? join(home, "kernel.sock");
-  const token = (await Bun.file(opts.tokenPath ?? join(home, "connect.token")).text()).trim();
-  const plugin = opts.plugin instanceof Plugin ? opts.plugin : definePlugin(opts.plugin);
-  const raw = socketTransport(socketPath);
+  const where = opts.tcp ? `${opts.tcp.host}:${opts.tcp.port}` : socketPath;
+  const raw = opts.tcp ? tcpTransport(opts.tcp.host, opts.tcp.port) : socketTransport(socketPath);
   const { first, rest } = takeFirstLine(raw);
   raw.send(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "hello", params: { manifest: opts.manifest, token } }));
   let reply: any;
@@ -343,12 +358,21 @@ export async function connect(opts: ConnectOptions): Promise<Connection> {
     reply = JSON.parse(await first);
   } catch (err) {
     raw.close();
-    throw new Error(`no hello reply from kernel at ${socketPath}: ${(err as Error).message}`);
+    throw new Error(`no hello reply from kernel at ${where}: ${(err as Error).message}`);
   }
   if (reply.error) {
     raw.close();
     throw new RpcError(reply.error.code, reply.error.message, reply.error.data);
   }
-  const done = plugin.run(rest);
-  return { grantedPermissions: (reply.result as HelloResult).grantedPermissions, done };
+  return { transport: rest, grantedPermissions: (reply.result as HelloResult).grantedPermissions };
+}
+
+/**
+ * Exec mode B: dials the kernel (Unix socket, or TCP with `tcp`), sends `hello` with the manifest and connect
+ * token, then runs the plugin over the connection. Rejects with the kernel's RpcError if the hello is refused.
+ */
+export async function connect(opts: ConnectOptions): Promise<Connection> {
+  const plugin = opts.plugin instanceof Plugin ? opts.plugin : definePlugin(opts.plugin);
+  const { transport, grantedPermissions } = await dial(opts);
+  return { grantedPermissions, done: plugin.run(transport) };
 }

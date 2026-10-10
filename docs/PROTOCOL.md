@@ -23,6 +23,12 @@
   - `token`은 `$ME_HOME/connect.token`의 내용이다. 커널이 처음 시작할 때 없으면 만든다(0600, 32바이트 난수 hex).
   - 응답: `{protocolVersion, grantedPermissions}`. 그다음은 실행 방식 A와 똑같이 `initialize`부터 시작한다.
   - SDK: `connect({socketPath?, tokenPath?, manifest, plugin})` 또는 `plugin.connect({...})`. 기본 전송은 여전히 stdio다.
+- 다른 머신의 플러그인(실행 방식 B, TCP): 서버 여러 대를 Mac 한 곳의 커널에 붙일 때 쓴다. 프레임, `hello`, 토큰은 Unix 소켓과 같다.
+  - 설정: `me.config.json`(또는 `me.local.json`)의 `tcp`. 기본값은 `false`이고, 켜려면 `{"host": "<ip>", "port": 7421}`.
+  - 바인딩 제한: `host`는 IP여야 하고 loopback, Tailscale CGNAT(`100.64.0.0/10`), Tailscale IPv6(`fd7a:115c:a1e0::/48`)만 허용한다. `0.0.0.0`, `::`, LAN 주소, 호스트 이름은 `tcp.allowAnyHost: true`가 없으면 커널이 시작하지 않는다.
+  - TLS는 없다. 암호화는 Tailscale(WireGuard)에 맡긴다. 그래서 tailnet 밖 주소를 막는다.
+  - SDK: `connect({tcp: {host, port}, token? | tokenPath?, manifest, plugin})`. 토큰은 커널 머신의 `connect.token`을 복사해 쓴다.
+  - `me connect`(`tools/remote/connect.ts`의 `runRemote({pluginDir, host, port, tokenPath, config})`): 서버에서 고치지 않은 플러그인(어떤 언어든)을 커널과 똑같이 stdio로 띄우고, 그 매니페스트로 `hello`한 뒤 프레임을 그대로 중계한다. `initialize.config`만 서버 쪽 `config`로 바꾼다. 커널 연결이 끊기면 백오프로 다시 접속하고(플러그인 프로세스는 유지), 플러그인이 죽으면 다시 띄운다. 토큰이 틀리면 재시도하지 않고 멈춘다.
 
 **버린 대안**
 - HTTP/WebSocket: 로컬 프로세스 사이에서 불필요하게 무겁고 포트가 생긴다.
@@ -74,6 +80,8 @@
 ```
 - 거부(JSON-RPC 오류 후 연결 종료): 토큰이 틀림(-32001), 매니페스트가 잘못됨(-32602), 첫 프레임이 `hello`가 아님 또는 같은 id가 이미 실행 중이거나 커널이 띄우는 플러그인의 id임(-32600), 버전 불일치(-32005)
 - 권한 상한: `me.config.json`의 `connectPermissions`. 기본값은 `["read-state", "emit", "subscribe"]`. 실제로 준 권한은 `kernel.plugin` 엔티티의 `permissions`와 저널(`connect: "accepted"`, `declared`, `granted`)에 남는다.
+- TCP로 접속한 플러그인의 상한은 `remotePermissions`다(기본값은 `connectPermissions`). `kernel.plugin` 엔티티에 `remote: {address, port}`가 붙고, `mode`는 그대로 `connected`다. 저널의 `connect` 항목에도 `remote`가 남는다.
+- 속도 제한(TCP만): 한 주소에서 60초 안에 `hello`가 5번 실패하면(거부 또는 `hello` 시간 초과) 그 주소의 새 연결을 60초 동안 응답 없이 끊는다. 저널에 `connect: "rate-limited"`를 남긴다. `hello` 전에 1MiB를 넘게 보내는 연결도 끊는다.
 - 커널은 이 플러그인을 다시 띄우지 않는다. 소켓이 닫히면 `stopped`가 되고, 같은 id로 다시 접속할 수 있다.
 - `kernel.plugin` 엔티티의 `mode`: `spawned`(실행 방식 A), `attached`(같은 프로세스 안의 전송), `connected`(실행 방식 B)
 
@@ -272,7 +280,8 @@ web → subscribe {pattern: "kernel.plugin.*"}, subscribe {pattern: "brgr.task.*
 
 - 대량 `op.update`의 저널 묶음과 압축, 보존 기간
 - 역압(backpressure): 웹이 느릴 때 스트림 처리
-- 실행 방식 B의 신원: 지금은 토큰 하나를 모두가 나눠 쓰고, id는 플러그인이 스스로 밝힌다. 플러그인별 토큰, TCP/Tailscale, TLS는 아직 없다
+- 실행 방식 B의 신원: 지금은 토큰 하나를 모두가 나눠 쓰고, id는 플러그인이 스스로 밝힌다. TCP는 Tailscale 주소에만 열지만, 플러그인별 토큰, Tailscale 신원 확인, TLS는 아직 없다
+- `me connect` 중계: 커널 연결이 끊긴 동안 플러그인이 보낸 프레임은 버린다(플러그인 자신의 타임아웃에 맡긴다)
 - `entity.list`의 `where`를 같음 비교 이상으로 넓힐지
 - 플러그인 설정 값과 비밀 파일 경로 전달 방식 (`initialize.config`의 구조)
 - MCP 어댑터의 매핑: MCP tool을 `invoke` 메서드로, MCP notification을 이벤트로 바꾸는 규칙

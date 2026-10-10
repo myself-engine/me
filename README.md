@@ -47,6 +47,14 @@ bun bin/me.ts adapt agent weather -- "날씨 API를 me에 붙여 줘"   # brgr �
 bun bin/me.ts adapt export cli-git -- "설명"      # 만든 어댑터를 레시피로 반환
 ```
 
+## 다른 서버의 플러그인 붙이기 (Tailscale)
+
+```sh
+# Mac (me.local.json): "tcp": { "host": "<Mac의 tailnet IP>", "port": 7421 }
+# 서버: ~/.me/connect.token을 Mac에서 복사해 온 뒤
+bun bin/me.ts connect plugins/<플러그인> --host <Mac의 tailnet IP> --token-file ~/.me/connect.token
+```
+
 ## 폰에서 쓰기 (Tailscale, 공개 아님)
 
 ```sh

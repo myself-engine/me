@@ -1,7 +1,7 @@
 // The kernel: supervisor, router, permissions, journal, events, entities, ops, approvals.
 // Spec: docs/PROTOCOL.md. The kernel knows no domain concepts — only plugins, frames and kinds.
 import { mkdirSync, appendFileSync, chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { createConnection, createServer, isIPv4, isIPv6, type AddressInfo, type Server, type Socket } from "node:net";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import type { Subprocess } from "bun";
@@ -48,6 +48,8 @@ interface Host {
   stopping: boolean;
   /** Only spawned plugins are respawned; attached and connected ones stop when their transport closes. */
   mode: HostMode;
+  /** Peer address of a plugin connected in over TCP. */
+  remote: RemoteAddress | null;
 }
 
 interface Op {
@@ -90,6 +92,81 @@ export interface ListenOptions {
   helloTimeoutMs?: number;
 }
 
+export interface RemoteAddress {
+  address: string;
+  port: number;
+}
+
+export interface ListenTcpOptions {
+  /** IP literal to bind. Must be loopback or a Tailscale address unless `allowAnyHost` is set. */
+  host: string;
+  /** 0 picks a free port; `listenTcp` returns the bound one. */
+  port: number;
+  /** Allows 0.0.0.0, ::, LAN addresses and host names. */
+  allowAnyHost?: boolean;
+  /** Same token file as the Unix socket. Defaults to <dataDir>/connect.token. */
+  tokenPath?: string;
+  /** Upper bound on a TCP plugin's permissions (config `remotePermissions`, default connectPermissions). */
+  permissions?: Permission[];
+  helloTimeoutMs?: number;
+}
+
+/** After this many failed hellos from one address within the window, its new connections are dropped for BAN_MS. */
+const MAX_HELLO_FAILURES = 5;
+const FAILURE_WINDOW_MS = 60_000;
+const BAN_MS = 60_000;
+/** An unauthenticated TCP peer may not send more than this before its hello line ends. */
+const MAX_HELLO_BYTES = 1 << 20;
+
+/** Strips the IPv4-mapped prefix node reports for dual-stack sockets (::ffff:1.2.3.4). */
+function plainAddress(a: string): string {
+  const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(a);
+  return m ? m[1]! : a;
+}
+
+/** Expands an IPv6 literal to eight 16-bit groups, or null if it is not one. */
+function ipv6Groups(a: string): number[] | null {
+  if (!isIPv6(a)) return null;
+  let s = a.toLowerCase().split("%")[0]!;
+  const v4 = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(s);
+  if (v4) {
+    const [, a1, b1, c1, d1] = v4.map(Number) as number[];
+    s = s.slice(0, v4.index) + `${((a1! << 8) | b1!).toString(16)}:${((c1! << 8) | d1!).toString(16)}`;
+  }
+  const [head, tail] = s.includes("::") ? s.split("::") : [s, null];
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const groups = tail === null ? h : [...h, ...Array(8 - h.length - t.length).fill("0"), ...t];
+  return groups.map((g) => parseInt(g, 16));
+}
+
+/**
+ * Whether the kernel may bind `host` for TCP connect-in: loopback, Tailscale CGNAT (100.64.0.0/10) or
+ * Tailscale IPv6 (fd7a:115c:a1e0::/48). Anything else, including wildcards and host names, needs `allowAnyHost`.
+ */
+export function isAllowedTcpHost(host: string, allowAnyHost = false): boolean {
+  if (allowAnyHost) return true;
+  const h = plainAddress(host);
+  if (isIPv4(h)) {
+    const [a, b] = h.split(".").map(Number) as [number, number];
+    return a === 127 || (a === 100 && b >= 64 && b <= 127);
+  }
+  const g = ipv6Groups(h);
+  if (!g) return false;
+  const loopback = g.slice(0, 7).every((x) => x === 0) && g[7] === 1;
+  return loopback || (g[0] === 0xfd7a && g[1] === 0x115c && g[2] === 0xa1e0);
+}
+
+interface HelloContext {
+  token: string;
+  /** Permission cap for this listener. */
+  allow: Permission[];
+  /** Label used as the manifest's dir. */
+  where: string;
+  /** Set for TCP connections. */
+  remote: RemoteAddress | null;
+}
+
 const KERNEL = "kernel";
 
 /** Reads the connect token, creating it on first start. */
@@ -129,6 +206,9 @@ export class Kernel {
   private log: (msg: string) => void;
   private stopped = false;
   private server: { server: Server; path: string } | null = null;
+  private tcpServer: Server | null = null;
+  /** Failed TCP hellos per remote address, for rate limiting. */
+  private helloFailures = new Map<string, { times: number[]; bannedUntil: number }>();
   /** Open connect-in sockets, resolved when each closes. */
   private sockets = new Map<Socket, Promise<void>>();
 
@@ -153,8 +233,13 @@ export class Kernel {
   }
 
   /** Attaches a plugin over an existing transport (tests, in-process plugins, connect-in sockets). */
-  async attach(manifest: LoadedManifest, transport: LineTransport, mode: "attached" | "connected" = "attached"): Promise<void> {
-    const host = this.register(manifest, mode);
+  async attach(
+    manifest: LoadedManifest,
+    transport: LineTransport,
+    mode: "attached" | "connected" = "attached",
+    remote: RemoteAddress | null = null,
+  ): Promise<void> {
+    const host = this.register(manifest, mode, remote);
     if (!host) return;
     this.connect(host, transport);
     await host.ready;
@@ -180,6 +265,7 @@ export class Kernel {
       this.server.server.close();
       rmSync(this.server.path, { force: true });
     }
+    this.tcpServer?.close();
     // Wait for socket close handlers so they run before the store closes.
     const closing = [...this.sockets.values()];
     for (const sock of this.sockets.keys()) sock.destroy();
@@ -203,7 +289,8 @@ export class Kernel {
     const allow = o.permissions ?? DEFAULT_CONNECT_PERMISSIONS;
     mkdirSync(dirname(o.path), { recursive: true });
     await clearStaleSocket(o.path);
-    const server = createServer((sock) => this.accept(sock, token, allow, o.helloTimeoutMs ?? 10_000));
+    const ctx: HelloContext = { token, allow, where: o.path, remote: null };
+    const server = createServer((sock) => this.accept(sock, ctx, o.helloTimeoutMs ?? 10_000));
     const umask = process.umask(0o177); // no window where the socket is group/world accessible
     try {
       await new Promise<void>((res, rej) => {
@@ -220,29 +307,97 @@ export class Kernel {
     this.server = { server, path: o.path };
   }
 
-  private accept(sock: Socket, token: string, allow: Permission[], helloTimeoutMs: number) {
+  /**
+   * Accepts connect-in plugins over TCP, e.g. from servers on the user's tailnet. Same hello, token and
+   * permission cap as the Unix socket; refuses hosts that are not loopback or Tailscale unless `allowAnyHost`.
+   */
+  async listenTcp(o: ListenTcpOptions): Promise<RemoteAddress> {
+    if (this.tcpServer) throw new Error("already listening on TCP");
+    if (!isAllowedTcpHost(o.host, o.allowAnyHost)) {
+      throw new Error(`refusing to listen on ${o.host}: only loopback and Tailscale addresses (100.64.0.0/10, fd7a:115c:a1e0::/48) are allowed without tcp.allowAnyHost`);
+    }
+    const token = ensureConnectToken(o.tokenPath ?? join(this.opts.dataDir, "connect.token"));
+    const allow = o.permissions ?? DEFAULT_CONNECT_PERMISSIONS;
+    const helloTimeoutMs = o.helloTimeoutMs ?? 10_000;
+    const server = createServer((sock) => {
+      const remote = { address: plainAddress(sock.remoteAddress ?? "unknown"), port: sock.remotePort ?? 0 };
+      if (this.isBanned(remote.address)) return void sock.destroy();
+      this.accept(sock, { token, allow, where: "", remote }, helloTimeoutMs);
+    });
+    await new Promise<void>((res, rej) => {
+      server.once("error", rej);
+      server.listen(o.port, o.host, () => {
+        server.off("error", rej);
+        res();
+      });
+    });
+    this.tcpServer = server;
+    const bound = server.address() as AddressInfo;
+    return { address: bound.address, port: bound.port };
+  }
+
+  private isBanned(address: string) {
+    const f = this.helloFailures.get(address);
+    return !!f && f.bannedUntil > Date.now();
+  }
+
+  private recordHelloFailure(remote: RemoteAddress) {
+    const now = Date.now();
+    const f = this.helloFailures.get(remote.address) ?? { times: [], bannedUntil: 0 };
+    f.times = f.times.filter((t) => now - t < FAILURE_WINDOW_MS);
+    f.times.push(now);
+    if (f.times.length >= MAX_HELLO_FAILURES) {
+      f.times = [];
+      f.bannedUntil = now + BAN_MS;
+      this.journal(KERNEL, "lifecycle", null, null, { connect: "rate-limited", remote, forSec: BAN_MS / 1000 });
+    }
+    this.helloFailures.set(remote.address, f);
+    // Forget quiet addresses so scanners cannot grow the map without bound.
+    for (const [addr, x] of this.helloFailures) {
+      if (x.bannedUntil <= now && x.times.every((t) => now - t >= FAILURE_WINDOW_MS)) this.helloFailures.delete(addr);
+    }
+  }
+
+  private accept(sock: Socket, ctx: HelloContext, helloTimeoutMs: number) {
     if (this.stopped) return void sock.destroy();
     this.sockets.set(sock, new Promise((r) => sock.once("close", () => (this.sockets.delete(sock), r()))));
+    const where = ctx.remote ? `tcp://${ctx.remote.address}:${ctx.remote.port}` : ctx.where;
+    let helloDone = false;
+    if (ctx.remote) {
+      let bytes = 0;
+      const guard = (chunk: string | Buffer) => {
+        bytes += chunk.length;
+        if (!helloDone && bytes > MAX_HELLO_BYTES) sock.destroy();
+        if (helloDone || bytes > MAX_HELLO_BYTES) sock.off("data", guard);
+      };
+      sock.on("data", guard);
+    }
     const raw = socketLineTransport(sock);
     const { first, rest } = takeFirstLine(raw);
-    const timer = setTimeout(() => raw.close(), helloTimeoutMs);
+    const timer = setTimeout(() => {
+      if (ctx.remote) this.recordHelloFailure(ctx.remote);
+      raw.close();
+    }, helloTimeoutMs);
     first.then(
       (line) => {
+        helloDone = true;
         clearTimeout(timer);
-        this.hello(line, raw, rest, token, allow);
+        this.hello(line, raw, rest, { ...ctx, where });
       },
       () => clearTimeout(timer),
     );
   }
 
   /** Validates the first frame of a connect-in socket and, if it is a good `hello`, attaches the plugin. */
-  private hello(line: string, raw: LineTransport, rest: LineTransport, token: string, allow: Permission[]) {
+  private hello(line: string, raw: LineTransport, rest: LineTransport, { token, allow, where, remote }: HelloContext) {
     let frame: any;
     let rid: unknown = null;
     let pluginId: string | null = null;
+    const via = remote ? { remote } : {};
     const reject = (code: number, message: string) => {
       raw.send(JSON.stringify({ jsonrpc: "2.0", id: rid, error: { code, message } }));
-      this.journal(KERNEL, "lifecycle", null, null, { connect: "rejected", pluginId, reason: message });
+      this.journal(KERNEL, "lifecycle", null, null, { connect: "rejected", pluginId, reason: message, ...via });
+      if (remote) this.recordHelloFailure(remote);
       raw.close();
     };
     try {
@@ -257,7 +412,7 @@ export class Kernel {
     if (typeof params.token !== "string" || !sameSecret(params.token, token)) return reject(ErrorCode.PermissionDenied, "bad connect token");
     let manifest: LoadedManifest;
     try {
-      manifest = validateManifest(params.manifest, this.server?.path ?? "socket");
+      manifest = validateManifest(params.manifest, where);
     } catch (err) {
       return reject(-32602, (err as Error).message);
     }
@@ -274,12 +429,12 @@ export class Kernel {
     const declared = manifest.permissions;
     const granted = declared.filter((p) => hasPermission(allow, p));
     manifest = { ...manifest, permissions: granted };
-    this.journal(KERNEL, "lifecycle", null, null, { pluginId, connect: "accepted", declared, granted });
+    this.journal(KERNEL, "lifecycle", null, null, { pluginId, connect: "accepted", declared, granted, ...via });
     raw.send(JSON.stringify({ jsonrpc: "2.0", id: rid, result: { protocolVersion: PROTOCOL_VERSION, grantedPermissions: granted } }));
-    void this.attach(manifest, rest, "connected");
+    void this.attach(manifest, rest, "connected", remote);
   }
 
-  private register(manifest: LoadedManifest, mode: HostMode): Host | null {
+  private register(manifest: LoadedManifest, mode: HostMode, remote: RemoteAddress | null = null): Host | null {
     if (this.hosts.has(manifest.id)) throw new Error(`plugin already registered: ${manifest.id}`);
     let resolveReady!: () => void;
     const ready = new Promise<void>((r) => (resolveReady = r));
@@ -299,6 +454,7 @@ export class Kernel {
       readySettled: false,
       stopping: false,
       mode,
+      remote,
     };
     this.hosts.set(manifest.id, host);
     if (PROTOCOL_VERSION < manifest.protocol.min || PROTOCOL_VERSION > manifest.protocol.max) {
@@ -446,6 +602,7 @@ export class Kernel {
       pid: host.proc?.pid ?? null,
       restarts: host.restarts,
       permissions: m.permissions,
+      ...(host.remote ? { remote: host.remote } : {}),
     };
     const { seq } = this.journal(KERNEL, "lifecycle", null, null, { pluginId: m.id, from: prev, to: state, ...extra });
     this.store.upsert("kernel.plugin", m.id, entity, seq);

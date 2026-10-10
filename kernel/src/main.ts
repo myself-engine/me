@@ -14,6 +14,10 @@ interface Config {
   socket?: string | false;
   /** Upper bound on what a connect-in plugin is granted; default ["read-state", "emit", "subscribe"]. */
   connectPermissions?: Permission[];
+  /** TCP listener for plugins on other machines (tailnet servers); default false. */
+  tcp?: false | { host: string; port: number; allowAnyHost?: boolean };
+  /** Upper bound for TCP-connected plugins; default connectPermissions. */
+  remotePermissions?: Permission[];
 }
 
 const configPath = resolve(process.argv[2] ?? process.env.ME_CONFIG ?? "me.config.json");
@@ -27,6 +31,8 @@ if (await Bun.file(localPath).exists()) {
   if (local.plugins) config.plugins = local.plugins;
   if (local.socket !== undefined) config.socket = local.socket;
   if (local.connectPermissions) config.connectPermissions = local.connectPermissions;
+  if (local.tcp !== undefined) config.tcp = local.tcp;
+  if (local.remotePermissions) config.remotePermissions = local.remotePermissions;
   // Machine-specific plugins (e.g. from `me adapt`) are appended, not substituted.
   config.plugins = [...new Set([...config.plugins, ...(((local as any).extraPlugins as string[]) ?? [])])];
   for (const [id, cfg] of Object.entries(local.pluginConfig ?? {})) {
@@ -44,6 +50,14 @@ if (config.socket !== false) {
   for (const p of config.connectPermissions ?? []) if (!isPermission(p)) throw new Error(`connectPermissions: unknown permission ${p}`);
   await kernel.listen({ path: socketPath, tokenPath: join(dataDir, "connect.token"), permissions: config.connectPermissions });
   console.error(`[kernel] listening on ${socketPath}`);
+}
+
+if (config.tcp) {
+  const remotePermissions = config.remotePermissions ?? config.connectPermissions;
+  for (const p of remotePermissions ?? []) if (!isPermission(p)) throw new Error(`remotePermissions: unknown permission ${p}`);
+  const { host, port, allowAnyHost } = config.tcp;
+  const bound = await kernel.listenTcp({ host, port: port ?? 7421, allowAnyHost, tokenPath: join(dataDir, "connect.token"), permissions: remotePermissions });
+  console.error(`[kernel] listening on tcp ${bound.address}:${bound.port}`);
 }
 
 for (const p of config.plugins) {

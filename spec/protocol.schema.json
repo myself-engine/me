@@ -528,15 +528,24 @@
         "version": { "type": "string" },
         "state": { "enum": ["starting", "running", "stopped", "quarantined"] },
         "mode": {
-          "description": "spawned: exec mode A; attached: in-process transport; connected: exec mode B over the kernel socket.",
+          "description": "spawned: exec mode A; attached: in-process transport; connected: exec mode B over the kernel socket or TCP.",
           "enum": ["spawned", "attached", "connected"]
         },
         "pid": { "type": ["integer", "null"] },
         "restarts": { "type": "integer" },
         "permissions": {
-          "description": "Granted permissions; for connected plugins, capped by connectPermissions.",
+          "description": "Granted permissions; for connected plugins, capped by connectPermissions (remotePermissions over TCP).",
           "type": "array",
           "items": { "$ref": "#/$defs/Permission" }
+        },
+        "remote": {
+          "description": "Peer address of a plugin connected in over TCP; absent otherwise.",
+          "type": "object",
+          "required": ["address", "port"],
+          "properties": {
+            "address": { "type": "string" },
+            "port": { "type": "integer" }
+          }
         }
       }
     }

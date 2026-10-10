@@ -240,7 +240,11 @@
   - `me tailscale status|on|off`는 funnel(공개)을 거부하고, 이미 다른 서비스가 쓰는 포트는 덮어쓰지 않는다. 이 Mac은 443을 다른 서비스(127.0.0.1:7317)가 쓰고 있어서 기본 포트를 8443으로 했다.
   - PWA 매니페스트를 넣어서 폰 홈 화면에 추가할 수 있다.
   - ⬜ 사용자가 할 일: `me.local.json`에 `web.tailscale { "enabled": true, "allowedLogins": ["<tailscale 로그인>"] }`를 넣고 `me tailscale on`을 실행한다.
-- **여러 서버**: 🟡 웹은 Mac 한 곳에만 두고, 서버마다 작은 데몬이 스스로 접속한다.
+- **여러 서버**: ✅ (2026-10-10) 웹은 Mac 한 곳에만 두고, 서버의 플러그인이 스스로 접속한다.
+  - 커널 설정 `tcp: { host, port }`로 TCP 접속을 받는다. 주소는 루프백이나 Tailscale 대역(100.64.0.0/10, fd7a:115c:a1e0::/48)만 허용하고, 0.0.0.0 같은 주소는 `allowAnyHost` 없이 거부한다.
+  - 토큰 hello, 상수 시간 비교, 권한 상한(`remotePermissions`)은 Unix 소켓과 같다. 주소마다 60초에 5번 실패하면 60초간 차단한다.
+  - 서버에서 `me connect <플러그인 폴더> --host <Mac의 tailnet IP> --token-file <복사한 토큰>`를 실행한다. 언어와 상관없이 플러그인을 그대로 서버에서 띄워 커널에 중계하고, 끊기면 다시 접속한다.
+  - 실측: Python 예시 플러그인이 TCP로 붙어 `connected` 상태와 원격 주소로 등록됐다.
 
 ## 13. 설정과 데이터 ✅
 

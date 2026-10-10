@@ -324,10 +324,12 @@ export interface KernelPluginEntity {
   id: PluginId;
   version: string;
   state: "starting" | "running" | "stopped" | "quarantined";
-  /** spawned: exec mode A; attached: in-process transport; connected: exec mode B over the kernel socket. */
+  /** spawned: exec mode A; attached: in-process transport; connected: exec mode B over the kernel socket or TCP. */
   mode: "spawned" | "attached" | "connected";
   pid: number | null;
   restarts: number;
-  /** Granted permissions; for connected plugins, capped by connectPermissions. */
+  /** Granted permissions; for connected plugins, capped by connectPermissions (remotePermissions over TCP). */
   permissions: Permission[];
+  /** Peer address of a plugin connected in over TCP; absent otherwise. */
+  remote?: { address: string; port: number };
 }
