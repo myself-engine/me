@@ -223,4 +223,12 @@ describe("other methods", () => {
     brgr.responses.run = fail("error: workspace has uncommitted changes");
     await expect(service.delegate({ harness: "local.codex", objective: "o", project: "/repo" })).rejects.toThrow("커밋되지 않은 변경");
   });
+
+  test("methods that take a task id reject a missing one before touching the store", async () => {
+    const { brgr, service } = setup();
+    for (const call of [() => service.accept({} as any), () => service.reject({} as any), () => service.cancel({} as any)]) {
+      await expect(call()).rejects.toThrow("taskId is required");
+    }
+    expect(brgr.calls).toEqual([]);
+  });
 });

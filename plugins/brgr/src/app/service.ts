@@ -31,18 +31,24 @@ export function createService(deps: ServiceDeps) {
   const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
   const waiting = new Set<string>();
 
+  function requireId(taskId: unknown): string {
+    if (typeof taskId !== "string" || !taskId) throw new Error("taskId is required");
+    return taskId;
+  }
+
   async function load(taskId: string) {
-    const task = await store.get(taskId);
+    const task = await store.get(requireId(taskId));
     if (!task) throw new Error(`unknown task ${taskId}`);
     return task;
   }
 
-  /** Moves a stored task through the state machine, saves it, and emits `task.<state>`. */
   /** Records an error on a task without changing its state, so the user can fix the cause and retry. */
   async function noteError(taskId: string, error: string) {
     const task = await load(taskId);
     await store.put({ ...task, error, updatedAt: now() });
   }
+
+  /** Moves a stored task through the state machine, saves it, and emits `task.<state>`. */
 
   async function setState(taskId: string, to: TaskState, patch: TaskPatch = {}) {
     const task = transition(await load(taskId), to, patch, now());
@@ -115,7 +121,7 @@ export function createService(deps: ServiceDeps) {
   }
 
   async function diff(p: { taskId: string; stat?: boolean }) {
-    const r = await brgr.diff(p.taskId, p.stat);
+    const r = await brgr.diff(requireId(p?.taskId), p.stat);
     return { diff: r.stdout, error: r.code === 0 ? null : r.stderr.trim() };
   }
 
@@ -189,7 +195,7 @@ export function createService(deps: ServiceDeps) {
     accept,
     reject,
     cancel,
-    result: async (p: { taskId: string }): Promise<Task | null> => store.get(p.taskId),
+    result: async (p: { taskId: string }): Promise<Task | null> => store.get(requireId(p?.taskId)),
   };
 }
 
