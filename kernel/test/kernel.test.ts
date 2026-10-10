@@ -233,3 +233,80 @@ describe("spawned plugins", () => {
     expect(events).toContain("kernel.plugin.quarantined");
   });
 });
+
+describe("op state and traces", () => {
+  test("streaming ops are mirrored as kernel.op with phases, and end as done", async () => {
+    await attach(
+      { id: "worker", provides: { methods: ["work"] } },
+      {
+        methods: {
+          work: async (_p, ctx) => {
+            ctx.phase("judging", "판정 중", 0.3);
+            ctx.phase("answering", "답변 작성 중");
+            return "ok";
+          },
+        },
+      },
+    );
+    const caller = await attach({ id: "caller", permissions: ["call:worker", "read-state", "journal.read"] });
+    await caller.invoke("worker", "work", {}, { stream: true });
+    const ops = await caller.entity.list<any>({ kind: "kernel.op" });
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.data).toMatchObject({ caller: "caller", callee: "worker", method: "work", state: "done", phase: "answering", phaseLabel: "답변 작성 중" });
+    expect(ops[0]!.data.durationMs).toBeGreaterThanOrEqual(0);
+    const plugin = await caller.entity.get<any>("kernel.plugin", "worker");
+    expect(plugin!.data.activeOps).toBe(0);
+  });
+
+  test("approvals appear as waiting ops until decided", async () => {
+    let pending: any = null;
+    const ui = await attach(
+      { id: "ui", permissions: ["approve.decide", "subscribe", "read-state"], subscribes: ["kernel.approval.*"] },
+      { onEvent: (name, data) => void (name === "kernel.approval.pending" && (pending = data)) },
+    );
+    const head = await attach({ id: "head", permissions: ["approve.request"] });
+    const decision = head.approval.request({ summary: "위임할까요", risk: "low" });
+    for (let i = 0; i < 50 && !pending; i++) await Bun.sleep(5);
+    const waiting = await ui.entity.list<any>({ kind: "kernel.op", where: { state: "waiting" } });
+    expect(waiting.map((d) => d.data)).toEqual([expect.objectContaining({ method: "approval", callee: "kernel", phaseLabel: "위임할까요" })]);
+    await ui.approval.decide(pending.approvalId, { decision: "approve" });
+    await decision;
+    expect((await ui.entity.list<any>({ kind: "kernel.op", where: { state: "done" } })).length).toBe(1);
+  });
+
+  test("trace.get nests calls under the call that caused them, with phases and timings", async () => {
+    await attach({ id: "leaf", provides: { methods: ["judge"] } }, { methods: { judge: () => 0.9 } });
+    let head!: Plugin;
+    head = await attach(
+      { id: "head", permissions: ["call:leaf"], provides: { methods: ["send"] } },
+      {
+        methods: {
+          send: async (_p, ctx) => {
+            ctx.phase("judging", "판정 중");
+            await head.invoke("leaf", "judge", {});
+            ctx.phase("answering");
+            return "done";
+          },
+        },
+      },
+    );
+    const ui = await attach({ id: "ui", permissions: ["call:head", "journal.read"] });
+    const traceId = crypto.randomUUID();
+    await ui.withTrace(traceId, () => ui.invoke("head", "send", {}, { stream: true }));
+    const t = await ui.getTrace(traceId);
+    expect(t.nodes).toHaveLength(1);
+    const root = t.nodes[0]!;
+    expect(root).toMatchObject({ caller: "ui", target: "head", method: "send", stream: true, status: "ok" });
+    expect(root.phases.map((p) => p.phase)).toEqual(["judging", "answering"]);
+    expect(root.children.map((c) => [c.target, c.method, c.status])).toEqual([["leaf", "judge", "ok"]]);
+    expect(root.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("a failing call is recorded as the plugin's lastError", async () => {
+    await attach({ id: "bad", provides: { methods: ["boom"] } }, { methods: { boom: () => Promise.reject(new Error("kaboom")) } });
+    const caller = await attach({ id: "caller", permissions: ["call:bad", "read-state"] });
+    await expect(caller.invoke("bad", "boom", {})).rejects.toThrow("kaboom");
+    const p = await caller.entity.get<any>("kernel.plugin", "bad");
+    expect(p!.data.lastError).toMatchObject({ method: "boom", message: expect.stringContaining("kaboom") });
+  });
+});

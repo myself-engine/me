@@ -23,6 +23,7 @@ import {
   type HelloResult,
   type JsonValue,
   type LineTransport,
+  type TraceResult,
   type Manifest,
 } from "@me/protocol";
 
@@ -37,6 +38,8 @@ export interface CallContext {
   opId?: string;
   /** Sends an op.update for streaming calls; no-op otherwise. */
   update(update: unknown): void;
+  /** Reports the standard progress phase (recorded by the kernel on the op); no-op for non-streaming calls. */
+  phase(phase: string, label?: string, progress?: number): void;
   /** Aborted when the caller cancels a streaming call. */
   signal: AbortSignal;
 }
@@ -126,6 +129,14 @@ export class Plugin {
       signal: abort.signal,
       update: (u) => {
         if (p.stream && p.opId) this.peer.notify("op.update", { opId: p.opId, update: u });
+      },
+      phase: (phase, label, progress) => {
+        if (p.stream && p.opId) {
+          this.peer.notify("op.update", {
+            opId: p.opId,
+            update: { kind: "phase", phase, ...(label !== undefined ? { label } : {}), ...(progress !== undefined ? { progress } : {}) },
+          });
+        }
       },
     };
     const run = () => this.als.run({ traceId: p.ctx.traceId, seq: p.ctx.seq }, () => handler(p.params, ctx));
@@ -280,6 +291,11 @@ export class Plugin {
     list: () =>
       this.peer.request<({ approvalId: string; requester: string } & ApprovalRequestParams)[]>("approval.list", {}),
   };
+
+  /** The request's call tree with timings and phases (needs journal.read). */
+  getTrace(traceId: string) {
+    return this.peer.request<TraceResult>("trace.get", { traceId });
+  }
 
   journal(q: JournalQueryParams) {
     return this.peer.request<JournalEntry[]>("journal.query", q);

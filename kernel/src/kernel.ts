@@ -20,7 +20,10 @@ import {
   type InvokeParams,
   type JournalQueryParams,
   type JsonValue,
+  type KernelOpEntity,
   type KernelPluginEntity,
+  type TraceNode,
+  type TraceResult,
   type LineTransport,
   type OpEndParams,
   type OpUpdateParams,
@@ -35,6 +38,7 @@ type HostMode = KernelPluginEntity["mode"];
 
 interface Host {
   manifest: LoadedManifest;
+  lastError?: { at: string; method: string; message: string } | null;
   state: HostState;
   peer: Peer | null;
   proc: Subprocess<"pipe", "pipe", "pipe"> | null;
@@ -59,7 +63,16 @@ interface Op {
   subscribers: Set<string>;
   traceId: string;
   causationId: number;
+  method: string;
+  startedAt: string;
+  state: KernelOpEntity["state"];
+  phase: string | null;
+  phaseLabel: string | null;
+  progress: number | null;
 }
+
+/** Recent ops kept as kernel.op entities after they end. */
+const OP_HISTORY = 500;
 
 interface Approval {
   id: string;
@@ -218,6 +231,13 @@ export class Kernel {
     this.store = new Store(join(opts.dataDir, "me.sqlite"));
     this.log = opts.log ?? ((m) => console.error(`[kernel] ${m}`));
     this.store.registerKind("kernel.plugin", KERNEL, { type: "object", required: ["id", "state"] });
+    this.store.registerKind("kernel.op", KERNEL, { type: "object", required: ["opId", "state", "method"] });
+    // Ops that were live when the last kernel stopped can never finish now.
+    for (const doc of this.store.list("kernel.op", { state: "running" }, 1000).concat(this.store.list("kernel.op", { state: "waiting" }, 1000))) {
+      const op = doc.data as KernelOpEntity;
+      this.store.upsert("kernel.op", op.opId, { ...op, state: "failed", error: "kernel restarted", endedAt: op.updatedAt }, doc.updatedSeq);
+    }
+    this.store.prune("kernel.op", OP_HISTORY);
   }
 
   // -------------------------------------------------------------------------
@@ -603,6 +623,8 @@ export class Kernel {
       restarts: host.restarts,
       permissions: m.permissions,
       ...(host.remote ? { remote: host.remote } : {}),
+      activeOps: [...this.ops.values()].filter((o) => o.callee === m.id).length,
+      lastError: host.lastError ?? null,
     };
     const { seq } = this.journal(KERNEL, "lifecycle", null, null, { pluginId: m.id, from: prev, to: state, ...extra });
     this.store.upsert("kernel.plugin", m.id, entity, seq);
@@ -748,6 +770,11 @@ export class Kernel {
         this.require(host, "journal.read", method);
         return this.store.query(params as JournalQueryParams);
 
+      case "trace.get":
+        this.require(host, "journal.read", method);
+        if (typeof params?.traceId !== "string" || !params.traceId) throw new RpcError(-32602, "traceId is required");
+        return this.trace(params.traceId);
+
       default:
         throw new RpcError(-32601, `unknown kernel method: ${method}`);
     }
@@ -779,7 +806,9 @@ export class Kernel {
 
     if (p.stream) {
       const opId = crypto.randomUUID();
-      this.ops.set(opId, { id: opId, caller, callee: p.target, subscribers: new Set([caller]), traceId, causationId: seq });
+      const op: Op = this.newOp(opId, caller, p.target, p.method, traceId, seq, "running");
+      this.ops.set(opId, op);
+      this.saveOp(op, seq);
       target.peer
         .request("call", { method: p.method, params: p.params, stream: true, opId, ctx }, timeoutMs)
         .catch((err: RpcError) => {
@@ -794,6 +823,7 @@ export class Kernel {
       return { result };
     } catch (err: any) {
       this.journal(p.target, "error", traceId, seq, { method: p.method, code: err.code ?? -32603, message: err.message });
+      this.noteError(p.target, p.method, String(err?.message ?? err));
       throw err instanceof RpcError ? err : new RpcError(-32603, String(err?.message ?? err));
     }
   }
@@ -837,6 +867,13 @@ export class Kernel {
       if (!op || op.callee !== id) return;
       const { seq } = this.journal(id, "op.update", op.traceId, op.causationId, { opId: op.id, update: p.update });
       for (const sub of op.subscribers) this.hosts.get(sub)?.peer?.notify("op.update", { opId: op.id, update: p.update, seq });
+      const u = p.update as any;
+      if (u && u.kind === "phase" && typeof u.phase === "string") {
+        op.phase = u.phase;
+        op.phaseLabel = typeof u.label === "string" ? u.label : null;
+        op.progress = typeof u.progress === "number" ? Math.min(1, Math.max(0, u.progress)) : null;
+        this.saveOp(op, seq);
+      }
       return;
     }
     if (method === "op.end") {
@@ -854,6 +891,9 @@ export class Kernel {
     if (!op) return;
     this.ops.delete(opId);
     const { seq } = this.journal(source, "op.end", op.traceId, op.causationId, { opId, result: p.result, error: p.error });
+    op.state = p.error ? (p.error.code === ErrorCode.Cancelled ? "cancelled" : "failed") : "done";
+    this.saveOp(op, seq, p.error?.message ?? null);
+    if (p.error && op.callee !== KERNEL) this.noteError(op.callee, op.method, p.error.message);
     for (const sub of op.subscribers) {
       this.hosts.get(sub)?.peer?.notify("op.end", { opId, ...(p.error ? { error: p.error } : { result: p.result }), seq });
     }
@@ -875,7 +915,10 @@ export class Kernel {
     const approvalId = crypto.randomUUID();
     const opId = crypto.randomUUID();
     const { seq } = this.journal(id, "approval", traceId, params.causationId ?? null, { approvalId, state: "pending", ...params });
-    this.ops.set(opId, { id: opId, caller: id, callee: KERNEL, subscribers: new Set([id]), traceId, causationId: seq });
+    const op = this.newOp(opId, id, KERNEL, "approval", traceId, seq, "waiting");
+    op.phaseLabel = params.summary;
+    this.ops.set(opId, op);
+    this.saveOp(op, seq);
     const approval: Approval = { id: approvalId, opId, requester: id, params, timer: null };
     if (params.expiresInSec && params.expiresInSec > 0) {
       approval.timer = setTimeout(() => this.resolveApproval(approval, { decision: "reject", note: "expired" }, KERNEL), params.expiresInSec * 1000);
@@ -904,6 +947,159 @@ export class Kernel {
     });
     this.publish(KERNEL, "kernel.approval.decided", { approvalId: approval.id, decidedBy, ...decision }, traceId, seq);
     if (op) this.endOp(op.id, { opId: op.id, result: decision as unknown as JsonValue }, KERNEL);
+  }
+
+  // -------------------------------------------------------------------------
+  // Op state, plugin health, traces
+  // -------------------------------------------------------------------------
+
+  private newOp(id: string, caller: string, callee: string, method: string, traceId: string, causationId: number, state: Op["state"]): Op {
+    return { id, caller, callee, subscribers: new Set([caller]), traceId, causationId, method, startedAt: new Date().toISOString(), state, phase: null, phaseLabel: null, progress: null };
+  }
+
+  /** Mirrors an op into the kernel.op entity and refreshes its plugin's activeOps. */
+  private saveOp(op: Op, seq: number, error: string | null = null) {
+    const now = new Date().toISOString();
+    const ended = op.state === "done" || op.state === "failed" || op.state === "cancelled";
+    const entity: KernelOpEntity = {
+      opId: op.id,
+      traceId: op.traceId,
+      caller: op.caller,
+      callee: op.callee,
+      method: op.method,
+      state: op.state,
+      phase: op.phase,
+      phaseLabel: op.phaseLabel,
+      progress: op.progress,
+      startedAt: op.startedAt,
+      updatedAt: now,
+      endedAt: ended ? now : null,
+      durationMs: ended ? Date.parse(now) - Date.parse(op.startedAt) : null,
+      error,
+    };
+    this.store.upsert("kernel.op", op.id, entity, seq);
+    this.deliver("kernel.entity.changed", { kind: "kernel.op", id: op.id, updatedSeq: seq }, this.ctx(KERNEL, seq, op.traceId, op.causationId));
+    if (ended) this.store.prune("kernel.op", OP_HISTORY);
+    const host = this.hosts.get(op.callee);
+    if (host && (op.state === "running" || ended)) this.refreshPlugin(host, seq);
+  }
+
+  private noteError(pluginId: string, method: string, message: string) {
+    const host = this.hosts.get(pluginId);
+    if (!host) return;
+    host.lastError = { at: new Date().toISOString(), method, message: message.slice(0, 300) };
+    this.refreshPlugin(host, this.journal(KERNEL, "lifecycle", null, null, { pluginId, lastError: host.lastError }).seq);
+  }
+
+  /** Re-publishes a plugin's entity without a state change (health fields only). */
+  private refreshPlugin(host: Host, seq: number) {
+    const m = host.manifest;
+    const prev = this.store.get("kernel.plugin", m.id)?.data as KernelPluginEntity | undefined;
+    if (!prev) return;
+    const entity: KernelPluginEntity = {
+      ...prev,
+      activeOps: [...this.ops.values()].filter((o) => o.callee === m.id).length,
+      lastError: host.lastError ?? null,
+    };
+    this.store.upsert("kernel.plugin", m.id, entity, seq);
+    this.deliver("kernel.entity.changed", { kind: "kernel.plugin", id: m.id, updatedSeq: seq }, this.ctx(KERNEL, seq, null, null));
+  }
+
+  /** Builds the call tree of one request from the journal: calls, streaming ops, phases, approvals. */
+  trace(traceId: string): TraceResult {
+    const entries = this.store.query({ traceId, limit: 1000 });
+    const nodes = new Map<number, TraceNode & { parent: number | null }>();
+    const opNode = new Map<string, TraceNode>();
+    const approvalNode = new Map<string, TraceNode>();
+    for (const e of entries) {
+      const b: any = e.body;
+      if (e.type === "call") {
+        nodes.set(e.seq, {
+          seq: e.seq,
+          type: "call",
+          caller: e.source,
+          target: b.target,
+          method: b.method,
+          stream: !!b.stream,
+          status: "running",
+          startedAt: e.ts,
+          endedAt: null,
+          durationMs: null,
+          phases: [],
+          error: null,
+          children: [],
+          parent: e.causationId,
+        });
+      } else if ((e.type === "result" || e.type === "error") && e.causationId !== null && nodes.has(e.causationId)) {
+        const n = nodes.get(e.causationId)!;
+        n.status = e.type === "result" ? "ok" : "error";
+        n.endedAt = e.ts;
+        n.durationMs = Date.parse(e.ts) - Date.parse(n.startedAt);
+        if (e.type === "error") n.error = String(b.message ?? "");
+      } else if (e.type === "op.update" && b?.update?.kind === "phase") {
+        const n = (e.causationId !== null ? nodes.get(e.causationId) : undefined) ?? approvalNode.get(b.opId);
+        if (n) n.phases.push({ phase: String(b.update.phase), label: b.update.label ?? null, at: e.ts });
+        if (n) opNode.set(b.opId, n);
+      } else if (e.type === "op.end") {
+        const n = opNode.get(b.opId) ?? (e.causationId !== null ? nodes.get(e.causationId) : undefined);
+        if (n) {
+          n.status = b.error ? (b.error.code === ErrorCode.Cancelled ? "cancelled" : "error") : n.type === "approval" ? "ok" : "ok";
+          n.endedAt = e.ts;
+          n.durationMs = Date.parse(e.ts) - Date.parse(n.startedAt);
+          if (b.error) n.error = String(b.error.message ?? "");
+        }
+      } else if (e.type === "approval" && b.state === "pending") {
+        const n: TraceNode & { parent: number | null } = {
+          seq: e.seq,
+          type: "approval",
+          caller: e.source,
+          target: KERNEL,
+          method: "approval",
+          stream: true,
+          status: "waiting",
+          startedAt: e.ts,
+          endedAt: null,
+          durationMs: null,
+          phases: [{ phase: "waiting", label: b.summary ?? null, at: e.ts }],
+          error: null,
+          children: [],
+          parent: e.causationId,
+        };
+        nodes.set(e.seq, n);
+        approvalNode.set(b.approvalId, n);
+      } else if (e.type === "approval" && b.state === "decided") {
+        const n = approvalNode.get(b.approvalId);
+        if (n) {
+          n.status = b.decision === "approve" ? "ok" : "cancelled";
+          n.endedAt = e.ts;
+          n.durationMs = Date.parse(e.ts) - Date.parse(n.startedAt);
+          n.phases.push({ phase: b.decision, label: b.note ?? null, at: e.ts });
+        }
+      }
+    }
+    // Stream calls end through op.end, whose causationId is the call's seq.
+    for (const e of entries) {
+      if (e.type !== "op.end") continue;
+      const n = e.causationId !== null ? nodes.get(e.causationId) : undefined;
+      if (n && n.type === "call" && n.endedAt === null) {
+        const b: any = e.body;
+        n.status = b.error ? (b.error.code === ErrorCode.Cancelled ? "cancelled" : "error") : "ok";
+        n.endedAt = e.ts;
+        n.durationMs = Date.parse(e.ts) - Date.parse(n.startedAt);
+      }
+    }
+    const roots: TraceNode[] = [];
+    for (const n of nodes.values()) {
+      const parent = n.parent !== null ? nodes.get(n.parent) : undefined;
+      if (parent && parent !== n) parent.children.push(n);
+      else roots.push(n);
+    }
+    const strip = (n: TraceNode & { parent?: number | null }): TraceNode => {
+      const { parent: _p, ...rest } = n;
+      return { ...rest, children: n.children.map(strip) };
+    };
+    const ts = entries.map((e) => e.ts);
+    return { traceId, startedAt: ts[0] ?? null, endedAt: ts.at(-1) ?? null, nodes: roots.map(strip) };
   }
 
   /** Pending approvals, for UIs that connect after the pending event was published. */

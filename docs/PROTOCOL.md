@@ -314,3 +314,22 @@ bun spec/conformance/run.ts <plugin-dir> [<plugin-dir>...]
 
 - 테스트에서는 `runConformance(dir)`를 가져다 쓴다(`spec/conformance/run.ts`).
 - 기준 플러그인: `spec/conformance/fixtures/ts-echo`(SDK), `spec/conformance/fixtures/python-echo`(SDK 없이 표준 라이브러리만 쓴 Python). `bun test`가 이 둘과 `plugins/slang`에 적합성 테스트를 돌린다. `python3`가 없으면 Python 테스트는 건너뛴다.
+
+## 15. 작업 상태와 타임라인 (2026-10-11)
+
+**단계 보고 표준**: 스트리밍 호출을 처리하는 플러그인은 `op.update`의 `update`에 `{ kind: "phase", phase, label?, progress? }`를 보낼 수 있다(SDK: `ctx.phase(phase, label, progress)`). 커널은 이것만 해석하고, 나머지 `update`는 그대로 전달한다.
+
+**`kernel.op` 엔티티**: 커널이 모든 스트리밍 op와 승인을 엔티티로 기록한다.
+- 상태: `running`, `waiting`(승인 대기), `done`, `failed`, `cancelled`
+- 현재 단계(phase, label, progress), 시작·갱신·종료 시각, 걸린 시간, 오류
+- 끝난 op는 최근 500개만 남긴다.
+- 커널이 다시 시작되면 살아 있던 op는 `failed`("kernel restarted")로 닫는다.
+
+**플러그인 건강 정보**: `kernel.plugin`에 `activeOps`(지금 처리 중인 op 수)와 `lastError`(마지막 오류의 시각, 메서드, 메시지)가 붙는다.
+
+**`trace.get { traceId }`** (권한 `journal.read`): 저널에서 요청 하나의 호출 트리를 만든다.
+- 각 노드에는 호출자, 대상, 메서드, 상태, 시작·종료 시각, 걸린 시간, 단계 목록, 오류, 자식 노드가 있다.
+- 부모와 자식은 `causationId`로 잇는다.
+- 승인은 `type: "approval"` 노드로 들어간다.
+
+UI는 플러그인이 따로 무언가를 하지 않아도 이것만으로 세밀한 진행 상황을 그릴 수 있다.

@@ -15,73 +15,164 @@
   "$defs": {
     "JsonValue": {
       "anyOf": [
-        { "type": "null" },
-        { "type": "boolean" },
-        { "type": "number" },
-        { "type": "string" },
-        { "type": "array", "items": { "$ref": "#/$defs/JsonValue" } },
-        { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } }
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
       ]
     },
-    "RpcId": { "anyOf": [{ "type": "number" }, { "type": "string" }] },
+    "RpcId": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
     "RpcErrorObject": {
       "description": "JSON-RPC error object (§1, §11).",
       "type": "object",
-      "required": ["code", "message"],
+      "required": [
+        "code",
+        "message"
+      ],
       "properties": {
-        "code": { "type": "integer" },
-        "message": { "type": "string" },
-        "data": { "$ref": "#/$defs/JsonValue" }
+        "code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/JsonValue"
+        }
       }
     },
     "RpcRequest": {
       "type": "object",
-      "required": ["jsonrpc", "id", "method", "params"],
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ],
       "properties": {
-        "jsonrpc": { "const": "2.0" },
-        "id": { "$ref": "#/$defs/RpcId" },
-        "method": { "type": "string" },
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "$ref": "#/$defs/RpcId"
+        },
+        "method": {
+          "type": "string"
+        },
         "params": {}
       }
     },
     "RpcNotification": {
       "type": "object",
-      "required": ["jsonrpc", "method", "params"],
+      "required": [
+        "jsonrpc",
+        "method",
+        "params"
+      ],
       "properties": {
-        "jsonrpc": { "const": "2.0" },
-        "method": { "type": "string" },
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "method": {
+          "type": "string"
+        },
         "params": {}
       },
-      "not": { "required": ["id"] }
+      "not": {
+        "required": [
+          "id"
+        ]
+      }
     },
     "RpcSuccess": {
       "type": "object",
-      "required": ["jsonrpc", "id", "result"],
+      "required": [
+        "jsonrpc",
+        "id",
+        "result"
+      ],
       "properties": {
-        "jsonrpc": { "const": "2.0" },
-        "id": { "$ref": "#/$defs/RpcId" },
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "$ref": "#/$defs/RpcId"
+        },
         "result": {}
       }
     },
     "RpcFailure": {
       "type": "object",
-      "required": ["jsonrpc", "id", "error"],
+      "required": [
+        "jsonrpc",
+        "id",
+        "error"
+      ],
       "properties": {
-        "jsonrpc": { "const": "2.0" },
-        "id": { "anyOf": [{ "$ref": "#/$defs/RpcId" }, { "type": "null" }] },
-        "error": { "$ref": "#/$defs/RpcErrorObject" }
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RpcId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "$ref": "#/$defs/RpcErrorObject"
+        }
       }
     },
     "RpcFrame": {
       "description": "One NDJSON line.",
       "anyOf": [
-        { "$ref": "#/$defs/RpcRequest" },
-        { "$ref": "#/$defs/RpcNotification" },
-        { "$ref": "#/$defs/RpcSuccess" },
-        { "$ref": "#/$defs/RpcFailure" }
+        {
+          "$ref": "#/$defs/RpcRequest"
+        },
+        {
+          "$ref": "#/$defs/RpcNotification"
+        },
+        {
+          "$ref": "#/$defs/RpcSuccess"
+        },
+        {
+          "$ref": "#/$defs/RpcFailure"
+        }
       ]
     },
-
     "PluginId": {
       "description": "Plugin ids are lowercase kebab-case; they are also the event/kind namespace.",
       "type": "string",
@@ -90,145 +181,334 @@
     "Permission": {
       "x-tsType": "\"read-state\" | `write-state:${string}` | \"emit\" | \"subscribe\" | `call:${PluginId}` | \"call:*\" | \"approve.request\" | \"approve.decide\" | \"journal.read\" | \"shell\" | \"network\"",
       "anyOf": [
-        { "enum": ["read-state", "emit", "subscribe", "call:*", "approve.request", "approve.decide", "journal.read", "shell", "network"] },
-        { "type": "string", "pattern": "^write-state:[a-z0-9.-]+$" },
-        { "type": "string", "pattern": "^call:[a-z][a-z0-9-]*$" }
+        {
+          "enum": [
+            "read-state",
+            "emit",
+            "subscribe",
+            "call:*",
+            "approve.request",
+            "approve.decide",
+            "journal.read",
+            "shell",
+            "network"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^write-state:[a-z0-9.-]+$"
+        },
+        {
+          "type": "string",
+          "pattern": "^call:[a-z][a-z0-9-]*$"
+        }
       ]
     },
     "Manifest": {
       "description": "plugin.json (§2). Read by the kernel before the plugin process starts.",
       "type": "object",
-      "required": ["id", "version", "protocol", "run", "permissions"],
+      "required": [
+        "id",
+        "version",
+        "protocol",
+        "run",
+        "permissions"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/PluginId" },
-        "version": { "type": "string" },
+        "id": {
+          "$ref": "#/$defs/PluginId"
+        },
+        "version": {
+          "type": "string"
+        },
         "protocol": {
           "type": "object",
-          "required": ["min", "max"],
-          "properties": { "min": { "type": "integer" }, "max": { "type": "integer" } }
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "type": "integer"
+            },
+            "max": {
+              "type": "integer"
+            }
+          }
         },
         "run": {
           "type": "object",
-          "required": ["command"],
+          "required": [
+            "command"
+          ],
           "properties": {
-            "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-            "cwd": { "type": "string" },
-            "env": { "type": "object", "additionalProperties": { "type": "string" } }
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "env": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
           }
         },
-        "permissions": { "type": "array", "items": { "$ref": "#/$defs/Permission" } },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Permission"
+          }
+        },
         "provides": {
           "type": "object",
           "properties": {
-            "methods": { "type": "array", "items": { "type": "string" } },
-            "events": { "type": "array", "items": { "type": "string" } },
+            "methods": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "kinds": {
               "description": "Entity kinds this plugin owns, without the namespace prefix.",
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "type": "string"
+              }
             }
           }
         },
         "allowWriters": {
           "description": "Other plugins allowed to write a kind this plugin owns: { kind: [pluginId] }.",
           "type": "object",
-          "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/PluginId" } }
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/PluginId"
+            }
+          }
         },
         "subscribes": {
           "description": "Event name patterns, `*` matches one or more trailing segments.",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "restart": {
           "type": "object",
-          "required": ["policy", "maxRestarts", "windowSec"],
+          "required": [
+            "policy",
+            "maxRestarts",
+            "windowSec"
+          ],
           "properties": {
-            "policy": { "enum": ["never", "on-failure", "always"] },
-            "maxRestarts": { "type": "integer" },
-            "windowSec": { "type": "integer" }
+            "policy": {
+              "enum": [
+                "never",
+                "on-failure",
+                "always"
+              ]
+            },
+            "maxRestarts": {
+              "type": "integer"
+            },
+            "windowSec": {
+              "type": "integer"
+            }
           }
         }
       }
     },
-
     "FrameContext": {
       "description": "Context attached by the kernel to everything it forwards (§4, §6, §10).",
       "type": "object",
-      "required": ["seq", "traceId", "causationId", "source", "ts"],
+      "required": [
+        "seq",
+        "traceId",
+        "causationId",
+        "source",
+        "ts"
+      ],
       "properties": {
-        "seq": { "description": "Global journal sequence number of this frame.", "type": "integer" },
-        "traceId": { "description": "Groups everything started by one user turn.", "type": "string" },
+        "seq": {
+          "description": "Global journal sequence number of this frame.",
+          "type": "integer"
+        },
+        "traceId": {
+          "description": "Groups everything started by one user turn.",
+          "type": "string"
+        },
         "causationId": {
           "description": "seq of the journal entry that directly caused this one, if any.",
-          "type": ["integer", "null"]
+          "type": [
+            "integer",
+            "null"
+          ]
         },
-        "source": { "anyOf": [{ "$ref": "#/$defs/PluginId" }, { "const": "kernel" }] },
-        "ts": { "description": "ISO 8601", "type": "string" }
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PluginId"
+            },
+            {
+              "const": "kernel"
+            }
+          ]
+        },
+        "ts": {
+          "description": "ISO 8601",
+          "type": "string"
+        }
       }
     },
-
     "HelloParams": {
       "description": "Plugin → kernel request `hello`: the first frame on a connect-in socket (exec mode B, §1, §3).",
       "type": "object",
-      "required": ["manifest", "token"],
+      "required": [
+        "manifest",
+        "token"
+      ],
       "properties": {
-        "manifest": { "$ref": "#/$defs/Manifest" },
-        "token": { "description": "Contents of $ME_HOME/connect.token.", "type": "string" }
+        "manifest": {
+          "$ref": "#/$defs/Manifest"
+        },
+        "token": {
+          "description": "Contents of $ME_HOME/connect.token.",
+          "type": "string"
+        }
       }
     },
     "HelloResult": {
       "type": "object",
-      "required": ["protocolVersion", "grantedPermissions"],
+      "required": [
+        "protocolVersion",
+        "grantedPermissions"
+      ],
       "properties": {
-        "protocolVersion": { "type": "integer" },
+        "protocolVersion": {
+          "type": "integer"
+        },
         "grantedPermissions": {
           "description": "Declared permissions intersected with the kernel's connectPermissions.",
           "type": "array",
-          "items": { "$ref": "#/$defs/Permission" }
+          "items": {
+            "$ref": "#/$defs/Permission"
+          }
         }
       }
     },
     "InitializeParams": {
       "description": "Kernel → plugin request `initialize` (§3).",
       "type": "object",
-      "required": ["protocolVersion", "pluginId", "grantedPermissions", "config"],
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "grantedPermissions",
+        "config"
+      ],
       "properties": {
-        "protocolVersion": { "type": "integer" },
-        "pluginId": { "$ref": "#/$defs/PluginId" },
-        "grantedPermissions": { "type": "array", "items": { "$ref": "#/$defs/Permission" } },
-        "config": { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } }
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "pluginId": {
+          "$ref": "#/$defs/PluginId"
+        },
+        "grantedPermissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Permission"
+          }
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
       }
     },
     "InitializeResult": {
       "type": "object",
-      "required": ["protocolVersion", "ready"],
+      "required": [
+        "protocolVersion",
+        "ready"
+      ],
       "properties": {
-        "protocolVersion": { "type": "integer" },
-        "ready": { "const": true }
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "ready": {
+          "const": true
+        }
       }
     },
     "ShutdownParams": {
       "description": "Kernel → plugin request `shutdown`. The plugin answers, then exits within 5s.",
       "type": "object",
-      "required": ["reason"],
-      "properties": { "reason": { "enum": ["user", "restart", "kernel-exit", "quarantine"] } }
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "user",
+            "restart",
+            "kernel-exit",
+            "quarantine"
+          ]
+        }
+      }
     },
     "CallParams": {
       "description": "Kernel → plugin request `call`: a call routed to the plugin that provides `method`.",
       "type": "object",
-      "required": ["method", "params", "stream", "ctx"],
+      "required": [
+        "method",
+        "params",
+        "stream",
+        "ctx"
+      ],
       "properties": {
-        "method": { "type": "string" },
+        "method": {
+          "type": "string"
+        },
         "params": {},
-        "stream": { "type": "boolean" },
+        "stream": {
+          "type": "boolean"
+        },
         "opId": {
           "description": "Present when stream is true; the callee reports progress against it.",
           "type": "string"
         },
         "ctx": {
           "allOf": [
-            { "$ref": "#/$defs/FrameContext" },
-            { "type": "object", "required": ["caller"], "properties": { "caller": { "$ref": "#/$defs/PluginId" } } }
+            {
+              "$ref": "#/$defs/FrameContext"
+            },
+            {
+              "type": "object",
+              "required": [
+                "caller"
+              ],
+              "properties": {
+                "caller": {
+                  "$ref": "#/$defs/PluginId"
+                }
+              }
+            }
           ]
         }
       }
@@ -236,38 +516,212 @@
     "EventParams": {
       "description": "Kernel → plugin notification `event` (§6).",
       "type": "object",
-      "required": ["name", "data", "ctx"],
+      "required": [
+        "name",
+        "data",
+        "ctx"
+      ],
       "properties": {
-        "name": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
         "data": {},
-        "ctx": { "$ref": "#/$defs/FrameContext" }
+        "ctx": {
+          "$ref": "#/$defs/FrameContext"
+        }
       }
     },
     "KernelToPlugin": {
       "description": "Frames the kernel sends to a plugin, keyed by method.",
       "type": "object",
-      "required": ["initialize", "shutdown", "call", "event", "op.update", "op.end", "op.cancel"],
+      "required": [
+        "initialize",
+        "shutdown",
+        "call",
+        "event",
+        "op.update",
+        "op.end",
+        "op.cancel"
+      ],
       "properties": {
-        "initialize": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "initialize" }, "params": { "$ref": "#/$defs/InitializeParams" } } }] },
-        "shutdown": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "shutdown" }, "params": { "$ref": "#/$defs/ShutdownParams" } } }] },
-        "call": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "call" }, "params": { "$ref": "#/$defs/CallParams" } } }] },
-        "event": { "allOf": [{ "$ref": "#/$defs/RpcNotification" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "event" }, "params": { "$ref": "#/$defs/EventParams" } } }] },
-        "op.update": { "allOf": [{ "$ref": "#/$defs/RpcNotification" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "op.update" }, "params": { "$ref": "#/$defs/OpUpdateParams" } } }] },
-        "op.end": { "allOf": [{ "$ref": "#/$defs/RpcNotification" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "op.end" }, "params": { "$ref": "#/$defs/OpEndParams" } } }] },
-        "op.cancel": { "allOf": [{ "$ref": "#/$defs/RpcNotification" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "op.cancel" }, "params": { "$ref": "#/$defs/OpRefParams" } } }] }
+        "initialize": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "initialize"
+                },
+                "params": {
+                  "$ref": "#/$defs/InitializeParams"
+                }
+              }
+            }
+          ]
+        },
+        "shutdown": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "shutdown"
+                },
+                "params": {
+                  "$ref": "#/$defs/ShutdownParams"
+                }
+              }
+            }
+          ]
+        },
+        "call": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "call"
+                },
+                "params": {
+                  "$ref": "#/$defs/CallParams"
+                }
+              }
+            }
+          ]
+        },
+        "event": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcNotification"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "event"
+                },
+                "params": {
+                  "$ref": "#/$defs/EventParams"
+                }
+              }
+            }
+          ]
+        },
+        "op.update": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcNotification"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "op.update"
+                },
+                "params": {
+                  "$ref": "#/$defs/OpUpdateParams"
+                }
+              }
+            }
+          ]
+        },
+        "op.end": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcNotification"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "op.end"
+                },
+                "params": {
+                  "$ref": "#/$defs/OpEndParams"
+                }
+              }
+            }
+          ]
+        },
+        "op.cancel": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcNotification"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "op.cancel"
+                },
+                "params": {
+                  "$ref": "#/$defs/OpRefParams"
+                }
+              }
+            }
+          ]
+        }
       }
     },
-
     "InvokeParams": {
       "description": "Plugin → kernel request `invoke` (§4, §5).",
       "type": "object",
-      "required": ["target", "method", "params"],
+      "required": [
+        "target",
+        "method",
+        "params"
+      ],
       "properties": {
-        "target": { "$ref": "#/$defs/PluginId" },
-        "method": { "type": "string" },
+        "target": {
+          "$ref": "#/$defs/PluginId"
+        },
+        "method": {
+          "type": "string"
+        },
         "params": {},
-        "stream": { "type": "boolean" },
-        "timeoutMs": { "type": "integer" },
+        "stream": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "integer"
+        },
         "traceId": {
           "description": "Omit to start a new trace (only plugins that receive user input should).",
           "type": "string"
@@ -280,177 +734,770 @@
     },
     "InvokeResult": {
       "oneOf": [
-        { "type": "object", "required": ["result"], "properties": { "result": {} } },
-        { "type": "object", "required": ["opId"], "properties": { "opId": { "type": "string" } } }
+        {
+          "type": "object",
+          "required": [
+            "result"
+          ],
+          "properties": {
+            "result": {}
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "opId"
+          ],
+          "properties": {
+            "opId": {
+              "type": "string"
+            }
+          }
+        }
       ]
     },
     "OpUpdateParams": {
       "type": "object",
-      "required": ["opId", "update"],
-      "properties": { "opId": { "type": "string" }, "update": {} }
+      "required": [
+        "opId",
+        "update"
+      ],
+      "properties": {
+        "opId": {
+          "type": "string"
+        },
+        "update": {}
+      }
     },
     "OpEndParams": {
       "description": "Ends a streaming op. Exactly one op.end is sent per opId.",
       "type": "object",
-      "required": ["opId"],
+      "required": [
+        "opId"
+      ],
       "properties": {
-        "opId": { "type": "string" },
+        "opId": {
+          "type": "string"
+        },
         "result": {},
-        "error": { "$ref": "#/$defs/RpcErrorObject" }
+        "error": {
+          "$ref": "#/$defs/RpcErrorObject"
+        }
       }
     },
     "OpRefParams": {
       "description": "Params of op.cancel and op.subscribe.",
       "type": "object",
-      "required": ["opId"],
-      "properties": { "opId": { "type": "string" } }
+      "required": [
+        "opId"
+      ],
+      "properties": {
+        "opId": {
+          "type": "string"
+        }
+      }
     },
     "EmitParams": {
       "description": "Plugin → kernel request `emit` (§6).",
       "type": "object",
-      "required": ["name", "data"],
+      "required": [
+        "name",
+        "data"
+      ],
       "properties": {
-        "name": { "description": "Must start with `<own plugin id>.`.", "type": "string" },
+        "name": {
+          "description": "Must start with `<own plugin id>.`.",
+          "type": "string"
+        },
         "data": {},
-        "traceId": { "type": "string" },
-        "causationId": { "type": "integer" }
+        "traceId": {
+          "type": "string"
+        },
+        "causationId": {
+          "type": "integer"
+        }
       }
     },
     "SubscribeParams": {
       "type": "object",
-      "required": ["pattern"],
-      "properties": { "pattern": { "description": "Same pattern syntax as Manifest.subscribes.", "type": "string" } }
+      "required": [
+        "pattern"
+      ],
+      "properties": {
+        "pattern": {
+          "description": "Same pattern syntax as Manifest.subscribes.",
+          "type": "string"
+        }
+      }
     },
     "EntityRegisterKindParams": {
       "type": "object",
-      "required": ["kind", "schema"],
-      "properties": { "kind": { "type": "string" }, "schema": { "$ref": "#/$defs/JsonValue" } }
+      "required": [
+        "kind",
+        "schema"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "schema": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      }
     },
     "EntityUpsertParams": {
       "type": "object",
-      "required": ["kind", "id", "data"],
-      "properties": { "kind": { "type": "string" }, "id": { "type": "string" }, "data": { "$ref": "#/$defs/JsonValue" } }
+      "required": [
+        "kind",
+        "id",
+        "data"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      }
     },
     "EntityGetParams": {
       "type": "object",
-      "required": ["kind", "id"],
-      "properties": { "kind": { "type": "string" }, "id": { "type": "string" } }
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      }
     },
     "EntityDoc": {
       "description": "§7",
       "type": "object",
-      "required": ["kind", "id", "data", "updatedSeq"],
+      "required": [
+        "kind",
+        "id",
+        "data",
+        "updatedSeq"
+      ],
       "properties": {
-        "kind": { "description": "namespaced, e.g. \"brgr.task\"", "type": "string" },
-        "id": { "type": "string" },
+        "kind": {
+          "description": "namespaced, e.g. \"brgr.task\"",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
         "data": {},
-        "updatedSeq": { "type": "integer" }
+        "updatedSeq": {
+          "type": "integer"
+        }
       }
     },
     "EntityListParams": {
       "type": "object",
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "properties": {
-        "kind": { "type": "string" },
+        "kind": {
+          "type": "string"
+        },
         "where": {
           "description": "Top-level field equality only.",
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
         },
-        "limit": { "type": "integer" },
-        "after": { "type": "string" }
+        "limit": {
+          "type": "integer"
+        },
+        "after": {
+          "type": "string"
+        }
       }
     },
-    "Risk": { "description": "§9", "enum": ["low", "medium", "high"] },
+    "Risk": {
+      "description": "§9",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
     "ApprovalRequestParams": {
       "type": "object",
-      "required": ["summary", "risk"],
+      "required": [
+        "summary",
+        "risk"
+      ],
       "properties": {
-        "summary": { "type": "string" },
-        "risk": { "$ref": "#/$defs/Risk" },
-        "payload": { "$ref": "#/$defs/JsonValue" },
-        "expiresInSec": { "type": "integer" }
+        "summary": {
+          "type": "string"
+        },
+        "risk": {
+          "$ref": "#/$defs/Risk"
+        },
+        "payload": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "expiresInSec": {
+          "type": "integer"
+        }
       }
     },
     "ApprovalDecision": {
       "type": "object",
-      "required": ["decision"],
+      "required": [
+        "decision"
+      ],
       "properties": {
-        "decision": { "enum": ["approve", "reject"] },
-        "note": { "type": "string" },
+        "decision": {
+          "enum": [
+            "approve",
+            "reject"
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
         "amend": {
           "description": "Changes the decider made to the request's payload (e.g. a different harness). Only meaningful on approve.",
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
         }
       }
     },
     "ApprovalDecideParams": {
       "allOf": [
-        { "$ref": "#/$defs/ApprovalDecision" },
-        { "type": "object", "required": ["approvalId"], "properties": { "approvalId": { "type": "string" } } }
+        {
+          "$ref": "#/$defs/ApprovalDecision"
+        },
+        {
+          "type": "object",
+          "required": [
+            "approvalId"
+          ],
+          "properties": {
+            "approvalId": {
+              "type": "string"
+            }
+          }
+        }
       ]
     },
-    "ApprovalListParams": { "type": "object", "additionalProperties": false },
+    "ApprovalListParams": {
+      "type": "object",
+      "additionalProperties": false
+    },
     "JournalQueryParams": {
       "description": "§10",
       "type": "object",
-      "required": ["limit"],
+      "required": [
+        "limit"
+      ],
       "properties": {
-        "traceId": { "type": "string" },
-        "sinceSeq": { "type": "integer" },
-        "source": { "anyOf": [{ "$ref": "#/$defs/PluginId" }, { "const": "kernel" }] },
-        "limit": { "type": "integer" }
+        "traceId": {
+          "type": "string"
+        },
+        "sinceSeq": {
+          "type": "integer"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PluginId"
+            },
+            {
+              "const": "kernel"
+            }
+          ]
+        },
+        "limit": {
+          "type": "integer"
+        }
       }
     },
     "JournalEntry": {
       "type": "object",
-      "required": ["seq", "ts", "source", "traceId", "causationId", "type", "body"],
+      "required": [
+        "seq",
+        "ts",
+        "source",
+        "traceId",
+        "causationId",
+        "type",
+        "body"
+      ],
       "properties": {
-        "seq": { "type": "integer" },
-        "ts": { "type": "string" },
-        "source": { "anyOf": [{ "$ref": "#/$defs/PluginId" }, { "const": "kernel" }] },
-        "traceId": { "type": ["string", "null"] },
-        "causationId": { "type": ["integer", "null"] },
-        "type": {
-          "enum": ["call", "result", "error", "event", "op.update", "op.end", "approval", "permission.denied", "lifecycle"]
+        "seq": {
+          "type": "integer"
         },
-        "body": { "$ref": "#/$defs/JsonValue" }
+        "ts": {
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PluginId"
+            },
+            {
+              "const": "kernel"
+            }
+          ]
+        },
+        "traceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "causationId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "type": {
+          "enum": [
+            "call",
+            "result",
+            "error",
+            "event",
+            "op.update",
+            "op.end",
+            "approval",
+            "permission.denied",
+            "lifecycle"
+          ]
+        },
+        "body": {
+          "$ref": "#/$defs/JsonValue"
+        }
       }
     },
     "PluginToKernel": {
       "description": "Frames a plugin sends to the kernel, keyed by method. Kernel methods are called directly; plugin methods go through `invoke`.",
       "type": "object",
-      "required": ["hello", "invoke", "op.update", "op.end", "op.subscribe", "op.cancel", "emit", "subscribe", "entity.registerKind", "entity.upsert", "entity.get", "entity.list", "approval.request", "approval.decide", "approval.list", "journal.query"],
+      "required": [
+        "hello",
+        "invoke",
+        "op.update",
+        "op.end",
+        "op.subscribe",
+        "op.cancel",
+        "emit",
+        "subscribe",
+        "entity.registerKind",
+        "entity.upsert",
+        "entity.get",
+        "entity.list",
+        "approval.request",
+        "approval.decide",
+        "approval.list",
+        "journal.query",
+        "trace.get"
+      ],
       "properties": {
         "hello": {
           "description": "Connect-in plugins only: the first frame on the socket, before `initialize`.",
-          "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "hello" }, "params": { "$ref": "#/$defs/HelloParams" } } }]
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "hello"
+                },
+                "params": {
+                  "$ref": "#/$defs/HelloParams"
+                }
+              }
+            }
+          ]
         },
-        "invoke": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "invoke" }, "params": { "$ref": "#/$defs/InvokeParams" } } }] },
-        "op.update": { "allOf": [{ "$ref": "#/$defs/RpcNotification" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "op.update" }, "params": { "$ref": "#/$defs/OpUpdateParams" } } }] },
-        "op.end": { "allOf": [{ "$ref": "#/$defs/RpcNotification" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "op.end" }, "params": { "$ref": "#/$defs/OpEndParams" } } }] },
-        "op.subscribe": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "op.subscribe" }, "params": { "$ref": "#/$defs/OpRefParams" } } }] },
-        "op.cancel": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "op.cancel" }, "params": { "$ref": "#/$defs/OpRefParams" } } }] },
-        "emit": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "emit" }, "params": { "$ref": "#/$defs/EmitParams" } } }] },
-        "subscribe": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "subscribe" }, "params": { "$ref": "#/$defs/SubscribeParams" } } }] },
-        "entity.registerKind": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "entity.registerKind" }, "params": { "$ref": "#/$defs/EntityRegisterKindParams" } } }] },
-        "entity.upsert": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "entity.upsert" }, "params": { "$ref": "#/$defs/EntityUpsertParams" } } }] },
-        "entity.get": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "entity.get" }, "params": { "$ref": "#/$defs/EntityGetParams" } } }] },
-        "entity.list": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "entity.list" }, "params": { "$ref": "#/$defs/EntityListParams" } } }] },
+        "invoke": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "invoke"
+                },
+                "params": {
+                  "$ref": "#/$defs/InvokeParams"
+                }
+              }
+            }
+          ]
+        },
+        "op.update": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcNotification"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "op.update"
+                },
+                "params": {
+                  "$ref": "#/$defs/OpUpdateParams"
+                }
+              }
+            }
+          ]
+        },
+        "op.end": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcNotification"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "op.end"
+                },
+                "params": {
+                  "$ref": "#/$defs/OpEndParams"
+                }
+              }
+            }
+          ]
+        },
+        "op.subscribe": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "op.subscribe"
+                },
+                "params": {
+                  "$ref": "#/$defs/OpRefParams"
+                }
+              }
+            }
+          ]
+        },
+        "op.cancel": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "op.cancel"
+                },
+                "params": {
+                  "$ref": "#/$defs/OpRefParams"
+                }
+              }
+            }
+          ]
+        },
+        "emit": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "emit"
+                },
+                "params": {
+                  "$ref": "#/$defs/EmitParams"
+                }
+              }
+            }
+          ]
+        },
+        "subscribe": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "subscribe"
+                },
+                "params": {
+                  "$ref": "#/$defs/SubscribeParams"
+                }
+              }
+            }
+          ]
+        },
+        "entity.registerKind": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "entity.registerKind"
+                },
+                "params": {
+                  "$ref": "#/$defs/EntityRegisterKindParams"
+                }
+              }
+            }
+          ]
+        },
+        "entity.upsert": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "entity.upsert"
+                },
+                "params": {
+                  "$ref": "#/$defs/EntityUpsertParams"
+                }
+              }
+            }
+          ]
+        },
+        "entity.get": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "entity.get"
+                },
+                "params": {
+                  "$ref": "#/$defs/EntityGetParams"
+                }
+              }
+            }
+          ]
+        },
+        "entity.list": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "entity.list"
+                },
+                "params": {
+                  "$ref": "#/$defs/EntityListParams"
+                }
+              }
+            }
+          ]
+        },
         "approval.request": {
           "description": "Long-running: returns { opId }, resolves via op.end with ApprovalDecision.",
-          "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "approval.request" }, "params": { "$ref": "#/$defs/ApprovalRequestParams" } } }]
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "approval.request"
+                },
+                "params": {
+                  "$ref": "#/$defs/ApprovalRequestParams"
+                }
+              }
+            }
+          ]
         },
-        "approval.decide": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "approval.decide" }, "params": { "$ref": "#/$defs/ApprovalDecideParams" } } }] },
+        "approval.decide": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "approval.decide"
+                },
+                "params": {
+                  "$ref": "#/$defs/ApprovalDecideParams"
+                }
+              }
+            }
+          ]
+        },
         "approval.list": {
           "description": "Pending approvals, for UIs that start after the pending event. Needs approve.decide.",
-          "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "approval.list" }, "params": { "$ref": "#/$defs/ApprovalListParams" } } }]
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "approval.list"
+                },
+                "params": {
+                  "$ref": "#/$defs/ApprovalListParams"
+                }
+              }
+            }
+          ]
         },
-        "journal.query": { "allOf": [{ "$ref": "#/$defs/RpcRequest" }, { "type": "object", "required": ["method", "params"], "properties": { "method": { "const": "journal.query" }, "params": { "$ref": "#/$defs/JournalQueryParams" } } }] }
+        "journal.query": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "journal.query"
+                },
+                "params": {
+                  "$ref": "#/$defs/JournalQueryParams"
+                }
+              }
+            }
+          ]
+        },
+        "trace.get": {
+          "description": "The request's call tree with timings and phases, built from the journal. Needs journal.read.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/RpcRequest"
+            },
+            {
+              "type": "object",
+              "required": [
+                "method",
+                "params"
+              ],
+              "properties": {
+                "method": {
+                  "const": "trace.get"
+                },
+                "params": {
+                  "type": "object",
+                  "required": [
+                    "traceId"
+                  ],
+                  "properties": {
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
       }
     },
-
     "KernelEvents": {
       "description": "Kernel-published events (§6), keyed by event name.",
       "type": "object",
@@ -466,85 +1513,484 @@
       "properties": {
         "kernel.plugin.started": {
           "type": "object",
-          "required": ["pluginId", "pid"],
-          "properties": { "pluginId": { "$ref": "#/$defs/PluginId" }, "pid": { "type": "integer" } }
+          "required": [
+            "pluginId",
+            "pid"
+          ],
+          "properties": {
+            "pluginId": {
+              "$ref": "#/$defs/PluginId"
+            },
+            "pid": {
+              "type": "integer"
+            }
+          }
         },
         "kernel.plugin.stopped": {
           "type": "object",
-          "required": ["pluginId", "exitCode", "signal"],
+          "required": [
+            "pluginId",
+            "exitCode",
+            "signal"
+          ],
           "properties": {
-            "pluginId": { "$ref": "#/$defs/PluginId" },
-            "exitCode": { "type": ["integer", "null"] },
-            "signal": { "type": ["string", "null"] }
+            "pluginId": {
+              "$ref": "#/$defs/PluginId"
+            },
+            "exitCode": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "signal": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         },
         "kernel.plugin.quarantined": {
           "type": "object",
-          "required": ["pluginId", "restarts"],
-          "properties": { "pluginId": { "$ref": "#/$defs/PluginId" }, "restarts": { "type": "integer" } }
+          "required": [
+            "pluginId",
+            "restarts"
+          ],
+          "properties": {
+            "pluginId": {
+              "$ref": "#/$defs/PluginId"
+            },
+            "restarts": {
+              "type": "integer"
+            }
+          }
         },
         "kernel.approval.pending": {
           "allOf": [
             {
               "type": "object",
-              "required": ["approvalId", "requester"],
-              "properties": { "approvalId": { "type": "string" }, "requester": { "$ref": "#/$defs/PluginId" } }
+              "required": [
+                "approvalId",
+                "requester"
+              ],
+              "properties": {
+                "approvalId": {
+                  "type": "string"
+                },
+                "requester": {
+                  "$ref": "#/$defs/PluginId"
+                }
+              }
             },
-            { "$ref": "#/$defs/ApprovalRequestParams" }
+            {
+              "$ref": "#/$defs/ApprovalRequestParams"
+            }
           ]
         },
         "kernel.approval.decided": {
           "allOf": [
             {
               "type": "object",
-              "required": ["approvalId", "decidedBy"],
-              "properties": { "approvalId": { "type": "string" }, "decidedBy": { "$ref": "#/$defs/PluginId" } }
+              "required": [
+                "approvalId",
+                "decidedBy"
+              ],
+              "properties": {
+                "approvalId": {
+                  "type": "string"
+                },
+                "decidedBy": {
+                  "$ref": "#/$defs/PluginId"
+                }
+              }
             },
-            { "$ref": "#/$defs/ApprovalDecision" }
+            {
+              "$ref": "#/$defs/ApprovalDecision"
+            }
           ]
         },
         "kernel.permission.denied": {
           "type": "object",
-          "required": ["pluginId", "permission", "method"],
+          "required": [
+            "pluginId",
+            "permission",
+            "method"
+          ],
           "properties": {
-            "pluginId": { "$ref": "#/$defs/PluginId" },
-            "permission": { "$ref": "#/$defs/Permission" },
-            "method": { "type": "string" }
+            "pluginId": {
+              "$ref": "#/$defs/PluginId"
+            },
+            "permission": {
+              "$ref": "#/$defs/Permission"
+            },
+            "method": {
+              "type": "string"
+            }
           }
         },
         "kernel.entity.changed": {
           "type": "object",
-          "required": ["kind", "id", "updatedSeq"],
-          "properties": { "kind": { "type": "string" }, "id": { "type": "string" }, "updatedSeq": { "type": "integer" } }
+          "required": [
+            "kind",
+            "id",
+            "updatedSeq"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "updatedSeq": {
+              "type": "integer"
+            }
+          }
         }
       }
     },
     "KernelPluginEntity": {
       "description": "Exposed as entity kind \"kernel.plugin\" so UIs read plugin state like any other entity.",
       "type": "object",
-      "required": ["id", "version", "state", "mode", "pid", "restarts", "permissions"],
+      "required": [
+        "id",
+        "version",
+        "state",
+        "mode",
+        "pid",
+        "restarts",
+        "permissions"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/PluginId" },
-        "version": { "type": "string" },
-        "state": { "enum": ["starting", "running", "stopped", "quarantined"] },
+        "id": {
+          "$ref": "#/$defs/PluginId"
+        },
+        "version": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "starting",
+            "running",
+            "stopped",
+            "quarantined"
+          ]
+        },
         "mode": {
           "description": "spawned: exec mode A; attached: in-process transport; connected: exec mode B over the kernel socket or TCP.",
-          "enum": ["spawned", "attached", "connected"]
+          "enum": [
+            "spawned",
+            "attached",
+            "connected"
+          ]
         },
-        "pid": { "type": ["integer", "null"] },
-        "restarts": { "type": "integer" },
+        "pid": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "restarts": {
+          "type": "integer"
+        },
         "permissions": {
           "description": "Granted permissions; for connected plugins, capped by connectPermissions (remotePermissions over TCP).",
           "type": "array",
-          "items": { "$ref": "#/$defs/Permission" }
+          "items": {
+            "$ref": "#/$defs/Permission"
+          }
         },
         "remote": {
           "description": "Peer address of a plugin connected in over TCP; absent otherwise.",
           "type": "object",
-          "required": ["address", "port"],
+          "required": [
+            "address",
+            "port"
+          ],
           "properties": {
-            "address": { "type": "string" },
-            "port": { "type": "integer" }
+            "address": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer"
+            }
+          }
+        },
+        "activeOps": {
+          "description": "Streaming ops this plugin is serving right now.",
+          "type": "integer"
+        },
+        "lastError": {
+          "description": "Most recent error this plugin returned (call error or failed op).",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "at",
+                "method",
+                "message"
+              ],
+              "properties": {
+                "at": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "PhaseUpdate": {
+      "description": "Standard progress update sent as op.update `update`; the kernel records it on the op.",
+      "type": "object",
+      "required": [
+        "kind",
+        "phase"
+      ],
+      "properties": {
+        "kind": {
+          "const": "phase"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        }
+      }
+    },
+    "KernelOpEntity": {
+      "description": "Exposed as entity kind \"kernel.op\": live and recent streaming ops and approvals.",
+      "type": "object",
+      "required": [
+        "opId",
+        "traceId",
+        "caller",
+        "callee",
+        "method",
+        "state",
+        "phase",
+        "phaseLabel",
+        "progress",
+        "startedAt",
+        "updatedAt",
+        "endedAt",
+        "durationMs",
+        "error"
+      ],
+      "properties": {
+        "opId": {
+          "type": "string"
+        },
+        "traceId": {
+          "type": "string"
+        },
+        "caller": {
+          "$ref": "#/$defs/PluginId"
+        },
+        "callee": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "waiting",
+            "done",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "phase": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "phaseLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "progress": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "endedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "TraceNode": {
+      "description": "One node of a request's timeline, built by the kernel from the journal (trace.get).",
+      "type": "object",
+      "required": [
+        "seq",
+        "type",
+        "caller",
+        "target",
+        "method",
+        "stream",
+        "status",
+        "startedAt",
+        "endedAt",
+        "durationMs",
+        "phases",
+        "error",
+        "children"
+      ],
+      "properties": {
+        "seq": {
+          "type": "integer"
+        },
+        "type": {
+          "enum": [
+            "call",
+            "approval"
+          ]
+        },
+        "caller": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "running",
+            "waiting",
+            "ok",
+            "error",
+            "cancelled"
+          ]
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "endedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "phase",
+              "label",
+              "at"
+            ],
+            "properties": {
+              "phase": {
+                "type": "string"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "at": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TraceNode"
+          }
+        }
+      }
+    },
+    "TraceResult": {
+      "type": "object",
+      "required": [
+        "traceId",
+        "startedAt",
+        "endedAt",
+        "nodes"
+      ],
+      "properties": {
+        "traceId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "endedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TraceNode"
           }
         }
       }

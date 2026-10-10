@@ -375,6 +375,13 @@ export interface PluginToKernel {
     method: "journal.query";
     params: JournalQueryParams;
   };
+  /** The request's call tree with timings and phases, built from the journal. Needs journal.read. */
+  "trace.get": RpcRequest & {
+    method: "trace.get";
+    params: {
+      traceId: string;
+    };
+  };
 }
 
 /** Kernel-published events (§6), keyed by event name. */
@@ -428,4 +435,66 @@ export interface KernelPluginEntity {
     address: string;
     port: number;
   };
+  /** Streaming ops this plugin is serving right now. */
+  activeOps?: number;
+  /** Most recent error this plugin returned (call error or failed op). */
+  lastError?: {
+    at: string;
+    method: string;
+    message: string;
+  } | null;
+}
+
+/** Standard progress update sent as op.update `update`; the kernel records it on the op. */
+export interface PhaseUpdate {
+  kind: "phase";
+  phase: string;
+  label?: string;
+  progress?: number;
+}
+
+/** Exposed as entity kind "kernel.op": live and recent streaming ops and approvals. */
+export interface KernelOpEntity {
+  opId: string;
+  traceId: string;
+  caller: PluginId;
+  callee: string;
+  method: string;
+  state: "running" | "waiting" | "done" | "failed" | "cancelled";
+  phase: string | null;
+  phaseLabel: string | null;
+  progress: number | null;
+  startedAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+}
+
+/** One node of a request's timeline, built by the kernel from the journal (trace.get). */
+export interface TraceNode {
+  seq: number;
+  type: "call" | "approval";
+  caller: string;
+  target: string;
+  method: string;
+  stream: boolean;
+  status: "running" | "waiting" | "ok" | "error" | "cancelled";
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  phases: ({
+    phase: string;
+    label: string | null;
+    at: string;
+  })[];
+  error: string | null;
+  children: TraceNode[];
+}
+
+export interface TraceResult {
+  traceId: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  nodes: TraceNode[];
 }

@@ -135,6 +135,15 @@ export class Store {
     return rows.map((r) => ({ kind: r.kind, id: r.id, data: JSON.parse(r.data), updatedSeq: r.updated_seq }));
   }
 
+  /** Keeps the `keep` most recently updated documents of a kind and deletes the rest. */
+  prune(kind: string, keep: number) {
+    this.db
+      .prepare(
+        "DELETE FROM entities WHERE kind = ? AND id NOT IN (SELECT id FROM entities WHERE kind = ? ORDER BY updated_seq DESC LIMIT ?)",
+      )
+      .run(kind, kind, keep);
+  }
+
   close() {
     this.db.close();
   }

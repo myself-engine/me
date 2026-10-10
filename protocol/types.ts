@@ -303,6 +303,8 @@ export interface PluginToKernel {
   /** Pending approvals, for UIs that start after the pending event. Needs approve.decide. */
   "approval.list": RpcRequest<"approval.list", ApprovalListParams>;
   "journal.query": RpcRequest<"journal.query", JournalQueryParams>;
+  /** The request's call tree with timings and phases, built from the journal. Needs journal.read. */
+  "trace.get": RpcRequest<"trace.get", { traceId: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,4 +334,65 @@ export interface KernelPluginEntity {
   permissions: Permission[];
   /** Peer address of a plugin connected in over TCP; absent otherwise. */
   remote?: { address: string; port: number };
+  /** Streaming ops this plugin is serving right now. */
+  activeOps?: number;
+  /** Most recent error this plugin returned (call error or failed op). */
+  lastError?: { at: string; method: string; message: string } | null;
+}
+
+/**
+ * Standard progress update. A plugin serving a streaming op may send `op.update` with
+ * `update: { kind: "phase", phase, label?, progress? }`; the kernel records it on the op.
+ */
+export interface PhaseUpdate {
+  kind: "phase";
+  /** Stable machine id, e.g. "judging". */
+  phase: string;
+  /** Human label for UIs, e.g. "판정 중". */
+  label?: string;
+  /** 0..1 when known. */
+  progress?: number;
+}
+
+/** Exposed as entity kind "kernel.op": live and recent streaming ops and approvals. */
+export interface KernelOpEntity {
+  opId: string;
+  traceId: string;
+  caller: PluginId;
+  /** Plugin serving the op, or "kernel" for approvals. */
+  callee: PluginId | "kernel";
+  method: string;
+  state: "running" | "waiting" | "done" | "failed" | "cancelled";
+  phase: string | null;
+  phaseLabel: string | null;
+  progress: number | null;
+  startedAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+}
+
+/** One node of a request's timeline, built by the kernel from the journal (trace.get). */
+export interface TraceNode {
+  seq: number;
+  type: "call" | "approval";
+  caller: string;
+  target: string;
+  method: string;
+  stream: boolean;
+  status: "running" | "waiting" | "ok" | "error" | "cancelled";
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  phases: { phase: string; label: string | null; at: string }[];
+  error: string | null;
+  children: TraceNode[];
+}
+
+export interface TraceResult {
+  traceId: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  nodes: TraceNode[];
 }
