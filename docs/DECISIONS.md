@@ -182,14 +182,20 @@
 - `opencode-zen/jev-1.13-free`는 OpenCode 밖에서 못 쓸 것으로 보인다.
 - `gjc quick-lane classify`와 비교해 보는 건 미해결로 남겼다.
 
-### 9.4 첫 조각 이후 결정 (🟡 미구현)
+### 9.4 첫 조각 이후 결정 (✅ 2026-10-10 구현)
 1. **정리**: 병합된 worktree 7개와 Herdr workspace 삭제, 테스트 이슈 #1 닫기, Aside 세션 폴더의 `hello.txt` 삭제
 2. **수락하면 바로 프로젝트에 적용하고 커밋까지 한다.**
 3. **하네스는 요약 모델이 추천하고, 승인 카드에서 바꿀 수 있게 한다.**
 4. **짧고 코드 이야기가 없는 메시지는 요약과 판정을 건너뛰고 바로 답한다.** 지금은 약 10초 걸린다.
 5. ~~GJC 기본 모델~~ → **하네스 설정도 플러그인이 다룬다.** GJC 기본 모델은 그 설정값 중 하나라서 미정 항목에서 뺐다.
 
-진행 상황: 1번은 2026-10-10에 완료했다. 병합된 worktree 8개를 삭제했고, 이슈 #1을 닫았고, Aside의 `hello.txt`를 지웠다.
+진행 상황 (2026-10-10)
+- 1번: 완료했다. 병합된 worktree 8개를 삭제했고, 이슈 #1을 닫았고, Aside의 `hello.txt`를 지웠다.
+- 2번 ✅: 수락하면 brgr 결정 기록, 봉인된 diff 적용, 바뀐 파일만 스테이징, 커밋 순서로 진행한다. 대상 저장소에 커밋되지 않은 변경이 있으면 작업은 `sealed` 상태로 남고 오류만 기록한다. 정리한 뒤 다시 수락하면 된다.
+- 3번 ✅: 승인 카드에서 하네스를 고를 수 있다. 커널의 `approval.decide`가 `amend`를 받는다.
+- 4번 ✅: 40자 이하이고 작업 신호(파일, 코드, 경로, 확장자 등)가 없으면 빠른 답변으로 처리한다.
+- 추가 ✅: summarize가 완료 기준(`criterion`)을 만들고, 그 값이 brgr에 그대로 전달된다.
+- head와 brgr 플러그인을 헥사고날(domain, ports, adapters, app)로 정리했다.
 
 ## 10. brgr 플러그인 ✅
 
@@ -293,3 +299,13 @@
   - 스펙 원본(JSON Schema) + 적합성 테스트
 - 그다음: MCP 브리지 → `me adapt` v0 → 화면 눈 확인
 - 진행: MCP 브리지 ✅, `me adapt mcp` v0 ✅ (브리지 단계만. 마켓플레이스, cli·http·acp 브리지, 에이전트 작성 단계는 아직이다)
+- 진행: 스펙 원본(`spec/protocol.schema.json`)과 적합성 테스트 ✅. 표준 라이브러리만 쓴 Python 플러그인이 통과해서 여러 언어 지원을 증명했다.
+- 2차 웨이브(brgr 워커 병렬): `me doctor` + adapt 강화, CLI 브리지, 원격 접속 모드(Unix 소켓 + 토큰)
+
+## 19. 운영 중 발견한 문제 (2026-10-10)
+
+- **Codex 워커가 시작하지 못한다.** Codex가 데몬 설정 화면(`auth_elicitation`, `code_mode_host`, "Run without daemon")에서 멈추고, brgr에는 이 화면에 답하는 규칙이 없다. 그동안 Codex에 줄 일은 Claude Code로 돌렸다. ⬜ 사용자가 Codex 설정을 정리하거나 brgr 규칙을 추가해야 한다.
+- **head 모델 계정(openai-codex OAuth)이 실패 상태다.** `gjc accounts check openai-codex`에서 failed로 나온다. ⬜ 다시 로그인해야 한다.
+  - Copilot 경로(`github-copilot/gpt-5.6-luna`)는 `model_not_supported`를 반환한다.
+  - 대체로 `devin/swe-2-high`가 동작하지만, head 역할 대신 자기를 Devin으로 소개한다.
+- **brgr worktree 정리를 검증과 한 줄에 묶었다가 변경을 잃을 뻔했다.** 봉인된 패치로 복구했다(해시 일치). 정리는 항상 병합 확인 뒤 따로 한다.
