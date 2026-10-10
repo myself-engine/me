@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { chooseHarness, decideRoute, fastPathJudgement, isFastPath } from "../domain/routing.ts";
 import type { DelegationState, Message, Thread } from "../domain/types.ts";
-import type { Approvals, Brain, Delegator, Events, Judge, Normalizer, Store, Summarizer, Turn } from "../ports/index.ts";
+import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
 
 export interface HeadConfig {
   harnesses: string[];
@@ -72,6 +72,8 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     await saveMessage(reply);
     turn.update({ kind: "message", userMessageId: user.id, messageId: reply.id });
 
+    // Start the brain now; if the answer turns out to be direct, its startup is already done.
+    let warm = brain.prepare?.({ sessionId: thread.sessionId }) ?? null;
     try {
       turn.phase?.("understanding", "이해 중");
       const understood = await normalizer.normalize(p.text);
@@ -99,13 +101,22 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
 
       if (reply.route === "direct") {
         turn.phase?.("answering", "답변 작성 중");
-        await answerDirectly(thread, reply, p.text, turn);
+        const w = warm;
+        warm = null;
+        await answerDirectly(thread, reply, p.text, turn, w);
       }
-      else await delegate(thread, reply, turn);
+      else {
+        // Delegated: the warm brain will never get a prompt.
+        warm?.cancel();
+        warm = null;
+        await delegate(thread, reply, turn);
+      }
       turn.phase?.("done", "완료", 1);
 
       reply.status = "done";
     } catch (err: any) {
+      warm?.cancel();
+      warm = null;
       reply.status = "error";
       reply.error = String(err?.message ?? err);
       turn.update({ kind: "error", message: reply.error });
@@ -116,18 +127,16 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     return { threadId: thread.id, messageId: reply.id, route: reply.route ?? null, status: reply.status };
   }
 
-  async function answerDirectly(thread: Thread, reply: Message, text: string, turn: Turn) {
+  async function answerDirectly(thread: Thread, reply: Message, text: string, turn: Turn, warm: WarmBrain | null) {
     reply.status = "streaming";
     await saveMessage(reply);
-    const res = await brain.reply({
-      prompt: text,
-      sessionId: thread.sessionId,
-      signal: turn.signal,
-      onUpdate: (u) => {
-        if (u.kind === "text_delta") reply.text += u.delta;
-        turn.update(u);
-      },
-    });
+    const onUpdate = (u: BrainUpdate) => {
+      if (u.kind === "text_delta") reply.text += u.delta;
+      turn.update(u);
+    };
+    const res = warm
+      ? await warm.reply({ prompt: text, signal: turn.signal, onUpdate })
+      : await brain.reply({ prompt: text, sessionId: thread.sessionId, signal: turn.signal, onUpdate });
     if (res.violation) {
       await events.guardViolation({ messageId: reply.id, toolName: res.violation.toolName });
       throw new Error(`head tried to use tool ${res.violation.toolName}; run aborted`);

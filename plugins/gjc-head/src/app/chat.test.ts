@@ -3,13 +3,27 @@ import type { Message, Summary, Thread } from "../domain/types.ts";
 import type { ApprovalOutcome } from "../ports/index.ts";
 import { createHead, type HeadPorts } from "./chat.ts";
 
-function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number } = {}) {
+function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean } = {}) {
+  const warmLog: string[] = [];
   const calls: Record<string, any[]> = { summarize: [], judge: [], approval: [], delegate: [], brain: [] };
   const messages = new Map<string, Message>();
   const threads = new Map<string, Thread>();
   const updates: any[] = [];
   const ports: HeadPorts = {
-    brain: { reply: async (p) => (calls.brain!.push(p), p.onUpdate({ kind: "text_delta", delta: "안녕!" }), { text: "안녕!", sessionId: "s1", violation: null }) },
+    brain: {
+      reply: async (p) => (calls.brain!.push(p), p.onUpdate({ kind: "text_delta", delta: "안녕!" }), { text: "안녕!", sessionId: "s1", violation: null }),
+      ...(opts.warm
+        ? {
+            prepare: () => (
+              warmLog.push("prepare"),
+              {
+                reply: async (q: any) => (warmLog.push("reply"), q.onUpdate({ kind: "text_delta", delta: "따뜻!" }), { text: "따뜻!", sessionId: "s2", violation: null }),
+                cancel: () => void warmLog.push("cancel"),
+              }
+            ),
+          }
+        : {}),
+    },
     normalizer: { normalize: async (text) => ({ normalized: text, replaced: [] }) },
     summarizer: {
       summarize: async (p) => (
@@ -32,7 +46,7 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
   const head = createHead(ports, { harnesses: ["local.claude-code", "local.codex"], simpleThreshold: 0.8, approvalExpiresSec: 60, defaultProject: "/p" });
   const phases: string[] = [];
   const turn = { update: (u: any) => updates.push(u), phase: (ph: string) => void phases.push(ph), signal: new AbortController().signal, traceId: "tr" };
-  return { head, turn, calls, messages, updates, phases };
+  return { head, turn, calls, messages, updates, phases, warmLog };
 }
 
 describe("chat.send", () => {
@@ -44,6 +58,20 @@ describe("chat.send", () => {
     expect(calls.judge).toEqual([{ request: long }]);
     expect(calls.summarize).toHaveLength(0);
     expect(updates.some((u) => u.kind === "summary")).toBe(false);
+  });
+
+  test("a direct answer uses the brain started before judging", async () => {
+    const { head, turn, calls, warmLog } = setup({ simpleProb: 0.97, warm: true });
+    const r = await head.send({ text: "뮤텍스랑 세마포어 차이를 실제 예시 하나씩 들어서 두세 문장으로 비교 설명해 줄 수 있어?" }, turn);
+    expect(r.route).toBe("direct");
+    expect(warmLog).toEqual(["prepare", "reply"]);
+    expect(calls.brain).toHaveLength(0);
+  });
+
+  test("a delegation cancels the early brain", async () => {
+    const { head, turn, warmLog } = setup({ simpleProb: 0.05, warm: true });
+    await head.send({ text: "gjc-head 플러그인에 타임아웃 설정 추가하고 테스트도 써 줘" }, turn);
+    expect(warmLog).toEqual(["prepare", "cancel"]);
   });
 
   test("reports phases in order for a direct answer and for a delegation", async () => {

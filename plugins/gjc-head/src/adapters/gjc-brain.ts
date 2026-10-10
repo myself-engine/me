@@ -1,7 +1,7 @@
 // The head's own voice: GJC in json mode with --no-mcp and no tools (enforced by @me/gjc),
 // which also refuses Anthropic models.
 import { join } from "node:path";
-import { runGjc } from "@me/gjc";
+import { prepareGjc, runGjc } from "@me/gjc";
 import type { Brain } from "../ports/index.ts";
 
 const SYSTEM = [
@@ -25,6 +25,16 @@ export function gjcBrain(opts: { model: string; dataDir: string }): Brain {
         onUpdate: p.onUpdate,
       });
       return { text: res.text, sessionId: res.sessionId, violation: res.violation ? { toolName: res.violation.toolName } : null };
+    },
+    prepare(p) {
+      const warm = prepareGjc({ model: opts.model, cwd: join(opts.dataDir, "sessions"), resume: p.sessionId ?? undefined, systemPrompt: SYSTEM });
+      return {
+        async reply(q) {
+          const res = await warm.run(q.prompt, { onUpdate: q.onUpdate, signal: q.signal });
+          return { text: res.text, sessionId: res.sessionId, violation: res.violation ? { toolName: res.violation.toolName } : null };
+        },
+        cancel: () => warm.cancel(),
+      };
     },
   };
 }

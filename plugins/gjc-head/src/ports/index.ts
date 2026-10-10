@@ -9,14 +9,24 @@ export type BrainUpdate =
   | { kind: "tool_call"; toolCallId: string; toolName: string; intent?: string; args?: unknown }
   | { kind: "tool_result"; toolCallId: string; toolName: string; ok: boolean };
 
+export interface BrainReply {
+  text: string;
+  sessionId: string | null;
+  /** Set when the model tried to run a tool; the run was aborted. */
+  violation: { toolName: string } | null;
+}
+
+/** A brain already started for one thread, waiting for its prompt. */
+export interface WarmBrain {
+  reply(p: { prompt: string; signal: AbortSignal; onUpdate: (u: BrainUpdate) => void }): Promise<BrainReply>;
+  cancel(): void;
+}
+
 export interface Brain {
   /** Generates a direct reply, resuming the thread's conversation when sessionId is set. */
-  reply(p: { prompt: string; sessionId: string | null; signal: AbortSignal; onUpdate: (u: BrainUpdate) => void }): Promise<{
-    text: string;
-    sessionId: string | null;
-    /** Set when the model tried to run a tool; the run was aborted. */
-    violation: { toolName: string } | null;
-  }>;
+  reply(p: { prompt: string; sessionId: string | null; signal: AbortSignal; onUpdate: (u: BrainUpdate) => void }): Promise<BrainReply>;
+  /** Optional: start early so startup overlaps with judging; used only if the answer is direct. */
+  prepare?(p: { sessionId: string | null }): WarmBrain;
 }
 
 export interface Normalizer {
