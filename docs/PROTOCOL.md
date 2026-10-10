@@ -3,6 +3,7 @@
 커널과 플러그인 사이의 계약이다. 플러그인이 늘어난 뒤에는 바꾸기 가장 어려운 부분이므로, 결정마다 **버린 대안**도 함께 적는다.
 
 - 상태: 초안, 구현 전
+- 규격 원본: [`spec/protocol.schema.json`](../spec/protocol.schema.json) (14절)
 - 타입 정의: [`protocol/types.ts`](../protocol/types.ts)
 - 상위 설계: [DESIGN.md](DESIGN.md)
 
@@ -259,3 +260,31 @@ web → subscribe {pattern: "kernel.plugin.*"}, subscribe {pattern: "brgr.task.*
 - 플러그인 설정 값과 비밀 파일 경로 전달 방식 (`initialize.config`의 구조)
 - MCP 어댑터의 매핑: MCP tool을 `invoke` 메서드로, MCP notification을 이벤트로 바꾸는 규칙
 - 웹이 `approve.decide`를 가질 때 사용자 신원 확인. 첫 조각은 localhost 토큰으로 대신한다
+
+## 14. 스키마와 적합성 테스트
+
+**규격 원본은 언어 중립 JSON Schema다.** [`spec/protocol.schema.json`](../spec/protocol.schema.json)(draft 2020-12)의 `$defs`에 모든 프레임과 파라미터 타입이 TS 타입과 같은 이름으로 있다. 오류 코드와 프로토콜 버전은 `x-errorCodes`, `x-protocolVersion`에 둔다.
+
+- 생성: `bun spec/generate.ts`가 `protocol/types.generated.ts`를 만든다. `--check`는 생성 파일이 낡았으면 실패한다.
+- TS에서 가져다 쓰는 곳은 그대로 `protocol/types.ts`다. `spec/schema.test.ts`가 두 파일의 타입 이름, 필드 이름, 필수 여부가 다르면 실패한다. 프로토콜을 바꿀 때는 스키마를 먼저 고치고, 생성한 뒤, `types.ts`를 맞춘다.
+- 다른 언어의 타입도 이 스키마에서 생성한다.
+
+**적합성 테스트**: 어떤 언어로 쓴 플러그인이든 이것을 통과하면 커널과 호환된다고 본다.
+
+```
+bun spec/conformance/run.ts <plugin-dir> [<plugin-dir>...]
+```
+
+`<plugin-dir>/plugin.json`을 읽고 커널과 똑같이 실행한다(작업 폴더는 플러그인 폴더, `ME_PLUGIN_ID`, 임시 `ME_DATA_DIR`). 가짜 커널로서 다음을 확인하고 PASS/FAIL 표를 출력한다. 하나라도 실패하면 0이 아닌 코드로 끝난다.
+
+| 확인 | 기준 |
+|---|---|
+| `initialize` | 10초 안에 `{protocolVersion, ready: true}` |
+| `call <method>` | `provides.methods`의 모든 메서드가 `params: {}`에 결과나 JSON-RPC 오류로 답한다. 죽거나 멈추면 실패 |
+| 모르는 메서드 | JSON-RPC 오류 |
+| 스트리밍 호출 | `stream: true, opId`에 응답하고, 그 opId로 `op.end`를 정확히 한 번 보낸다. 거절한 호출에는 `op.end`가 없다 |
+| `shutdown` | 응답하고 5초 안에 종료 |
+| stdout | JSON-RPC 2.0 프레임만. 로그는 stderr로 |
+
+- 테스트에서는 `runConformance(dir)`를 가져다 쓴다(`spec/conformance/run.ts`).
+- 기준 플러그인: `spec/conformance/fixtures/ts-echo`(SDK), `spec/conformance/fixtures/python-echo`(SDK 없이 표준 라이브러리만 쓴 Python). `bun test`가 이 둘과 `plugins/slang`에 적합성 테스트를 돌린다. `python3`가 없으면 Python 테스트는 건너뛴다.

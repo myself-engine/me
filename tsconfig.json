@@ -26,7 +26,8 @@
     "bin",
     "scripts",
     "bridges",
-    "tools"
+    "tools",
+    "spec"
   ],
   "exclude": [
     "**/node_modules",

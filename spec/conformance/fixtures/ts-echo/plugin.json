@@ -1,0 +1,8 @@
+{
+  "id": "ts-echo",
+  "version": "0.1.0",
+  "protocol": { "min": 1, "max": 1 },
+  "run": { "command": ["bun", "../../../../kernel/test/fixtures/echo.ts"] },
+  "permissions": [],
+  "provides": { "methods": ["echo"] }
+}

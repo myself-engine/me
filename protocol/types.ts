@@ -1,5 +1,6 @@
 // me plugin protocol v1 — type definitions only (no runtime).
 // Spec: docs/PROTOCOL.md. Section numbers below refer to that document.
+// Language-neutral source: spec/protocol.schema.json. spec/schema.test.ts fails when this file drifts from it.
 
 export const PROTOCOL_VERSION = 1 as const;
 
@@ -29,10 +30,16 @@ export interface RpcSuccess<R = unknown> {
   result: R;
 }
 
+export interface RpcErrorObject {
+  code: number;
+  message: string;
+  data?: JsonValue;
+}
+
 export interface RpcFailure {
   jsonrpc: "2.0";
   id: RpcId | null;
-  error: { code: number; message: string; data?: JsonValue };
+  error: RpcErrorObject;
 }
 
 export type RpcFrame = RpcRequest | RpcNotification | RpcSuccess | RpcFailure;
@@ -143,7 +150,7 @@ export interface KernelToPlugin {
   event: RpcNotification<"event", EventParams>;
   "op.update": RpcNotification<"op.update", OpUpdateParams>;
   "op.end": RpcNotification<"op.end", OpEndParams>;
-  "op.cancel": RpcNotification<"op.cancel", { opId: string }>;
+  "op.cancel": RpcNotification<"op.cancel", OpRefParams>;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +179,11 @@ export interface OpUpdateParams<U = unknown> {
 export interface OpEndParams<R = unknown> {
   opId: string;
   result?: R;
-  error?: { code: number; message: string; data?: JsonValue };
+  error?: RpcErrorObject;
+}
+/** Params of op.cancel and op.subscribe. */
+export interface OpRefParams {
+  opId: string;
 }
 
 // §6
@@ -184,7 +195,26 @@ export interface EmitParams<D = unknown> {
   causationId?: number;
 }
 
+export interface SubscribeParams {
+  /** Same pattern syntax as Manifest.subscribes. */
+  pattern: string;
+}
+
 // §7
+export interface EntityRegisterKindParams {
+  kind: string;
+  schema: JsonValue;
+}
+export interface EntityUpsertParams {
+  kind: string;
+  id: string;
+  data: JsonValue;
+}
+export interface EntityGetParams {
+  kind: string;
+  id: string;
+}
+
 export interface EntityDoc<T = unknown> {
   kind: string; // namespaced, e.g. "brgr.task"
   id: string;
@@ -215,6 +245,10 @@ export interface ApprovalDecision {
   /** Changes the decider made to the request's payload (e.g. a different harness). Only meaningful on approve. */
   amend?: Record<string, JsonValue>;
 }
+export interface ApprovalDecideParams extends ApprovalDecision {
+  approvalId: string;
+}
+export type ApprovalListParams = Record<string, never>;
 
 // §10
 export interface JournalQueryParams {
@@ -237,19 +271,19 @@ export interface PluginToKernel {
   invoke: RpcRequest<"invoke", InvokeParams>;
   "op.update": RpcNotification<"op.update", OpUpdateParams>;
   "op.end": RpcNotification<"op.end", OpEndParams>;
-  "op.subscribe": RpcRequest<"op.subscribe", { opId: string }>;
-  "op.cancel": RpcRequest<"op.cancel", { opId: string }>;
+  "op.subscribe": RpcRequest<"op.subscribe", OpRefParams>;
+  "op.cancel": RpcRequest<"op.cancel", OpRefParams>;
   emit: RpcRequest<"emit", EmitParams>;
-  subscribe: RpcRequest<"subscribe", { pattern: string }>;
-  "entity.registerKind": RpcRequest<"entity.registerKind", { kind: string; schema: JsonValue }>;
-  "entity.upsert": RpcRequest<"entity.upsert", { kind: string; id: string; data: JsonValue }>;
-  "entity.get": RpcRequest<"entity.get", { kind: string; id: string }>;
+  subscribe: RpcRequest<"subscribe", SubscribeParams>;
+  "entity.registerKind": RpcRequest<"entity.registerKind", EntityRegisterKindParams>;
+  "entity.upsert": RpcRequest<"entity.upsert", EntityUpsertParams>;
+  "entity.get": RpcRequest<"entity.get", EntityGetParams>;
   "entity.list": RpcRequest<"entity.list", EntityListParams>;
   /** Long-running: returns { opId }, resolves via op.end with ApprovalDecision. */
   "approval.request": RpcRequest<"approval.request", ApprovalRequestParams>;
-  "approval.decide": RpcRequest<"approval.decide", { approvalId: string } & ApprovalDecision>;
+  "approval.decide": RpcRequest<"approval.decide", ApprovalDecideParams>;
   /** Pending approvals, for UIs that start after the pending event. Needs approve.decide. */
-  "approval.list": RpcRequest<"approval.list", Record<string, never>>;
+  "approval.list": RpcRequest<"approval.list", ApprovalListParams>;
   "journal.query": RpcRequest<"journal.query", JournalQueryParams>;
 }
 
