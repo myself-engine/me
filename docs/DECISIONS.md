@@ -235,7 +235,11 @@
   - 위젯은 격리한다.
   - **승인 카드는 어떤 플러그인도 건드리지 못한다.**
 - **다중 계정 토큰은 인증 플러그인만 다룬다.** 🟡
-- **원격 접속**: 🟡 앱은 localhost에만 두고, `tailscale serve`로 tailnet에만 노출한다. Tailscale 신원 헤더 인증은 플러그인으로 만든다.
+- **원격 접속**: ✅ (2026-10-10) 앱은 localhost에만 두고, `tailscale serve`로 tailnet에만 노출한다.
+  - tailnet 주소로 들어온 요청은 `Tailscale-User-Login`이 `allowedLogins`에 있어야 한다. localhost로 들어온 요청은 신원 헤더를 아예 읽지 않는다(위조 방지).
+  - `me tailscale status|on|off`는 funnel(공개)을 거부하고, 이미 다른 서비스가 쓰는 포트는 덮어쓰지 않는다. 이 Mac은 443을 다른 서비스(127.0.0.1:7317)가 쓰고 있어서 기본 포트를 8443으로 했다.
+  - PWA 매니페스트를 넣어서 폰 홈 화면에 추가할 수 있다.
+  - ⬜ 사용자가 할 일: `me.local.json`에 `web.tailscale { "enabled": true, "allowedLogins": ["<tailscale 로그인>"] }`를 넣고 `me tailscale on`을 실행한다.
 - **여러 서버**: 🟡 웹은 Mac 한 곳에만 두고, 서버마다 작은 데몬이 스스로 접속한다.
 
 ## 13. 설정과 데이터 ✅

@@ -7,6 +7,7 @@
 //   me adapt <recipe> [--set k=v ...] [--yes]       install a marketplace recipe (stage 1)
 //   me adapt agent <name> -- <what to adapt>        delegate writing an adapter through brgr (stage 3)
 //   me adapt export <pluginId> -- <description>     turn an adapted plugin into a recipe
+//   me tailscale status|on|off [--https-port N]   phone access over the tailnet (never public)
 //   me doctor [--json]                     tool versions, symlinks, plugin conformance
 import { dirname, join } from "node:path";
 
@@ -105,6 +106,36 @@ switch (cmd) {
       console.log("  registered in me.local.json; restart me to load it");
     } catch (err: any) {
       console.error(`✗ adapt failed: ${err.message}`);
+      process.exit(1);
+    }
+    break;
+  }
+  case "tailscale": {
+    // me tailscale status | on | off [--https-port N]   (tailnet only; never funnel)
+    const ts = await import("../tools/tailscale/serve.ts");
+    const [sub, ...flags] = rest;
+    const at = flags.indexOf("--https-port");
+    const httpsPort = at >= 0 ? Number(flags[at + 1]) : 8443;
+    if (!["status", "on", "off"].includes(sub ?? "") || !Number.isInteger(httpsPort)) {
+      console.error("usage: me tailscale status | on | off [--https-port 8443]");
+      process.exit(1);
+    }
+    try {
+      if (sub === "status") {
+        const st = await ts.serveStatus();
+        for (const h of st.handlers) console.log(`${h.hostPort}${h.path} → ${h.proxy ?? "?"}`);
+        if (!st.handlers.length) console.log("serve: 없음");
+        if (st.funnel.length) console.log(`⚠️ funnel(공개) 켜짐: ${st.funnel.join(", ")}`);
+      } else if (sub === "on") {
+        const r = await ts.serveEnable(ts.DEFAULT_WEB_PORT, { httpsPort });
+        console.log(r.changed ? `✓ tailnet에서 https://<기기>:${httpsPort} → 127.0.0.1:${ts.DEFAULT_WEB_PORT}` : "이미 켜져 있어요");
+        console.log("  me.local.json에 web.tailscale { enabled: true, allowedLogins: [...] }가 있어야 접속이 허용돼요");
+      } else {
+        const r = await ts.serveDisable({ httpsPort });
+        console.log(r.changed ? "✓ 껐어요" : "이미 꺼져 있어요");
+      }
+    } catch (err: any) {
+      console.error(`✗ ${err.message}`);
       process.exit(1);
     }
     break;

@@ -29,6 +29,7 @@ interface State {
   approvals: Record<string, Approval>;
   live: Record<string, Live>; // by traceId
   config: Bootstrap["config"];
+  viewer: Bootstrap["viewer"];
 }
 
 type Action =
@@ -50,6 +51,7 @@ function reducer(s: State, a: Action): State {
       plugins: byId(a.data.plugins, "id"),
       approvals: byId(a.data.approvals, "approvalId"),
       config: a.data.config,
+      viewer: a.data.viewer ?? null,
     };
   }
   if (a.type === "approvalGone") {
@@ -103,6 +105,7 @@ const initial: State = {
   approvals: {},
   live: {},
   config: { projects: [], defaultProject: "", githubRepo: null },
+  viewer: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -219,6 +222,11 @@ function App() {
       <aside className="sidebar">
         <div className="brand">
           <span className="logo">◐</span> me
+          {s.viewer && (
+            <span className="viewer" title={`Tailscale로 접속: ${s.viewer.login}`}>
+              {s.viewer.name}
+            </span>
+          )}
           <span className={`conn conn-${status}`} title={status} />
         </div>
         <nav className="tabs">
@@ -650,6 +658,15 @@ function Overview({ s, conn, notify }: { s: State; conn: Connection | null; noti
       </section>
     </div>
   );
+}
+
+// PWA links are added here, not in index.html: Bun's HTML bundler tries to resolve every <link href> at build time,
+// while these paths are served by server.ts (src/pwa.ts).
+for (const [rel, href] of [["manifest", "/manifest.webmanifest"], ["icon", "/icon.svg"], ["apple-touch-icon", "/icon.svg"]]) {
+  const link = document.createElement("link");
+  link.rel = rel!;
+  link.href = href!;
+  document.head.append(link);
 }
 
 createRoot(document.getElementById("root")!).render(

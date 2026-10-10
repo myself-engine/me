@@ -56,8 +56,15 @@ export interface Approval {
   payload?: any;
 }
 
+/** Who is viewing: set when the request came through `tailscale serve`, null for localhost. */
+export interface Viewer {
+  login: string;
+  name: string;
+}
+
 export interface Bootstrap {
   token: string;
+  viewer: Viewer | null;
   threads: Thread[];
   messages: Message[];
   tasks: Task[];

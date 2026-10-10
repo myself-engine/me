@@ -47,6 +47,18 @@ bun bin/me.ts adapt agent weather -- "날씨 API를 me에 붙여 줘"   # brgr �
 bun bin/me.ts adapt export cli-git -- "설명"      # 만든 어댑터를 레시피로 반환
 ```
 
+## 폰에서 쓰기 (Tailscale, 공개 아님)
+
+```sh
+# me.local.json
+#   "web": { "tailscale": { "enabled": true, "allowedLogins": ["<tailscale 로그인>"] } }
+bun bin/me.ts tailscale on      # https://<기기>.<tailnet>.ts.net:8443 → 127.0.0.1:7420
+bun bin/me.ts tailscale status
+bun bin/me.ts tailscale off
+```
+
+funnel(공개 노출)은 거부한다. 이미 쓰이는 포트는 덮어쓰지 않는다.
+
 ## 설정
 
 - `me.config.json`: 공용 기본값이다. 플러그인 목록과 모델, 하네스, 포트를 담는다.

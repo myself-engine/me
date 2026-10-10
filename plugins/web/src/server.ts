@@ -1,10 +1,13 @@
 // Web plugin: localhost-only UI over the kernel. Security floor (DESIGN §7):
 // bind 127.0.0.1, check Host and Origin, require a per-start token for every mutation and the socket.
+// Remote access goes only through `tailscale serve` (tailnet, never funnel); see access.ts for the rules.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerWebSocket } from "bun";
 import { definePlugin } from "@me/sdk";
+import { type Access, type AccessConfig, classify, hostnameFromStatus, needsHostnameDetection, originOk, tailnetOrigin, tailscaleConfig, viewerOf } from "./access.ts";
+import { pwaResponse } from "./pwa.ts";
 import index from "../ui/index.html";
 
 const dataDir = process.env.ME_DATA_DIR ?? ".";
@@ -48,20 +51,31 @@ await new Promise<void>((r) => {
 });
 
 const port = Number(plugin.config.port ?? 7420);
-const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, ...((plugin.config.extraHosts as string[]) ?? [])]);
-const allowedOrigins = new Set([...allowedHosts].map((h) => `http://${h}`).concat((plugin.config.extraOrigins as string[]) ?? []));
 const expand = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
-function hostOk(req: Request) {
-  return allowedHosts.has(req.headers.get("host") ?? "");
+async function detectTailnetHostname(): Promise<string | null> {
+  try {
+    const proc = Bun.spawn(["tailscale", "status", "--json"], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    const timer = setTimeout(() => proc.kill(), 5000);
+    const out = await new Response(proc.stdout).text();
+    clearTimeout(timer);
+    return (await proc.exited) === 0 ? hostnameFromStatus(out) : null;
+  } catch {
+    return null;
+  }
 }
-function originOk(req: Request) {
-  const o = req.headers.get("origin");
-  return o !== null && allowedOrigins.has(o);
-}
+
+const tailscaleRaw = plugin.config.tailscale;
+const access: AccessConfig = {
+  port,
+  extraHosts: (plugin.config.extraHosts as string[]) ?? [],
+  extraOrigins: (plugin.config.extraOrigins as string[]) ?? [],
+  tailscale: tailscaleConfig(tailscaleRaw, needsHostnameDetection(tailscaleRaw) ? await detectTailnetHostname() : null),
+};
+if (access.tailscale.enabled && !access.tailscale.hostname) console.error("[web] tailscale enabled but hostname unknown; tailnet access off");
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
-async function bootstrap() {
+async function bootstrap(req: Access) {
   const [threads, messages, tasks, plugins, approvals] = await Promise.all([
     plugin.entity.list({ kind: "gjc-head.thread", limit: 500 }),
     plugin.entity.list({ kind: "gjc-head.message", limit: 1000 }),
@@ -71,6 +85,7 @@ async function bootstrap() {
   ]);
   return {
     token,
+    viewer: viewerOf(req),
     threads: threads.map((d) => d.data),
     messages: messages.map((d) => d.data),
     tasks: tasks.map((d) => d.data),
@@ -154,13 +169,16 @@ const server = Bun.serve({
   development: (plugin.config.dev ? { hmr: true } : false) as any,
   routes: { "/": index },
   async fetch(req, srv) {
-    if (!hostOk(req)) return new Response("forbidden host", { status: 403 });
+    const who = classify(req.headers, access);
+    if (who.kind === "forbidden") return new Response(who.reason, { status: 403 });
     const url = new URL(req.url);
     if (url.pathname === "/ws") {
-      if (!originOk(req) || url.searchParams.get("token") !== token) return new Response("forbidden", { status: 403 });
+      if (!originOk(req.headers, who, access) || url.searchParams.get("token") !== token) return new Response("forbidden", { status: 403 });
       return srv.upgrade(req) ? undefined : new Response("upgrade failed", { status: 400 });
     }
-    if (url.pathname === "/api/bootstrap" && req.method === "GET") return json(await bootstrap());
+    if (url.pathname === "/api/bootstrap" && req.method === "GET") return json(await bootstrap(who));
+    const pwa = req.method === "GET" ? pwaResponse(url.pathname) : null;
+    if (pwa) return pwa;
     return new Response("not found", { status: 404 });
   },
   websocket: {
@@ -188,3 +206,5 @@ const server = Bun.serve({
 });
 
 console.error(`[web] http://${server.hostname}:${server.port}`);
+const remote = tailnetOrigin(access);
+if (remote) console.error(`[web] tailnet ${remote} (logins: ${access.tailscale.allowedLogins.join(", ") || "none"})`);
