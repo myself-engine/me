@@ -8,7 +8,8 @@
     "plugins/brgr",
     "plugins/web",
     "plugins/approval-policy",
-    "plugins/ops"
+    "plugins/ops",
+    "plugins/harness-config"
   ],
   "pluginConfig": {
     "gjc-head": {

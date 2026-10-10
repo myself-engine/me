@@ -55,6 +55,15 @@ bun bin/me.ts adapt export cli-git -- "설명"      # 만든 어댑터를 레시
 bun bin/me.ts connect plugins/<플러그인> --host <Mac의 tailnet IP> --token-file ~/.me/connect.token
 ```
 
+## 하네스 설정 한 곳에서 관리
+
+```sh
+bun bin/me.ts config import            # 지금 설정에서 초안 보기 (읽기 전용)
+bun bin/me.ts config import --write    # ~/.me/harness-config/source.draft.json 저장 → 검토 후 source.json으로
+bun bin/me.ts config plan              # 하네스별 바뀔 내용
+bun bin/me.ts config apply --yes       # 백업 후 적용
+```
+
 ## 폰에서 쓰기 (Tailscale, 공개 아님)
 
 ```sh

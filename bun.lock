@@ -77,6 +77,13 @@
         "@me/sdk": "workspace:*",
       },
     },
+    "plugins/harness-config": {
+      "name": "@me/plugin-harness-config",
+      "dependencies": {
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
+      },
+    },
     "plugins/jev": {
       "name": "@me/plugin-jev",
       "dependencies": {
@@ -153,6 +160,8 @@
     "@me/plugin-brgr": ["@me/plugin-brgr@workspace:plugins/brgr"],
 
     "@me/plugin-gjc-head": ["@me/plugin-gjc-head@workspace:plugins/gjc-head"],
+
+    "@me/plugin-harness-config": ["@me/plugin-harness-config@workspace:plugins/harness-config"],
 
     "@me/plugin-jev": ["@me/plugin-jev@workspace:plugins/jev"],
 

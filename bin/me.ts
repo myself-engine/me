@@ -8,6 +8,7 @@
 //   me adapt agent <name> -- <what to adapt>        delegate writing an adapter through brgr (stage 3)
 //   me adapt export <pluginId> -- <description>     turn an adapted plugin into a recipe
 //   me connect <plugin-dir> --host <ip> [--port N]  run a plugin on this machine for a remote kernel
+//   me config plan | import [--write] | apply --yes   harness configs (MCP, instructions) from one source
 //   me tailscale status|on|off [--https-port N]   phone access over the tailnet (never public)
 //   me doctor [--json]                     tool versions, symlinks, plugin conformance
 import { dirname, join } from "node:path";
@@ -138,6 +139,32 @@ switch (cmd) {
       console.error(`✗ ${err.message}`);
       process.exit(1);
     });
+    break;
+  }
+  case "config": {
+    // me config plan | import [--write] | apply --yes   [--harness id ...] [--force]
+    const cfg = await import("../tools/config/config.ts");
+    const [sub, ...flags] = rest;
+    const harnesses = flags.flatMap((f, i) => (f === "--harness" && flags[i + 1] ? [flags[i + 1]!] : []));
+    const opts = { harnesses: harnesses.length ? harnesses : undefined, force: flags.includes("--force") };
+    try {
+      if (sub === "plan") console.log(JSON.stringify(await cfg.configPlan(root, opts), null, 2));
+      else if (sub === "import") console.log(JSON.stringify(await cfg.configImport(root, { ...opts, write: flags.includes("--write") }), null, 2));
+      else if (sub === "apply") {
+        const r = await cfg.configApply(root, { ...opts, yes: flags.includes("--yes") });
+        if (!r.applied) {
+          console.error(`적용하지 않았어요: ${r.reason}`);
+          process.exit(1);
+        }
+        console.log(`✓ 적용 (${r.approvalId}): ${JSON.stringify(r.files)}`);
+      } else {
+        console.error("usage: me config plan | import [--write] | apply --yes  [--harness <id> ...] [--force]");
+        process.exit(1);
+      }
+    } catch (err: any) {
+      console.error(`✗ ${err.message}`);
+      process.exit(1);
+    }
     break;
   }
   case "tailscale": {
