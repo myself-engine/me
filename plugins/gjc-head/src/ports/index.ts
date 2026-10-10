@@ -28,7 +28,8 @@ export interface Summarizer {
 }
 
 export interface Judge {
-  judge(p: { summaryEn: string; needsCodeChange: boolean; scope: string }): Promise<Judgement>;
+  /** `request` is the normalized user text; Jev judges Korean directly (10/10 on a live sample, 2026-10-11). */
+  judge(p: { request: string; needsCodeChange?: boolean; scope?: string }): Promise<Judgement>;
 }
 
 export interface ApprovalOutcome {

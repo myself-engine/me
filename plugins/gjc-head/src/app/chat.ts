@@ -82,13 +82,16 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         reply.judgement = fastPathJudgement();
         reply.route = "direct";
       } else {
+        // Judge first (Jev, ~0.5s); the slower summary is only needed to write a delegation brief.
+        reply.judgement = await judge.judge({ request: understood.normalized });
+        reply.route = decideRoute({ needsCodeChange: false, simpleProb: reply.judgement.simpleProb, threshold });
+      }
+      turn.update({ kind: "judgement", ...reply.judgement, route: reply.route, threshold });
+      if (reply.route === "delegate") {
         const summary = await summarizer.summarize({ original: p.text, normalized: understood.normalized, harnesses: config.harnesses, project: thread.project });
         reply.summary = summary;
         turn.update({ kind: "summary", ...summary });
-        reply.judgement = await judge.judge({ summaryEn: summary.summaryEn, needsCodeChange: summary.needsCodeChange, scope: summary.scope });
-        reply.route = decideRoute({ needsCodeChange: summary.needsCodeChange, simpleProb: reply.judgement.simpleProb, threshold });
       }
-      turn.update({ kind: "judgement", ...reply.judgement, route: reply.route, threshold });
       await saveMessage(reply);
 
       if (reply.route === "direct") await answerDirectly(thread, reply, p.text, turn);

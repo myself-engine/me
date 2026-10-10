@@ -3,7 +3,7 @@ import type { Message, Summary, Thread } from "../domain/types.ts";
 import type { ApprovalOutcome } from "../ports/index.ts";
 import { createHead, type HeadPorts } from "./chat.ts";
 
-function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId"> } = {}) {
+function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number } = {}) {
   const calls: Record<string, any[]> = { summarize: [], judge: [], approval: [], delegate: [], brain: [] };
   const messages = new Map<string, Message>();
   const threads = new Map<string, Thread>();
@@ -17,7 +17,7 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
         { summaryEn: "Fix the bug", brief: "Fix it", needsCodeChange: true, scope: "single-file", harness: "local.codex", harnessReason: "", criterion: "bun test passes.", ...opts.summary }
       ),
     },
-    judge: { judge: async (p) => (calls.judge!.push(p), { simpleProb: 0.1, confidence: 0.9, source: "jev", model: "m" }) },
+    judge: { judge: async (p) => (calls.judge!.push(p), { simpleProb: opts.simpleProb ?? 0.1, confidence: 0.9, source: "jev", model: "m" }) },
     approvals: { request: async (p) => (calls.approval!.push(p), { approvalId: "a1", ...(opts.decision ?? { decision: "approve" }) }) },
     delegator: { delegate: async (p) => (calls.delegate!.push(p), { taskId: "t1" }) },
     store: {
@@ -35,6 +35,25 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
 }
 
 describe("chat.send", () => {
+  test("judges the normalized text first and never summarizes a direct answer", async () => {
+    const long = "뮤텍스랑 세마포어 차이를 실제 예시 하나씩 들어서 두세 문장으로 비교 설명해 줄 수 있어?";
+    const { head, turn, calls, updates } = setup({ simpleProb: 0.97 });
+    const r = await head.send({ text: long }, turn);
+    expect(r.route).toBe("direct");
+    expect(calls.judge).toEqual([{ request: long }]);
+    expect(calls.summarize).toHaveLength(0);
+    expect(updates.some((u) => u.kind === "summary")).toBe(false);
+  });
+
+  test("summarizes only after a delegate judgement, then delegates with the brief", async () => {
+    const { head, turn, calls, updates } = setup({ simpleProb: 0.05 });
+    await head.send({ text: "gjc-head 플러그인에 타임아웃 설정 추가하고 테스트도 써 줘" }, turn);
+    const kinds = updates.map((u) => u.kind);
+    expect(kinds.indexOf("judgement")).toBeLessThan(kinds.indexOf("summary"));
+    expect(calls.summarize).toHaveLength(1);
+    expect(calls.delegate).toHaveLength(1);
+  });
+
   test("short chat takes the fast path", async () => {
     const { head, turn, calls, updates } = setup();
     const r = await head.send({ text: "ㅎㅇ 잘 지내?" }, turn);

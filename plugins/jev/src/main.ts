@@ -24,8 +24,11 @@ async function viaFallback(model: string, state: object, signal: AbortSignal): P
 
 const plugin = definePlugin({
   methods: {
-    judge: async (p: { summaryEn: string; needsCodeChange: boolean; scope: string }, ctx) => {
-      const state = { request: p.summaryEn, needsCodeChange: p.needsCodeChange, scope: p.scope };
+    judge: async (p: { request?: string; summaryEn?: string; needsCodeChange?: boolean; scope?: string }, ctx) => {
+      const request = p.request ?? p.summaryEn;
+      if (!request) throw new Error("request is required");
+      // Only send what is known; the head now judges before any summary exists.
+      const state = { request, ...(p.needsCodeChange !== undefined ? { needsCodeChange: p.needsCodeChange } : {}), ...(p.scope ? { scope: p.scope } : {}) };
       const keyFile = expand((plugin.config.openrouterKeyFile as string) ?? "~/.config/me/secrets/openrouter.key");
       if (await Bun.file(keyFile).exists()) {
         try {
