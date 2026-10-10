@@ -10,7 +10,7 @@ export interface Thread {
   updatedAt: string;
 }
 
-export type DelegationState = "awaiting-approval" | "rejected" | "delegated" | "running" | "sealed" | "accepted" | "failed" | "awaiting-input" | "cancelled";
+export type DelegationState = "awaiting-approval" | "rejected" | "delegated" | "running" | "sealed" | "accepted" | "failed" | "awaiting-input" | "cancelled" | "applied" | "apply-failed";
 
 export type Route = "direct" | "delegate";
 

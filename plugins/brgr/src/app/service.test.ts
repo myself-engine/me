@@ -127,15 +127,19 @@ describe("task.accept", () => {
     },
   );
 
-  test("dirty working tree -> apply-failed in Korean, brgr accept never called", async () => {
+  test("dirty working tree -> stays sealed with a Korean error, brgr accept never called, retry works", async () => {
     const { brgr, git, events, service, get } = setup();
     git.dirty = [" M src/a.ts"];
     await expect(service.accept({ taskId: "t1" })).rejects.toThrow("커밋되지 않은 변경");
     expect(brgr.calls).toEqual([]);
-    expect(get().state).toBe("apply-failed");
+    expect(get().state).toBe("sealed");
     expect(get().error).toContain("/repo");
     expect(get().commitSha).toBeNull();
-    expect(events.names()).toEqual(["task.apply-failed"]);
+    expect(events.names()).toEqual([]);
+
+    git.dirty = [];
+    await service.accept({ taskId: "t1" });
+    expect(get().state).toBe("applied");
   });
 
   test("brgr apply failure after accept -> apply-failed, nothing committed", async () => {

@@ -413,10 +413,12 @@ select.harness {
   color: var(--accent);
 }
 .pill-sealed,
-.pill-accepted {
+.pill-accepted,
+.pill-applied {
   color: var(--ok);
 }
 .pill-failed,
+.pill-apply-failed,
 .pill-rejected,
 .pill-quarantined,
 .pill-stopped,

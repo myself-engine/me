@@ -38,6 +38,12 @@ export function createService(deps: ServiceDeps) {
   }
 
   /** Moves a stored task through the state machine, saves it, and emits `task.<state>`. */
+  /** Records an error on a task without changing its state, so the user can fix the cause and retry. */
+  async function noteError(taskId: string, error: string) {
+    const task = await load(taskId);
+    await store.put({ ...task, error, updatedAt: now() });
+  }
+
   async function setState(taskId: string, to: TaskState, patch: TaskPatch = {}) {
     const task = transition(await load(taskId), to, patch, now());
     await store.put(task);
@@ -120,17 +126,18 @@ export function createService(deps: ServiceDeps) {
     if (task.state !== "sealed") throw new Error(`봉인된 작업만 수락할 수 있어요 (현재 상태: ${task.state})`);
 
     // A dirty tree would mix the user's edits into the commit; refuse before brgr records anything.
+    // The task stays sealed so the user can commit or stash their work and accept again.
     let dirty: string[];
     try {
       dirty = await git.status(task.project);
     } catch (err) {
       const message = `작업 트리 상태를 확인하지 못해 적용할 수 없어요: ${errorText(err)}`;
-      await setState(task.taskId, "apply-failed", { error: message });
+      await noteError(task.taskId, message);
       throw new Error(message);
     }
     if (dirty.length > 0) {
-      const message = `대상 저장소에 커밋되지 않은 변경이 있어 적용할 수 없어요: ${task.project}`;
-      await setState(task.taskId, "apply-failed", { error: message, decisionReason: reason });
+      const message = `대상 저장소에 커밋되지 않은 변경이 있어 적용할 수 없어요. 정리한 뒤 다시 수락해 주세요: ${task.project}`;
+      await noteError(task.taskId, message);
       throw new Error(message);
     }
 

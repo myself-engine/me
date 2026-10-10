@@ -34,6 +34,7 @@ export interface Task {
   outcome: string | null;
   resultText: string | null;
   error: string | null;
+  commitSha?: string | null;
   createdAt: string;
   updatedAt: string;
 }

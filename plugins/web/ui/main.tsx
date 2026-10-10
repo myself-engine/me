@@ -126,6 +126,8 @@ const STATE_LABEL: Record<string, string> = {
   running: "작업 중",
   sealed: "결과 도착",
   accepted: "수락함",
+  applied: "적용·커밋됨",
+  "apply-failed": "적용 실패",
   failed: "실패",
   "awaiting-input": "입력 대기",
   cancelled: "취소됨",
@@ -491,6 +493,7 @@ function DelegationCard({ m, approval, task, conn, notify }: { m: Message; appro
         </div>
       )}
       {task?.error && <div className="card error">⚠️ {task.error}</div>}
+      {task?.commitSha && <div className="sub">커밋 {task.commitSha.slice(0, 8)} · {shortPath(task.project)}</div>}
 
       {task && conn && (
         <div className="row">
