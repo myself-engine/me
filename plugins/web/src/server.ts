@@ -102,7 +102,7 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       return { opId, traceId };
     }
     case "approval.decide":
-      return plugin.approval.decide(m.approvalId, { decision: m.decision, note: m.note });
+      return plugin.approval.decide(m.approvalId, { decision: m.decision, note: m.note, ...(m.amend ? { amend: m.amend } : {}) });
     case "task.diff":
       return plugin.invoke("brgr", "task.diff", { taskId: m.taskId, stat: !!m.stat });
     case "task.accept":

@@ -17,11 +17,11 @@ export interface Message {
   traceId: string;
   status: "pending" | "streaming" | "done" | "error";
   understood?: { normalized: string; replaced: { from: string; to: string }[] };
-  summary?: { summaryEn: string; brief: string; needsCodeChange: boolean; scope: string; harness: string; harnessReason: string };
+  summary?: { summaryEn: string; brief: string; needsCodeChange: boolean; scope: string; harness: string; harnessReason: string; criterion?: string };
   judgement?: { simpleProb: number; confidence: number; source: string; model: string };
   route?: "direct" | "delegate";
   taskId?: string | null;
-  delegation?: { state: string; harness: string; brief: string; approvalId?: string; note?: string };
+  delegation?: { state: string; harness: string; suggestedHarness?: string; brief: string; criterion?: string; approvalId?: string; note?: string };
   error?: string;
 }
 

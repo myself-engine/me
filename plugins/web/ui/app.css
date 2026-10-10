@@ -377,6 +377,12 @@ button.link:hover {
 .harness {
   font-weight: 600;
 }
+select.harness {
+  background: var(--chip);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
 .brief {
   margin: 6px 0 0;
   white-space: pre-wrap;

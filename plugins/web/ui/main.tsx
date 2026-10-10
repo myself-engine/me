@@ -374,7 +374,7 @@ function AssistantMessage({ m, s, conn, notify }: { m: Message; s: State; conn: 
         {m.judgement && (
           <span className={`chip ${m.route === "direct" ? "direct" : "delegate"}`} title={`${m.judgement.source} · ${m.judgement.model}`}>
             간단함 {Math.round(m.judgement.simpleProb * 100)}% · {m.route === "direct" ? "직접 답변" : "위임"}
-            {m.judgement.source === "fallback" ? " · 대체 판정" : " · Jev"}
+            {m.judgement.source === "fast-path" ? " · 빠른 답변" : m.judgement.source === "fallback" ? " · 대체 판정" : " · Jev"}
           </span>
         )}
         {streaming && !m.judgement && <span className="chip soft pulse">판단 중…</span>}
@@ -430,16 +430,36 @@ function DelegationCard({ m, approval, task, conn, notify }: { m: Message; appro
     }
   };
   const state = task?.state ?? d.state;
+  const suggested: string = approval?.payload?.harness ?? d.harness;
+  const harnesses: string[] = Array.isArray(approval?.payload?.harnesses) ? approval.payload.harnesses : [suggested];
+  const [picked, setPicked] = useState<string | null>(null);
+  const harness = picked ?? suggested;
+  const short = (h: string) => h.replace(/^local\./, "");
 
   return (
     <div className="card delegation">
       <div className="card-head">
-        <span className="harness">{d.harness.replace(/^local\./, "")}</span>
+        {approval && conn ? (
+          <select className="harness" value={harness} disabled={busy} onChange={(e) => setPicked(e.target.value)} title="위임할 하네스">
+            {(harnesses.includes(harness) ? harnesses : [harness, ...harnesses]).map((h) => (
+              <option key={h} value={h}>
+                {short(h)}
+                {h === suggested ? " (추천)" : ""}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="harness" title={d.suggestedHarness ? `추천: ${short(d.suggestedHarness)}` : undefined}>
+            {short(d.harness)}
+            {d.suggestedHarness ? " · 직접 선택" : ""}
+          </span>
+        )}
         <Pill state={state} />
       </div>
       <details>
         <summary>지시 내용</summary>
         <p className="brief">{d.brief}</p>
+        {d.criterion && <p className="brief">완료 기준: {d.criterion}</p>}
       </details>
 
       {approval && conn && (
@@ -447,7 +467,15 @@ function DelegationCard({ m, approval, task, conn, notify }: { m: Message; appro
           <button
             className="primary"
             disabled={busy}
-            onClick={() => act(() => conn.request("approval.decide", { approvalId: approval.approvalId, decision: "approve" }))}
+            onClick={() =>
+              act(() =>
+                conn.request("approval.decide", {
+                  approvalId: approval.approvalId,
+                  decision: "approve",
+                  ...(harness !== suggested ? { amend: { harness } } : {}),
+                }),
+              )
+            }
           >
             승인하고 위임
           </button>

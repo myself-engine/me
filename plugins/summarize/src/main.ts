@@ -11,6 +11,8 @@ export interface Summary {
   scope: "none" | "single-file" | "few-files" | "project" | "unknown";
   harness: string;
   harnessReason: string;
+  /** One observable English sentence saying when the work is done; passed to brgr as --criterion. */
+  criterion: string;
 }
 
 const dataDir = process.env.ME_DATA_DIR ?? ".";
@@ -35,10 +37,12 @@ const plugin = definePlugin({
         '- "scope": one of "none", "single-file", "few-files", "project", "unknown".',
         '- "harness": the best worker harness id from the list for this task (pick the first if nothing stands out).',
         '- "harnessReason": a few words why.',
+        '- "criterion": if work is needed, one observable English sentence that says when the work is done (e.g. "bun test passes and the README lists the new flag."); otherwise "".',
       ].join("\n");
       const res = await runGjc({ prompt, model, cwd: join(dataDir, "runs"), ephemeral: true, thinking: "low", signal: ctx.signal });
       const s = parseJsonObject<Summary>(res.text);
       if (!p.harnesses.includes(s.harness)) s.harness = p.harnesses[0] ?? s.harness;
+      s.criterion = typeof s.criterion === "string" ? s.criterion.trim() : "";
       return s;
     },
   },

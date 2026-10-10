@@ -4,16 +4,27 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPipePair } from "@me/protocol";
+import { createPipePair, type JsonValue } from "@me/protocol";
 import { definePlugin } from "@me/sdk";
 import { Kernel, loadManifest, validateManifest } from "@me/kernel";
 
 const root = join(import.meta.dir, "..");
+
+function smokeConfig(model: string | undefined): Record<string, Record<string, JsonValue>> {
+  const m: Record<string, string> = model ? { model } : {};
+  const jev: Record<string, string> = model ? { fallbackModel: model } : {};
+  return {
+    "gjc-head": { harnesses: ["local.claude-code", "local.codex"], defaultProject: root, ...m },
+    summarize: { ...m },
+    jev,
+  };
+}
 const dataDir = mkdtempSync(join(tmpdir(), "me-smoke-"));
 const kernel = new Kernel({
   dataDir,
   log: (m) => console.error(`[kernel] ${m}`),
-  pluginConfig: { "gjc-head": { harnesses: ["local.claude-code", "local.codex"], defaultProject: root } },
+  // ME_SMOKE_MODEL overrides the model for every LLM step (e.g. when the default account is logged out).
+  pluginConfig: smokeConfig(process.env.ME_SMOKE_MODEL),
 });
 
 for (const id of ["slang", "summarize", "jev", "gjc-head"]) {
