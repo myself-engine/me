@@ -268,7 +268,11 @@
     - 실제로 실패 중인 `rapi-derper-portmap`(exit 3)이 빨간 카드로 떴다.
     - Mac의 me를 다시 시작하자 서버가 스스로 다시 접속했다.
     - 한눈에 보기는 기계별로 묶고, 정상은 칩, 문제는 카드로 보여 준다.
-  - ⬜ 서버의 `me connect`는 지금 nohup으로 돌고 있어서 서버가 재부팅되면 멈춘다. 상시 실행하려면 systemd 서비스로 등록해야 한다.
+  - ✅ (2026-10-11) 서버의 `me connect`를 사용자 systemd 서비스 `me-ops-rapi.service`로 등록했다.
+    - 설정은 `Restart=always`이고, linger를 켜서 로그인 없이도 부팅 때 뜬다.
+    - 프로세스를 강제로 죽이자 systemd가 다시 띄웠고, Mac에도 다시 접속했다.
+    - 서버의 점검 설정은 `~/.me/ops-rapi.json`, 토큰은 `~/.me/connect.token`(600)이다.
+    - 서버 코드는 Mac에서 rsync로 보낸 사본(`~/me`)이다. me를 업데이트하면 다시 보내고 서비스를 재시작해야 한다.
 
 ## 13. 설정과 데이터 ✅
 
