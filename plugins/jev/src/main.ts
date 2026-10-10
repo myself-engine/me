@@ -5,42 +5,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { definePlugin } from "@me/sdk";
 import { parseJsonObject, runGjc } from "@me/gjc";
-
-export interface Judgement {
-  /** Probability that the head can handle this alone with a short reply. */
-  simpleProb: number;
-  confidence: number;
-  source: "jev" | "fallback";
-  model: string;
-}
-
-const PROPOSITION =
-  "The request can be fully satisfied by a short conversational reply, without reading, running, or changing any files or commands.";
+import { PROPOSITION, clamp, viaJevDecisions, type Judgement } from "./jev.ts";
 
 const dataDir = process.env.ME_DATA_DIR ?? ".";
 const expand = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
-
-async function viaOpenRouter(keyFile: string, model: string, state: object, signal: AbortSignal): Promise<Judgement> {
-  const key = (await Bun.file(keyFile).text()).trim();
-  // Unverified against the live Jev API: OpenRouter exposes an OpenAI-compatible chat endpoint,
-  // so the proposition and state are sent as a chat turn asking for a probability.
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    signal,
-    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: 'Judge the proposition about the state. Reply only JSON: {"probability": number 0..1, "confidence": number 0..1}' },
-        { role: "user", content: JSON.stringify({ proposition: PROPOSITION, state }) },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`openrouter ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const body: any = await res.json();
-  const out = parseJsonObject<{ probability: number; confidence?: number }>(body.choices?.[0]?.message?.content ?? "");
-  return { simpleProb: clamp(out.probability), confidence: clamp(out.confidence ?? 0.5), source: "jev", model };
-}
 
 async function viaFallback(model: string, state: object, signal: AbortSignal): Promise<Judgement> {
   const prompt = [
@@ -54,8 +22,6 @@ async function viaFallback(model: string, state: object, signal: AbortSignal): P
   return { simpleProb: clamp(out.probability), confidence: clamp(out.confidence ?? 0.5), source: "fallback", model };
 }
 
-const clamp = (n: number) => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0);
-
 const plugin = definePlugin({
   methods: {
     judge: async (p: { summaryEn: string; needsCodeChange: boolean; scope: string }, ctx) => {
@@ -63,7 +29,8 @@ const plugin = definePlugin({
       const keyFile = expand((plugin.config.openrouterKeyFile as string) ?? "~/.config/me/secrets/openrouter.key");
       if (await Bun.file(keyFile).exists()) {
         try {
-          return await viaOpenRouter(keyFile, (plugin.config.jevModel as string) ?? "typesafe/jev-router", state, ctx.signal);
+          const key = (await Bun.file(keyFile).text()).trim();
+          return await viaJevDecisions(key, (plugin.config.jevModel as string) ?? "~typesafe/jev-latest", state, ctx.signal);
         } catch (err) {
           console.error("[jev] openrouter failed, falling back:", err);
         }

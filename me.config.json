@@ -28,7 +28,7 @@
     },
     "jev": {
       "fallbackModel": "openai-codex/gpt-5.6-luna",
-      "openrouterKeyFile": "~/.config/me/secrets/openrouter.key"
+      "openrouterKeyFile": "~/.config/me/secrets/openrouter.key", "jevModel": "~typesafe/jev-latest"
     },
     "brgr": {
       "harnesses": [

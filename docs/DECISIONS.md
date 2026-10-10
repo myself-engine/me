@@ -180,6 +180,11 @@
 - TypeSafe AI가 만든 의사결정 모델이다. Choice, Score, Noul 모드가 있다.
 - 한국어와 부정문에 약해서 질문을 영어로 고정했다.
 - `opencode-zen/jev-1.13-free`는 OpenCode 밖에서 못 쓸 것으로 보인다.
+- ✅ (2026-10-11 실측) **Jev 본체는 OpenRouter의 `/api/alpha/decisions` 엔드포인트로 쓴다.** 모델은 `~typesafe/jev-latest`(응답 기준 `typesafe/jev-1.13-20260917`)다.
+  - 요청 형식: `{ model, state, questions: { simple: { type: "noul", instructions } } }`. 응답은 `answers.simple.noul`(참일 확률)이다.
+  - 응답 시간은 0.4~0.6초, 1회 비용은 약 $0.00001이다.
+  - `typesafe/jev-router`는 Jev 본체가 아니다. Jev가 고른 다른 LLM(gpt-6-luna, deepseek 등)으로 넘기는 채팅 라우터라서, 판정용으로 쓰면 2~8초가 걸린다. 처음 구현이 이것을 쓰고 있었다.
+  - 키 파일은 `~/.config/me/secrets/openrouter.key`(권한 600)다.
 - `gjc quick-lane classify`와 비교해 보는 건 미해결로 남겼다.
 
 ### 9.4 첫 조각 이후 결정 (✅ 2026-10-10 구현)
