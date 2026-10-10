@@ -1,5 +1,5 @@
 // Timeline drawer: one request's call tree (kernel trace.get), refreshed while its ops are still moving.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TraceNode, TraceResult } from "./api.ts";
 import { useApp } from "./context.ts";
 import { StatusDot, duration, elapsed, useBusy, useNow } from "./shared.tsx";
@@ -68,11 +68,7 @@ export function TraceDrawer({ traceId, messageId, onClose }: { traceId: string; 
     };
   }, [conn, traceId, opsKey]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const panel = useFocusTrap(onClose);
 
   const fileIssue = () =>
     act(async () => {
@@ -87,10 +83,12 @@ export function TraceDrawer({ traceId, messageId, onClose }: { traceId: string; 
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-label="요청 타임라인">
+      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" ref={panel}>
         <header className="drawer-head">
           <div>
-            <div className="drawer-title">요청 타임라인</div>
+            <h2 className="drawer-title" id="drawer-title">
+              요청 타임라인
+            </h2>
             {total && <div className="drawer-sub">{trace?.endedAt ? `총 ${total}` : `${total}째 진행 중`}</div>}
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="닫기">
@@ -117,6 +115,47 @@ export function TraceDrawer({ traceId, messageId, onClose }: { traceId: string; 
       </aside>
     </>
   );
+}
+
+const FOCUSABLE = 'a[href], button:not(:disabled), select:not(:disabled), textarea:not(:disabled), input:not(:disabled), summary, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Modal focus handling for the drawer: focus moves in on open, Tab and Shift+Tab stay inside,
+ * Escape closes, and focus returns to whatever opened it.
+ */
+function useFocusTrap(onClose: () => void) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const items = () => [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter((el) => el.offsetParent !== null);
+    items()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !ref.current) return;
+      const list = items();
+      if (list.length === 0) return;
+      const first = list[0]!;
+      const last = list[list.length - 1]!;
+      const inside = ref.current.contains(document.activeElement);
+      if (e.shiftKey && (document.activeElement === first || !inside)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [onClose]);
+  return ref;
 }
 
 function TraceItem({ n, now }: { n: TraceNode; now: number }) {

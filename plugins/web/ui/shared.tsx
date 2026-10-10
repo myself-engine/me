@@ -1,14 +1,23 @@
 // Small pieces every screen uses: the status dot, markdown, headers, time and path formatting.
 import { useEffect, useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
+import { fenceLanguage, highlight } from "./highlight.ts";
 import { TONE_LABEL, type Tone } from "./state.ts";
+
+const MD_COMPONENTS: Components = {
+  code({ node: _node, className, children, ...rest }) {
+    const lang = fenceLanguage(className);
+    const html = typeof children === "string" ? highlight(children, lang) : null;
+    if (html === null) return <code className={className} {...rest}>{children}</code>;
+    return <code className={`${className} hljs`} {...rest} dangerouslySetInnerHTML={{ __html: html }} />;
+  },
+};
 
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
         {text}
       </ReactMarkdown>
     </div>

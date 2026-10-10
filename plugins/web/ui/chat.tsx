@@ -102,6 +102,7 @@ function Conversation(props: { threadId: string | null; project: string; setProj
         )}
         <div ref={endRef} />
       </div>
+      <TurnAnnouncer key={threadId ?? NEW_THREAD} m={messages.filter((x) => x.role === "assistant").at(-1)} />
       <Composer
         onSend={props.onSend}
         disabled={!conn}
@@ -136,7 +137,12 @@ function AssistantMessage({ m }: { m: Message }) {
         {(m.judgement || !working) && (
           <button className={`chip route ${m.route ?? ""}`} onClick={() => openTrace(m.traceId, m.id)} title={routeTitle}>
             {routeLabel}
-            {m.judgement?.source === "fallback" && <span className="warn-dot" aria-label="대체 판정" />}
+            {m.judgement?.source === "fallback" && (
+              <>
+                <span className="warn-dot" aria-hidden="true" />
+                <span className="sr">대체 판정</span>
+              </>
+            )}
             <span className="chip-chev" aria-hidden="true">
               ›
             </span>
@@ -186,12 +192,45 @@ function AssistantMessage({ m }: { m: Message }) {
   );
 }
 
+const phaseLabel = (s: ReturnType<typeof useApp>["s"], m: Message, live?: Live) =>
+  turnOp(s, m.traceId)?.phaseLabel ?? live?.phaseLabel ?? (m.status === "streaming" ? "답변 작성 중" : "요청 보내는 중");
+
+/**
+ * Screen-reader narration of the latest turn: phase changes while it works, then one line when it ends.
+ * Streamed tokens are never announced one by one; the finished answer is read from the page.
+ */
+function TurnAnnouncer({ m }: { m?: Message }) {
+  const { s } = useApp();
+  let text = "";
+  if (m) {
+    const live = s.live[m.traceId];
+    const error = m.error ?? live?.error;
+    if (error) text = "답변하지 못했어요";
+    else if (m.status === "pending" || m.status === "streaming") text = m.text || live?.text ? "답변 작성 중" : phaseLabel(s, m, live);
+    else if (m.delegation) text = "작업을 위임했어요";
+    else text = "답변을 마쳤어요";
+  }
+  // Only turns that move while the page is open are worth saying; an old finished thread stays quiet.
+  const [said, setSaid] = useState<string | null>(null);
+  const prev = useRef(text);
+  useEffect(() => {
+    if (prev.current === text) return;
+    prev.current = text;
+    setSaid(text);
+  }, [text]);
+  return (
+    <div className="sr" role="status" aria-live="polite" aria-atomic="true">
+      {said}
+    </div>
+  );
+}
+
 /** What the turn is doing right now (kernel phase label), never a blank wait. */
 function PhaseLine({ m, live }: { m: Message; live?: Live }) {
   const { s, openTrace } = useApp();
   const now = useNow();
   const op = turnOp(s, m.traceId);
-  const label = op?.phaseLabel ?? live?.phaseLabel ?? (m.status === "streaming" ? "답변 작성 중" : "요청 보내는 중");
+  const label = phaseLabel(s, m, live);
   const since = new Date(op?.startedAt ?? m.ts).getTime();
   return (
     <button className="phase" onClick={() => openTrace(m.traceId, m.id)} title="타임라인 보기">
@@ -284,6 +323,7 @@ function Composer(props: {
         <textarea
           value={text}
           placeholder="메시지 (Enter 전송, Shift+Enter 줄바꿈)"
+          aria-label="메시지"
           rows={1}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {

@@ -1,5 +1,5 @@
 // Web UI shell: bootstrap, the WebSocket, navigation (left rail on desktop, bottom tabs on phones) and routing.
-import { StrictMode, useCallback, useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useReducer, useState, type MouseEvent, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Connection, fetchBootstrap } from "./api.ts";
 import { ApprovalsScreen } from "./approvals.tsx";
@@ -29,6 +29,9 @@ const ICONS: Record<Tab, ReactNode> = {
   ops: <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />,
   projects: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
 };
+
+/** What a tab's count badge means, for screen readers (the badge itself is a bare number). */
+const BADGE_LABEL: Record<Tab, string> = { chat: "", tasks: "확인 필요", approvals: "승인 대기", ops: "문제", projects: "" };
 
 const TABS: { tab: Tab; label: string; href: string }[] = [
   { tab: "chat", label: "대화", href: "#/chat" },
@@ -112,26 +115,41 @@ function App() {
   return (
     <AppContext.Provider value={ctx}>
       <div className={`app${isDeep(route) ? " deep" : ""}`}>
+        <a className="skip" href="#main" onClick={skipToMain}>
+          본문으로 건너뛰기
+        </a>
         <nav className="nav" aria-label="화면">
           <div className="brand" title={s.viewer ? `Tailscale로 접속: ${s.viewer.login}` : "이 Mac에서 접속"}>
-            <span className="logo">◐</span>
+            <span className="logo" aria-hidden="true">
+              ◐
+            </span>
             <span className="brand-name">me</span>
           </div>
           {TABS.map((t) => (
-            <a key={t.tab} className={`nav-item${route.tab === t.tab ? " on" : ""}`} href={t.href} aria-current={route.tab === t.tab ? "page" : undefined}>
+            <a
+              key={t.tab}
+              className={`nav-item${route.tab === t.tab ? " on" : ""}`}
+              href={t.href}
+              aria-current={route.tab === t.tab ? "page" : undefined}
+              aria-label={badges[t.tab] > 0 ? `${t.label}, ${BADGE_LABEL[t.tab]} ${badges[t.tab]}` : undefined}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   {ICONS[t.tab]}
                 </svg>
-                {badges[t.tab] > 0 && <span className={`badge${t.tab === "ops" ? " bad" : ""}`}>{badges[t.tab]}</span>}
+                {badges[t.tab] > 0 && (
+                  <span className={`badge${t.tab === "ops" ? " bad" : ""}`} aria-hidden="true">
+                    {badges[t.tab]}
+                  </span>
+                )}
               </span>
               <span className="nav-label">{t.label}</span>
             </a>
           ))}
           {s.viewer && <div className="nav-viewer">{s.viewer.name}</div>}
         </nav>
-        <main className="screen">
-          {status === "closed" && <div className="conn-banner">연결이 끊겼어요 · 다시 연결하는 중…</div>}
+        <main className="screen" id="main" tabIndex={-1}>
+          <div role="status">{status === "closed" && <div className="conn-banner">연결이 끊겼어요 · 다시 연결하는 중…</div>}</div>
           {loadError ? (
             <div className="empty">
               <p className="empty-title">불러오지 못했어요</p>
@@ -146,10 +164,19 @@ function App() {
           )}
         </main>
         {drawer && <TraceDrawer key={drawer.traceId} traceId={drawer.traceId} messageId={drawer.messageId} onClose={closeTrace} />}
-        {toast && <div className="toast">{toast}</div>}
+        {/* Always mounted so screen readers hear each toast; positioned out of the grid either way. */}
+        <div className={toast ? "toast" : "sr"} role="status" aria-live="polite">
+          {toast}
+        </div>
       </div>
     </AppContext.Provider>
   );
+}
+
+/** Hash routing owns location.hash, so the skip link moves focus itself instead of navigating to #main. */
+function skipToMain(e: MouseEvent) {
+  e.preventDefault();
+  document.getElementById("main")?.focus();
 }
 
 function Screen({ route, ...chat }: { route: Route; project: string; setProject: (p: string) => void; onSend: (t: string) => void }) {

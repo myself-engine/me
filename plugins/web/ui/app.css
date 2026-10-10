@@ -17,12 +17,20 @@
   --hl-keyword: #cf222e;
   --hl-string: #0a3069;
   --hl-title: #8250df;
-  --hl-comment: #6e7781;
+  /* Comments sit on --code-bg; leaning them toward the code text keeps them quiet but readable (4.5:1). */
+  --hl-comment: color-mix(in srgb, var(--muted) 75%, var(--code-text));
   --hl-number: #0550ae;
   --hl-add: #1a7f37;
   --hl-add-bg: #dafbe1;
   --hl-del: #82071e;
   --hl-del-bg: #ffebe9;
+  /* State colors for small text: mixed toward --text so 11–13px labels pass 4.5:1 in both schemes.
+     Fills (dots, badges, tints) keep the raw state colors. */
+  --ok-text: color-mix(in srgb, var(--ok) 80%, var(--text));
+  --warn-text: color-mix(in srgb, var(--warn) 80%, var(--text));
+  --bad-text: color-mix(in srgb, var(--bad) 90%, var(--text));
+  --focus: var(--accent);
+  --tap: 44px;
   --radius: 12px;
   --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, "D2Coding", monospace;
@@ -48,7 +56,6 @@
     --hl-keyword: #f47067;
     --hl-string: #96d0ff;
     --hl-title: #dcbdfb;
-    --hl-comment: #768390;
     --hl-number: #6cb6ff;
     --hl-add: #8ddb8c;
     --hl-add-bg: #1b4721;
@@ -83,6 +90,17 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Keyboard focus is always visible; mouse clicks do not draw rings. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.row-link:focus-visible,
+.plugin-row:focus-visible,
+.file-diff summary:focus-visible {
+  outline-offset: -2px;
 }
 
 button,
@@ -180,6 +198,25 @@ select {
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
+/* Skip link: hidden until focused by keyboard. */
+.skip {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 40;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+.skip:focus {
+  transform: none;
+}
+.screen:focus {
+  outline: none;
+}
 
 /* ---------------------------------------------------------------- shell */
 
@@ -271,7 +308,7 @@ select {
 }
 .conn-banner {
   background: color-mix(in srgb, var(--warn) 14%, var(--bg));
-  color: var(--warn);
+  color: var(--warn-text);
   font-size: 13px;
   font-weight: 600;
   text-align: center;
@@ -439,15 +476,15 @@ select {
 }
 .status-needs .slabel,
 .tone-needs {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 .status-done .slabel,
 .tone-done {
-  color: var(--ok);
+  color: var(--ok-text);
 }
 .status-failed .slabel,
 .tone-failed {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 .status-muted .slabel,
 .tone-muted,
@@ -462,9 +499,17 @@ select {
     transform: rotate(360deg);
   }
 }
+/* Reduced motion: nothing spins or blinks. The running ring stays as a still mark next to its text label. */
 @media (prefers-reduced-motion: reduce) {
-  .status-running .sdot {
-    animation-duration: 3s;
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .dots i {
+    opacity: 0.6;
   }
 }
 
@@ -505,7 +550,12 @@ select {
 }
 .section-needs .section-label,
 .section-needs .section-count {
-  color: var(--warn);
+  color: var(--warn-text);
+}
+/* Muted row text on the tinted section would fall under 4.5:1; lean it toward --text. */
+.section-needs .row-sub,
+.section-needs .row-note {
+  color: color-mix(in srgb, var(--muted) 80%, var(--text));
 }
 .section-done {
   background: color-mix(in srgb, var(--ok) 5%, transparent);
@@ -570,7 +620,7 @@ select {
   text-overflow: ellipsis;
 }
 .row-note.bad {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 .chev {
   flex: none;
@@ -828,7 +878,7 @@ a.dline:hover {
 }
 .card.error {
   border-color: color-mix(in srgb, var(--bad) 50%, var(--line));
-  color: var(--bad);
+  color: var(--bad-text);
   font-size: 14px;
 }
 .card-head {
@@ -870,6 +920,10 @@ a.dline:hover {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 8px;
+}
+.composer-box:focus-within {
+  border-color: var(--focus);
+  box-shadow: inset 0 0 0 1px var(--focus);
 }
 .composer-box textarea {
   flex: 1;
@@ -921,6 +975,7 @@ a.dline:hover {
   border-bottom: 1px solid var(--line);
 }
 .drawer-title {
+  margin: 0;
   font-size: 15px;
   font-weight: 600;
 }
@@ -1075,7 +1130,7 @@ a.dline:hover {
   mask-image: linear-gradient(to bottom, #000 70%, transparent);
 }
 .outcome {
-  color: var(--ok);
+  color: var(--ok-text);
   font-weight: 600;
   font-size: 13px;
   margin-bottom: 10px;
@@ -1189,11 +1244,11 @@ a.dline:hover {
   color: var(--muted);
 }
 .risk-high {
-  color: var(--bad);
+  color: var(--bad-text);
   background: color-mix(in srgb, var(--bad) 12%, transparent);
 }
 .risk-medium {
-  color: var(--warn);
+  color: var(--warn-text);
   background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
 .field {
@@ -1538,12 +1593,107 @@ a.dline:hover {
   .actions-row button,
   .review-bar button,
   .send {
-    min-height: 40px;
+    min-height: var(--tap);
   }
   .toast {
     bottom: calc(76px + env(safe-area-inset-bottom));
   }
   .app.deep .toast {
     bottom: calc(90px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---------------------------------------------------------------- tablet */
+
+/* 761–959px (portrait tablets, narrow windows): keep the rail, but list and detail no longer fit side by side,
+   so they stack like on a phone and the detail gets a back button. From 960px the list sits next to the detail. */
+@media (min-width: 761px) and (max-width: 959px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .list-pane {
+    border-right: none;
+    background: none;
+  }
+  .split:not(.has-detail) > .detail-pane,
+  .split.has-detail > .list-pane {
+    display: none;
+  }
+  .back {
+    display: inline-flex;
+  }
+}
+@media (min-width: 960px) and (max-width: 1100px) {
+  .split {
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------- touch */
+
+/* Fingers need 44px targets; a mouse keeps the denser layout. */
+@media (pointer: coarse) {
+  button,
+  .btn,
+  select,
+  summary,
+  a.link {
+    min-height: var(--tap);
+  }
+  /* The route chip becomes a plain text button: a 44px pill around two syllables reads as a blob.
+     Negative margins keep the meta row as tall as before while the target stays 44px. */
+  .chip.route {
+    min-height: var(--tap);
+    min-width: var(--tap);
+    justify-content: flex-start;
+    margin: -8px 0;
+    border-color: transparent;
+    padding: 0 6px 0 0;
+  }
+  button.link,
+  a.link {
+    display: inline-flex;
+    align-items: center;
+  }
+  .btn.small {
+    padding: 3px 14px;
+  }
+  .icon-btn,
+  .back {
+    min-width: var(--tap);
+    min-height: var(--tap);
+  }
+  .nav-item,
+  .row-link {
+    min-height: var(--tap);
+  }
+  /* The fold keeps its disclosure triangle (display: list-item), so it grows by padding. */
+  .fold summary {
+    min-height: 0;
+    padding: 12px 0;
+    margin: -8px 0;
+  }
+  .file-diff summary {
+    align-items: center;
+  }
+  .stat-files li {
+    min-height: var(--tap);
+    align-items: center;
+  }
+  .file-link {
+    min-height: var(--tap);
+    flex: 1;
+    justify-content: flex-start;
+  }
+  .composer-top select {
+    min-height: var(--tap);
+  }
+  .composer-box {
+    padding: 4px;
+    align-items: center;
+  }
+  .composer-box textarea {
+    min-height: var(--tap);
+    padding: 10px 8px;
   }
 }

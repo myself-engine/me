@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseDiffStat, splitDiff } from "./diff.ts";
+import { fenceLanguage, highlight } from "./highlight.ts";
 import { isDeep, parseRoute, taskHref } from "./routes.ts";
 import { initial, reducer, threadTone, toneOf, workItems, type State } from "./state.ts";
 
@@ -85,5 +86,26 @@ describe("status tones", () => {
       msg: { type: "entity", kind: "kernel.op", id: "o1", data: { opId: "o1", traceId: "tr2", callee: "gjc-head", state: "running", phaseLabel: "판정 중" } },
     });
     expect(s.ops.o1?.phaseLabel).toBe("판정 중");
+  });
+});
+
+describe("highlight", () => {
+  test("reads the fence language from the class", () => {
+    expect(fenceLanguage("language-ts")).toBe("ts");
+    expect(fenceLanguage("foo language-Diff")).toBe("diff");
+    expect(fenceLanguage(undefined)).toBeNull();
+    expect(fenceLanguage("hljs")).toBeNull();
+  });
+  test("highlights registered languages and their aliases", () => {
+    for (const lang of ["ts", "typescript", "js", "json", "bash", "sh", "diff", "python", "py", "go", "rust", "css", "html", "xml", "md", "yaml", "yml", "sql"])
+      expect(highlight("x", lang), lang).not.toBeNull();
+    expect(highlight("+hello\n-bye", "diff")).toContain('class="hljs-addition"');
+  });
+  test("returns null for unknown or missing languages instead of throwing", () => {
+    expect(highlight("x", "cobol")).toBeNull();
+    expect(highlight("x", null)).toBeNull();
+  });
+  test("escapes the source", () => {
+    expect(highlight("<img src=x onerror=alert(1)>", "html")).not.toContain("<img");
   });
 });

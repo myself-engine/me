@@ -92,7 +92,12 @@ export async function launchChrome(): Promise<Page> {
     cdp,
     eval: evaluate,
     until,
-    viewport: (width, height, mobile) => cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile }),
+    // Mobile viewports also emulate touch, so `(pointer: coarse)` rules (44px targets) are what gets checked.
+    viewport: async (width, height, mobile) => {
+      await cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile });
+      await cdp("Emulation.setTouchEmulationEnabled", mobile ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
+      await cdp("Emulation.setEmitTouchEventsForMouse", { enabled: mobile, configuration: "mobile" });
+    },
     scheme: (s) => cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: s }] }),
     open: async (url, ready) => {
       await cdp("Page.navigate", { url });
@@ -127,7 +132,16 @@ export const VIEWPORTS = [
   { name: "390", width: 390, height: 844, mobile: true },
   { name: "768", width: 768, height: 1024, mobile: true },
   { name: "1280", width: 1280, height: 820, mobile: false },
+  // A 1280px desktop window at 200% browser zoom lays out like a 640px-wide one.
+  { name: "640z", width: 640, height: 410, mobile: false },
 ];
+
+/** Interactive elements smaller than 44×44 CSS px on a touch screen (inline markdown links excepted). */
+export const SMALL_TARGETS = `[...document.querySelectorAll('a[href], button, select, summary, textarea, [role=button]')]
+  .filter((el) => !el.closest('.md') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
+  .map((el) => [el, el.getBoundingClientRect()])
+  .filter(([el, r]) => r.width > 0 && (r.height < 43.5 || r.width < 43.5) && !el.classList.contains('skip'))
+  .map(([el, r]) => (el.className || el.tagName.toLowerCase()) + ' "' + (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 24) + '" ' + Math.round(r.width) + 'x' + Math.round(r.height))`;
 
 /** Ready condition: the React root has rendered something. */
 export const READY = "!!document.querySelector('#root')?.children.length";

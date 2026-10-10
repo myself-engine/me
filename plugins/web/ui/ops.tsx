@@ -101,7 +101,7 @@ function Machines({ checks }: { checks: OpsCheck[] }) {
             {machine} · {list.filter((c) => c.status === "up").length}/{list.length} 정상
           </div>
           {list.some((c) => c.status === "up") && (
-            <div className="up-chips" aria-label="정상">
+            <div className="up-chips" role="group" aria-label="정상">
               {list
                 .filter((c) => c.status === "up")
                 .sort((a, b) => a.id.localeCompare(b.id))
