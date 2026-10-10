@@ -125,7 +125,12 @@ A → 커널:  op.cancel {opId}                    (선택)
 - 예: head는 GJC json 이벤트를 `{kind: "text_delta" | "thought_delta" | "tool_call" | "tool_result" | "delegation", ...}`로 정리해서 보낸다.
 - 다른 플러그인(예: 웹의 두 번째 탭)도 `op.subscribe {opId}`로 같은 스트림을 볼 수 있다. 권한은 `subscribe`다.
 
-**저널 처리**: `op.update`는 양이 많다. 저널에는 **원본 전체**를 남기되 플래그로 묶을 수 있게 한다. 묶는 방식은 미해결로 둔다.
+**저널 처리** (2026-10-11): `op.update`는 양이 많다. 스트림 조각(`DeltaUpdate`)은 합쳐서 기록한다.
+- 스트림 조각: `{kind: "<이름>_delta", delta: string}`이고 다른 필드가 없는 `update`다. 예: `text_delta`, `thought_delta`
+- 구독자에게는 지금처럼 조각 하나하나를 바로 전달한다. 이때 `seq`는 그 op의 마지막 저널 항목 번호다.
+- 저널에는 같은 종류의 연속된 조각을 이어 붙여 한 항목으로 남긴다: `{opId, update: {kind, delta: 합친 글}, coalesced: 조각 수}`
+- 쌓인 조각은 다음 중 하나가 오면 바로 기록한다: 조각이 아닌 업데이트(단계 포함), `op.end`, 1초 경과, 64KB 초과, 커널 종료. 그래서 저널 안의 순서는 원래 순서와 같다.
+- 조각이 아닌 업데이트는 전과 같이 하나씩 기록한다.
 
 ## 6. 이벤트
 
@@ -148,7 +153,7 @@ A → 커널:  op.cancel {opId}                    (선택)
 | 메서드 | 내용 | 권한 |
 |---|---|---|
 | `entity.registerKind {kind, schema}` | 매니페스트의 `provides.kinds`에 있는 종류만 등록할 수 있다. 스키마는 JSON Schema | 매니페스트 |
-| `entity.upsert {kind, id, data}` | 문서를 쓴다. 변경은 저널에 `kernel.entity.changed`로 남는다 | `write-state:<kind>` |
+| `entity.upsert {kind, id, data}` | 문서를 쓴다. 변경은 저널에 `kernel.entity.changed`로 남는다. 저장된 내용과 같으면 아무것도 쓰지 않고 이벤트도 내지 않으며, 기존 `updatedSeq`를 돌려준다 | `write-state:<kind>` |
 | `entity.get {kind, id}` | 하나를 읽는다 | `read-state` |
 | `entity.list {kind, where?, limit?, after?}` | `where`는 최상위 필드의 같음 비교만 지원한다 | `read-state` |
 
@@ -203,7 +208,11 @@ head → 커널:  approval.request {summary, risk: "low"|"medium"|"high", payloa
 - `traceId`: 하나의 사용자 턴에서 시작된 모든 일을 묶는다. 웹에서 "이 대화에서 일어난 일"을 그룹으로 보여 줄 때 쓴다.
 - `causationId`: 바로 앞의 원인이 되는 항목의 `seq`다.
 - 조회: `journal.query {traceId? | sinceSeq? | source?, limit}` (권한 `journal.read`)
-- 저널은 지우지 않는다. 보존과 압축은 미해결로 둔다.
+- 보존 (2026-10-11): 설정 `journal: {maxAgeDays, maxRows, pruneIntervalSec}`. 기본값은 14일, 200,000행, 1시간마다다.
+  - 커널이 시작할 때와 주기마다 오래된 항목과 넘치는 항목을 지운다. 지운 뒤 WAL 체크포인트(`TRUNCATE`)를 한다.
+  - 0을 주면 그 제한을 끈다. `me.local.json`의 `journal`로 덮어쓸 수 있다.
+  - 지워진 trace는 `trace.get`에서 빈 트리로 나온다. 엔티티는 지우지 않는다(`updatedSeq`가 지워진 항목을 가리킬 수 있다).
+  - 비운 페이지는 SQLite가 다시 쓴다. 비운 공간이 4MB 이상이고 파일의 절반 이상이면 VACUUM으로 파일을 줄인다.
 
 ## 11. 오류 코드
 
@@ -278,7 +287,6 @@ web → subscribe {pattern: "kernel.plugin.*"}, subscribe {pattern: "brgr.task.*
 
 ## 13. 미해결
 
-- 대량 `op.update`의 저널 묶음과 압축, 보존 기간
 - 역압(backpressure): 웹이 느릴 때 스트림 처리
 - 실행 방식 B의 신원: 지금은 토큰 하나를 모두가 나눠 쓰고, id는 플러그인이 스스로 밝힌다. TCP는 Tailscale 주소에만 열지만, 플러그인별 토큰, Tailscale 신원 확인, TLS는 아직 없다
 - `me connect` 중계: 커널 연결이 끊긴 동안 플러그인이 보낸 프레임은 버린다(플러그인 자신의 타임아웃에 맡긴다)

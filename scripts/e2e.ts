@@ -158,7 +158,13 @@ try {
     if (!root) throw new Error("no gjc-head node");
     const kids = root.children.map((c: any) => `${c.target}.${c.method}`);
     if (!kids.includes("jev.judge")) throw new Error(`children: ${kids.join(",")}`);
-    return `children=${kids.join(",")} root=${root.durationMs}ms`;
+    // Deltas reach subscribers one by one but are journaled merged (#4).
+    const live = inbox.filter((m) => m.type === "op.update" && m.traceId === directTrace && m.update.kind === "text_delta");
+    const rows = kernel.store.query({ traceId: directTrace, limit: 1000 }).filter((e) => e.type === "op.update" && (e.body as any).update?.kind === "text_delta");
+    const text = (xs: string[]) => xs.join("");
+    if (text(rows.map((e) => (e.body as any).update.delta)) !== text(live.map((m) => m.update.delta))) throw new Error("journaled text differs from streamed text");
+    if (rows.length > live.length) throw new Error(`text_delta rows ${rows.length} for ${live.length} live deltas`);
+    return `children=${kids.join(",")} root=${root.durationMs}ms text_delta live=${live.length} journal=${rows.length}`;
   });
 
   const delegate = async (text: string) => {

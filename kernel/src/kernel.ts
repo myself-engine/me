@@ -69,10 +69,28 @@ interface Op {
   phase: string | null;
   phaseLabel: string | null;
   progress: number | null;
+  /** Stream deltas delivered live but not journaled yet; consecutive deltas of one kind are merged. */
+  pending: { kind: string; delta: string; count: number }[];
+  pendingBytes: number;
+  flushTimer: ReturnType<typeof setTimeout> | null;
+  /** seq of the op's latest journal entry. */
+  lastSeq: number;
 }
 
 /** Recent ops kept as kernel.op entities after they end. */
 const OP_HISTORY = 500;
+/** Buffered deltas are journaled at least this often, and as soon as they exceed DELTA_MAX_BYTES. */
+const DELTA_FLUSH_MS = 1_000;
+const DELTA_MAX_BYTES = 64 * 1024;
+const DAY_MS = 86_400_000;
+
+/** A stream delta per PROTOCOL §5: `{kind: "<name>_delta", delta: string}` with nothing else. */
+function isDelta(u: any): u is { kind: string; delta: string } {
+  return (
+    !!u && typeof u === "object" && typeof u.kind === "string" && u.kind.endsWith("_delta") && typeof u.delta === "string" &&
+    Object.keys(u).length === 2
+  );
+}
 
 interface Approval {
   id: string;
@@ -89,7 +107,22 @@ export interface KernelOptions {
   initializeTimeoutMs?: number;
   /** Per-plugin config passed in `initialize`. */
   pluginConfig?: Record<string, Record<string, JsonValue>>;
+  /** Journal retention and delta coalescing; see JournalOptions. */
+  journal?: JournalOptions;
 }
+
+export interface JournalOptions {
+  /** Entries older than this are deleted. Default 14; 0 keeps them forever. */
+  maxAgeDays?: number;
+  /** At most this many newest entries are kept. Default 200000; 0 means no limit. */
+  maxRows?: number;
+  /** How often pruning runs after the one at startup. Default 3600. */
+  pruneIntervalSec?: number;
+  /** Buffered stream deltas are journaled at least this often. Default 1000. */
+  deltaFlushMs?: number;
+}
+
+export const DEFAULT_JOURNAL = { maxAgeDays: 14, maxRows: 200_000, pruneIntervalSec: 3600, deltaFlushMs: DELTA_FLUSH_MS };
 
 /** What a connect-in plugin may be granted when config sets no `connectPermissions`. */
 export const DEFAULT_CONNECT_PERMISSIONS: Permission[] = ["read-state", "emit", "subscribe"];
@@ -224,6 +257,8 @@ export class Kernel {
   private helloFailures = new Map<string, { times: number[]; bannedUntil: number }>();
   /** Open connect-in sockets, resolved when each closes. */
   private sockets = new Map<Socket, Promise<void>>();
+  private journalOpts: Required<JournalOptions>;
+  private pruneTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private opts: KernelOptions) {
     mkdirSync(opts.dataDir, { recursive: true });
@@ -238,6 +273,23 @@ export class Kernel {
       this.store.upsert("kernel.op", op.opId, { ...op, state: "failed", error: "kernel restarted", endedAt: op.updatedAt }, doc.updatedSeq);
     }
     this.store.prune("kernel.op", OP_HISTORY);
+    this.journalOpts = { ...DEFAULT_JOURNAL, ...opts.journal };
+    this.pruneJournal();
+    if (this.journalOpts.pruneIntervalSec > 0) {
+      this.pruneTimer = setInterval(() => this.pruneJournal(), this.journalOpts.pruneIntervalSec * 1000);
+      this.pruneTimer.unref?.();
+    }
+  }
+
+  /** Applies the retention limits, then checkpoints the WAL so the file shrinks back. */
+  pruneJournal(now = Date.now()): number {
+    const { maxAgeDays, maxRows } = this.journalOpts;
+    const deleted = this.store.pruneJournal({
+      before: maxAgeDays > 0 ? new Date(now - maxAgeDays * DAY_MS).toISOString() : null,
+      maxRows: maxRows > 0 ? maxRows : null,
+    });
+    if (deleted > 0) this.log(`journal: pruned ${deleted} entries`);
+    return deleted;
   }
 
   // -------------------------------------------------------------------------
@@ -267,6 +319,7 @@ export class Kernel {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    if (this.pruneTimer) clearInterval(this.pruneTimer);
     await Promise.all(
       [...this.hosts.values()].map(async (h) => {
         h.stopping = true;
@@ -291,6 +344,7 @@ export class Kernel {
     for (const sock of this.sockets.keys()) sock.destroy();
     await Promise.race([Promise.all(closing), Bun.sleep(2_000)]);
     for (const a of this.approvals.values()) if (a.timer) clearTimeout(a.timer);
+    for (const op of this.ops.values()) this.flushDeltas(op);
     this.store.close();
   }
 
@@ -842,6 +896,9 @@ export class Kernel {
     }
     const problem = validateAgainstSchema(kind.schema, params.data);
     if (problem) throw new RpcError(ErrorCode.SchemaViolation, `${params.kind}: ${problem}`);
+    // An upsert that changes nothing is neither journaled nor announced.
+    const prev = this.store.getRaw(params.kind, params.id);
+    if (prev && prev.data === JSON.stringify(params.data)) return { updatedSeq: prev.updatedSeq };
     const { seq } = this.journal(id, "event", params.traceId ?? null, params.causationId ?? null, {
       name: "kernel.entity.changed",
       data: { kind: params.kind, id: params.id, entity: params.data },
@@ -865,7 +922,15 @@ export class Kernel {
       const p = params as OpUpdateParams;
       const op = this.ops.get(p.opId);
       if (!op || op.callee !== id) return;
+      if (isDelta(p.update)) {
+        // Delivered live as is; journaled later, merged with its neighbours (seq is the op's latest entry).
+        this.bufferDelta(op, p.update);
+        for (const sub of op.subscribers) this.hosts.get(sub)?.peer?.notify("op.update", { opId: op.id, update: p.update, seq: op.lastSeq });
+        return;
+      }
+      this.flushDeltas(op);
       const { seq } = this.journal(id, "op.update", op.traceId, op.causationId, { opId: op.id, update: p.update });
+      op.lastSeq = seq;
       for (const sub of op.subscribers) this.hosts.get(sub)?.peer?.notify("op.update", { opId: op.id, update: p.update, seq });
       const u = p.update as any;
       if (u && u.kind === "phase" && typeof u.phase === "string") {
@@ -886,9 +951,41 @@ export class Kernel {
     this.log(`ignored notification ${method} from ${id}`);
   }
 
+  private bufferDelta(op: Op, u: { kind: string; delta: string }) {
+    const last = op.pending.at(-1);
+    if (last && last.kind === u.kind) {
+      last.delta += u.delta;
+      last.count++;
+    } else op.pending.push({ kind: u.kind, delta: u.delta, count: 1 });
+    op.pendingBytes += u.delta.length;
+    // While stopping, no timer: it could fire after the store has closed.
+    if (op.pendingBytes >= DELTA_MAX_BYTES || this.stopped) this.flushDeltas(op);
+    else if (!op.flushTimer) {
+      op.flushTimer = setTimeout(() => this.flushDeltas(op), this.journalOpts.deltaFlushMs);
+      op.flushTimer.unref?.();
+    }
+  }
+
+  /** Journals buffered deltas, one entry per run of one kind, in arrival order. */
+  private flushDeltas(op: Op) {
+    if (op.flushTimer) clearTimeout(op.flushTimer);
+    op.flushTimer = null;
+    if (op.pending.length === 0) return;
+    for (const d of op.pending) {
+      op.lastSeq = this.journal(op.callee, "op.update", op.traceId, op.causationId, {
+        opId: op.id,
+        update: { kind: d.kind, delta: d.delta },
+        coalesced: d.count,
+      }).seq;
+    }
+    op.pending = [];
+    op.pendingBytes = 0;
+  }
+
   private endOp(opId: string, p: OpEndParams, source: string) {
     const op = this.ops.get(opId);
     if (!op) return;
+    this.flushDeltas(op);
     this.ops.delete(opId);
     const { seq } = this.journal(source, "op.end", op.traceId, op.causationId, { opId, result: p.result, error: p.error });
     op.state = p.error ? (p.error.code === ErrorCode.Cancelled ? "cancelled" : "failed") : "done";
@@ -954,7 +1051,7 @@ export class Kernel {
   // -------------------------------------------------------------------------
 
   private newOp(id: string, caller: string, callee: string, method: string, traceId: string, causationId: number, state: Op["state"]): Op {
-    return { id, caller, callee, subscribers: new Set([caller]), traceId, causationId, method, startedAt: new Date().toISOString(), state, phase: null, phaseLabel: null, progress: null };
+    return { id, caller, callee, subscribers: new Set([caller]), traceId, causationId, method, startedAt: new Date().toISOString(), state, phase: null, phaseLabel: null, progress: null, pending: [], pendingBytes: 0, flushTimer: null, lastSeq: causationId };
   }
 
   /** Mirrors an op into the kernel.op entity and refreshes its plugin's activeOps. */
@@ -1001,6 +1098,7 @@ export class Kernel {
       activeOps: [...this.ops.values()].filter((o) => o.callee === m.id).length,
       lastError: host.lastError ?? null,
     };
+    if (JSON.stringify(entity) === JSON.stringify(prev)) return;
     this.store.upsert("kernel.plugin", m.id, entity, seq);
     this.deliver("kernel.entity.changed", { kind: "kernel.plugin", id: m.id, updatedSeq: seq }, this.ctx(KERNEL, seq, null, null));
   }

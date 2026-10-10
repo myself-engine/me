@@ -1,5 +1,5 @@
 // Use cases of the ops plugin, written against ports only. Read-only: it observes and reports, never acts.
-import { observe, type CheckRecord, type CheckSpec, type CheckState, type OpsConfig } from "../domain/check.ts";
+import { needsStore, observe, type CheckRecord, type CheckSpec, type CheckState, type OpsConfig } from "../domain/check.ts";
 import type { CheckStore, Clock, Events, Probe } from "../ports/index.ts";
 
 export interface ServiceDeps {
@@ -31,6 +31,8 @@ export function createService(deps: ServiceDeps) {
   const states = new Map<string, CheckState>(config.checks.map((c) => [c.id, { record: null, pending: null }]));
   const history = new Map<string, HistoryEntry[]>(config.checks.map((c) => [c.id, []]));
   const inflight = new Map<string, Promise<CheckRecord>>();
+  /** The last record written to the store per check, and when (clock ms). */
+  const stored = new Map<string, { record: CheckRecord; at: number }>();
   let stopTimer: (() => void) | null = null;
 
   const iso = () => new Date(clock.now()).toISOString();
@@ -39,7 +41,10 @@ export function createService(deps: ServiceDeps) {
   async function load() {
     for (const r of await store.list()) {
       const spec = specs.get(r.id);
-      if (spec && spec.kind === r.kind) states.set(r.id, { record: r, pending: null });
+      if (spec && spec.kind === r.kind) {
+        states.set(r.id, { record: r, pending: null });
+        stored.set(r.id, { record: r, at: Date.parse(r.checkedAt) || 0 });
+      }
     }
   }
 
@@ -55,10 +60,15 @@ export function createService(deps: ServiceDeps) {
     states.set(spec.id, t.state);
     const record = t.state.record!;
     remember(spec.id, { ...record, status: obs.status, detail: obs.detail, latencyMs: Math.round(obs.latencyMs) });
-    try {
-      await store.put(record);
-    } catch (err) {
-      log(`store ${spec.id} failed: ${(err as Error).message}`);
+    // Steady checks are written only on a summary change or a heartbeat; checks.list still shows every run.
+    const now = clock.now();
+    if (needsStore(stored.get(spec.id) ?? null, record, now, config.heartbeatSec * 1000)) {
+      try {
+        await store.put(record);
+        stored.set(spec.id, { record, at: now });
+      } catch (err) {
+        log(`store ${spec.id} failed: ${(err as Error).message}`);
+      }
     }
     if (t.changed) {
       const data = { id: spec.id, kind: spec.kind, from: t.changed.from, to: t.changed.to, detail: record.detail, since: record.since };

@@ -4,6 +4,9 @@ import type { EntityDoc, JournalEntry, JournalQueryParams, JsonValue } from "@me
 
 export type JournalType = JournalEntry["type"];
 
+/** pruneJournal vacuums only when at least this much (and half the file) is free. */
+const VACUUM_MIN_FREE_BYTES = 4 * 1024 * 1024;
+
 export interface AppendInput {
   source: string;
   type: JournalType;
@@ -116,6 +119,12 @@ export class Store {
     return r ? { kind: r.kind, id: r.id, data: JSON.parse(r.data), updatedSeq: r.updated_seq } : null;
   }
 
+  /** The stored JSON text of a document, for cheap equality checks. */
+  getRaw(kind: string, id: string): { data: string; updatedSeq: number } | null {
+    const r = this.getStmt.get(kind, id) as any;
+    return r ? { data: r.data, updatedSeq: r.updated_seq } : null;
+  }
+
   list(kind: string, where: Record<string, JsonValue> | undefined, limit = 100, after?: string): EntityDoc[] {
     const conds = ["kind = ?"];
     const args: (string | number | null)[] = [kind];
@@ -142,6 +151,34 @@ export class Store {
         "DELETE FROM entities WHERE kind = ? AND id NOT IN (SELECT id FROM entities WHERE kind = ? ORDER BY updated_seq DESC LIMIT ?)",
       )
       .run(kind, kind, keep);
+  }
+
+  /**
+   * Deletes journal entries older than `before` (ISO time) and all but the newest `maxRows`, vacuums if most
+   * of the file is then free, and checkpoints the WAL. Returns the number of entries deleted.
+   */
+  pruneJournal(limits: { before: string | null; maxRows: number | null }): number {
+    let deleted = 0;
+    this.db.transaction(() => {
+      if (limits.before) {
+        // A full scan, but pruning runs about once an hour over a bounded table.
+        deleted += this.db.prepare("DELETE FROM journal WHERE ts < ?").run(limits.before).changes;
+      }
+      if (limits.maxRows) {
+        deleted += this.db
+          .prepare("DELETE FROM journal WHERE seq <= (SELECT seq FROM journal ORDER BY seq DESC LIMIT 1 OFFSET ?)")
+          .run(limits.maxRows).changes;
+      }
+    })();
+    if (deleted > 0) {
+      // Freed pages are reused but never returned; rewrite the file once they are most of it.
+      const pragma = (name: string) => (this.db.prepare(`PRAGMA ${name}`).get() as Record<string, number>)[name]!;
+      const free = pragma("freelist_count");
+      if (free * pragma("page_size") >= VACUUM_MIN_FREE_BYTES && free * 2 >= pragma("page_count")) this.db.exec("VACUUM;");
+    }
+    // Also when nothing was deleted: a busy WAL otherwise stays at its high-water size.
+    this.db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    return deleted;
   }
 
   close() {

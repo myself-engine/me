@@ -140,12 +140,76 @@ describe("scheduling", () => {
     await service.run();
     clock.advance(30_000);
     await service.run({ id: "web" });
-    expect(store.records.get("web")).toMatchObject({
-      status: "up",
-      ok: true,
+    expect(store.records.get("web")).toMatchObject({ status: "up", ok: true, since: new Date(T0).toISOString(), checkedAt: new Date(T0).toISOString() });
+    expect(service.list().checks.find((c: any) => c.id === "web")).toMatchObject({
       since: new Date(T0).toISOString(),
       checkedAt: new Date(T0 + 30_000).toISOString(),
     });
+  });
+});
+
+describe("store writes", () => {
+  function single(heartbeatSec?: number, store?: MemoryStore) {
+    const config = parseConfig({ intervalSec: 60, confirm: 2, ...(heartbeatSec ? { heartbeatSec } : {}), checks: [{ id: "web", kind: "http", url: "http://127.0.0.1:1/" }] });
+    const clock = new FakeClock();
+    const s = store ?? new MemoryStore();
+    const p = scriptedProbe();
+    const service = createService({ config, probe: p.probe, clock, store: s, events: new FakeEvents(), log: () => {} });
+    return { service, clock, store: s, ...p };
+  }
+  const tick = async (h: { clock: FakeClock; service: { idle(): Promise<void> } }, n: number) => {
+    for (let i = 0; i < n; i++) {
+      h.clock.advance(60_000);
+      await h.service.idle();
+    }
+  };
+
+  test("a steady check is stored once, then once per heartbeat (default 10 minutes)", async () => {
+    const h = single();
+    h.service.start();
+    await h.service.idle();
+    expect(h.store.puts).toBe(1);
+    await tick(h, 9);
+    expect(h.store.puts).toBe(1);
+    await tick(h, 1);
+    expect(h.store.puts).toBe(2);
+    expect(h.store.records.get("web")!.checkedAt).toBe(new Date(T0 + 600_000).toISOString());
+    await tick(h, 50);
+    expect(h.store.puts).toBe(7);
+  });
+
+  test("a status change and an unconfirmed candidate are stored at once", async () => {
+    const h = single();
+    h.service.start();
+    await h.service.idle();
+    h.answers.set("web", "down");
+    await tick(h, 1);
+    expect(h.store.puts).toBe(2);
+    expect(h.store.records.get("web")).toMatchObject({ status: "up", detail: "down 1/2: web down" });
+    await tick(h, 1);
+    expect(h.store.puts).toBe(3);
+    expect(h.store.records.get("web")).toMatchObject({ status: "down", since: new Date(T0 + 120_000).toISOString() });
+    await tick(h, 3);
+    expect(h.store.puts).toBe(3);
+  });
+
+  test("heartbeatSec is configurable and a restart continues from the stored record's checkedAt", async () => {
+    const store = new MemoryStore();
+    const a = single(120, store);
+    a.service.start();
+    await a.service.idle();
+    await tick(a, 2);
+    expect(store.puts).toBe(2);
+    a.service.stop();
+
+    const b = single(120, store);
+    b.clock.t = a.clock.t + 60_000;
+    await b.service.load();
+    await b.service.run();
+    expect(store.puts).toBe(2);
+    b.clock.advance(60_000);
+    await b.service.run();
+    expect(store.puts).toBe(3);
   });
 });
 

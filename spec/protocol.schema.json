@@ -1772,6 +1772,24 @@
         }
       }
     },
+    "DeltaUpdate": {
+      "description": "Stream fragment sent as op.update `update`: kind ends in \"_delta\" and there are no other fields. Delivered live one by one; the journal merges consecutive fragments of one kind into one entry.",
+      "type": "object",
+      "required": [
+        "kind",
+        "delta"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "pattern": "_delta$"
+        },
+        "delta": {
+          "type": "string"
+        }
+      }
+    },
     "KernelOpEntity": {
       "description": "Exposed as entity kind \"kernel.op\": live and recent streaming ops and approvals.",
       "type": "object",

@@ -354,6 +354,16 @@ export interface PhaseUpdate {
   progress?: number;
 }
 
+/**
+ * Stream fragment, e.g. `{ kind: "text_delta", delta: "안" }`. `kind` ends in "_delta" and there are no other
+ * fields. Subscribers get every fragment live; the journal merges consecutive fragments of one kind into one
+ * `op.update` entry (with `coalesced: n`), written at least once a second and before any other update or op.end.
+ */
+export interface DeltaUpdate {
+  kind: `${string}_delta`;
+  delta: string;
+}
+
 /** Exposed as entity kind "kernel.op": live and recent streaming ops and approvals. */
 export interface KernelOpEntity {
   opId: string;

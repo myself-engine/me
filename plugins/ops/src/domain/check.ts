@@ -48,6 +48,19 @@ export const DEFAULT_TIMEOUT_MS = 5_000;
 export const DEFAULT_INTERVAL_SEC = 60;
 /** Consecutive identical observations needed before a known status flips. */
 export const DEFAULT_CONFIRM = 2;
+/** A stored record whose summary has not changed is rewritten at most this often, so checkedAt stays recent. */
+export const DEFAULT_HEARTBEAT_SEC = 600;
+
+/**
+ * Whether a new record must be stored: its summary (status, since, detail) differs from the last stored one,
+ * or the last store is at least `heartbeatMs` old. checkedAt and latencyMs alone do not count as changes.
+ */
+export function needsStore(stored: { record: CheckRecord; at: number } | null, next: CheckRecord, now: number, heartbeatMs: number): boolean {
+  if (!stored) return true;
+  const a = stored.record;
+  if (a.status !== next.status || a.ok !== next.ok || a.since !== next.since || a.detail !== next.detail || a.kind !== next.kind) return true;
+  return now - stored.at >= heartbeatMs;
+}
 
 /**
  * Applies one observation. The first observation of a check is taken as-is. After that, a different status
@@ -83,6 +96,8 @@ export interface OpsConfig {
   /** Delay before the first run, so checks of things started alongside me don't report down at boot. */
   startDelaySec: number;
   confirm: number;
+  /** Unchanged records are rewritten at most this often; see needsStore. */
+  heartbeatSec: number;
   /** Checks that were rejected, with the reason; they are reported but never run. */
   errors: { index: number; id: string | null; error: string }[];
 }
@@ -147,6 +162,7 @@ export function parseConfig(config: Record<string, unknown> | undefined): OpsCon
     intervalSec: posInt(config?.intervalSec, DEFAULT_INTERVAL_SEC),
     startDelaySec: typeof config?.startDelaySec === "number" && config.startDelaySec >= 0 ? config.startDelaySec : 0,
     confirm: posInt(config?.confirm, DEFAULT_CONFIRM),
+    heartbeatSec: posInt(config?.heartbeatSec, DEFAULT_HEARTBEAT_SEC),
     errors,
   };
 }

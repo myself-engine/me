@@ -3,7 +3,7 @@
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Permission } from "@me/protocol";
-import { Kernel } from "./kernel.ts";
+import { Kernel, type JournalOptions } from "./kernel.ts";
 import { isPermission, loadManifest } from "./manifest.ts";
 
 interface Config {
@@ -18,6 +18,8 @@ interface Config {
   tcp?: false | { host: string; port: number; allowAnyHost?: boolean };
   /** Upper bound for TCP-connected plugins; default connectPermissions. */
   remotePermissions?: Permission[];
+  /** Journal retention: { maxAgeDays, maxRows, pruneIntervalSec }; defaults 14 days, 200000 rows, hourly. */
+  journal?: JournalOptions;
 }
 
 const configPath = resolve(process.argv[2] ?? process.env.ME_CONFIG ?? "me.config.json");
@@ -33,6 +35,7 @@ if (await Bun.file(localPath).exists()) {
   if (local.connectPermissions) config.connectPermissions = local.connectPermissions;
   if (local.tcp !== undefined) config.tcp = local.tcp;
   if (local.remotePermissions) config.remotePermissions = local.remotePermissions;
+  if (local.journal) config.journal = { ...config.journal, ...local.journal };
   // Machine-specific plugins (e.g. from `me adapt`) are appended, not substituted.
   config.plugins = [...new Set([...config.plugins, ...(((local as any).extraPlugins as string[]) ?? [])])];
   for (const [id, cfg] of Object.entries(local.pluginConfig ?? {})) {
@@ -42,7 +45,7 @@ if (await Bun.file(localPath).exists()) {
 const expand = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : resolve(base, p));
 const dataDir = expand(process.env.ME_HOME ?? config.dataDir ?? "~/.me");
 
-const kernel = new Kernel({ dataDir, pluginConfig: config.pluginConfig });
+const kernel = new Kernel({ dataDir, pluginConfig: config.pluginConfig, journal: config.journal });
 console.error(`[kernel] data dir ${dataDir}`);
 
 if (config.socket !== false) {

@@ -21,6 +21,7 @@ Enable it by adding `"plugins/ops"` to `plugins` in your config, then configure 
 ```
 
 - `confirm` (default 2): a status change must be seen this many runs in a row before it counts, so one blip does not flap. The first run of a check is taken as-is.
+- `heartbeatSec` (default 600): a record is written to the store only when its status, `since` or `detail` changes, or when the last write is this old. Runs in between update `checks.list` and `checks.history` but not the stored record, so a stored `checkedAt` can lag by up to `heartbeatSec` plus one interval.
 - Invalid checks are skipped and reported in `checks.list` under `errors`.
 
 ## What it provides

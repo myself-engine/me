@@ -453,6 +453,12 @@ export interface PhaseUpdate {
   progress?: number;
 }
 
+/** Stream fragment sent as op.update `update`: kind ends in "_delta" and there are no other fields. Delivered live one by one; the journal merges consecutive fragments of one kind into one entry. */
+export interface DeltaUpdate {
+  kind: string;
+  delta: string;
+}
+
 /** Exposed as entity kind "kernel.op": live and recent streaming ops and approvals. */
 export interface KernelOpEntity {
   opId: string;

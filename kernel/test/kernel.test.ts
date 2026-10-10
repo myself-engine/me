@@ -109,6 +109,93 @@ describe("streaming ops", () => {
     expect(types).toContain("op.end");
   });
 
+  test("delivers every delta live but journals runs of one kind as one entry", async () => {
+    await attach(
+      { id: "talker", provides: { methods: ["talk"] } },
+      {
+        methods: {
+          talk: async (_p, ctx) => {
+            for (const c of "abc") ctx.update({ kind: "thought_delta", delta: c });
+            for (const c of "hello") ctx.update({ kind: "text_delta", delta: c });
+            ctx.phase("answering");
+            ctx.update({ kind: "text_delta", delta: "!" });
+            ctx.update({ kind: "text_delta", delta: "?", extra: 1 });
+            return "ok";
+          },
+        },
+      },
+    );
+    const caller = await attach({ id: "caller", permissions: ["call:talker"] });
+    const seen: any[] = [];
+    await caller.invoke("talker", "talk", {}, { stream: true, onUpdate: (u) => seen.push(u) });
+
+    expect(seen).toHaveLength(11);
+    expect(seen.filter((u) => u.kind === "text_delta").map((u) => u.delta).join("")).toBe("hello!?");
+    const rows = kernel.store.query({ limit: 1000 }).filter((e) => e.type === "op.update" || e.type === "op.end");
+    expect(rows.map((e) => (e.type === "op.end" ? "end" : `${(e.body as any).update.kind}:${(e.body as any).update.delta ?? (e.body as any).update.phase}`))).toEqual([
+      "thought_delta:abc",
+      "text_delta:hello",
+      "phase:answering",
+      "text_delta:!",
+      "text_delta:?",
+      "end",
+    ]);
+    expect((rows[1]!.body as any).coalesced).toBe(5);
+  });
+
+  test("journals buffered deltas after the flush interval while the op is still running", async () => {
+    await kernel.stop();
+    kernel = new Kernel({ dataDir: dir, log: () => {}, journal: { deltaFlushMs: 30 } });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await attach(
+      { id: "slow", provides: { methods: ["talk"] } },
+      {
+        methods: {
+          talk: async (_p, ctx) => {
+            ctx.update({ kind: "text_delta", delta: "a" });
+            ctx.update({ kind: "text_delta", delta: "b" });
+            await gate;
+            return "ok";
+          },
+        },
+      },
+    );
+    const caller = await attach({ id: "caller", permissions: ["call:slow"] });
+    const done = caller.invoke("slow", "talk", {}, { stream: true });
+    const deltas = () => kernel.store.query({ limit: 1000 }).filter((e) => e.type === "op.update").map((e) => (e.body as any).update.delta);
+    await Bun.sleep(20);
+    expect(deltas()).toEqual([]);
+    await Bun.sleep(80);
+    expect(deltas()).toEqual(["ab"]);
+    release();
+    await done;
+    expect(deltas()).toEqual(["ab"]);
+  });
+
+  test("journals buffered deltas when the kernel stops mid-stream", async () => {
+    await attach(
+      { id: "hang", provides: { methods: ["talk"] } },
+      {
+        methods: {
+          talk: async (_p, ctx) => {
+            ctx.update({ kind: "text_delta", delta: "x" });
+            ctx.update({ kind: "text_delta", delta: "y" });
+            await new Promise(() => {});
+          },
+        },
+      },
+    );
+    const caller = await attach({ id: "caller", permissions: ["call:hang"] });
+    const seen: string[] = [];
+    void caller.invoke("hang", "talk", {}, { stream: true, onUpdate: (u) => seen.push(u.delta) }).catch(() => {});
+    for (let i = 0; i < 50 && seen.length < 2; i++) await Bun.sleep(5);
+    await kernel.stop();
+    kernel = new Kernel({ dataDir: dir, log: () => {} });
+    const rows = kernel.store.query({ limit: 1000 }).filter((e) => e.type === "op.update");
+    expect(rows.map((e) => (e.body as any).update.delta)).toEqual(["xy"]);
+  });
+
   test("turns a handler error into an op.end error", async () => {
     await attach({ id: "bad", provides: { methods: ["boom"] } }, { methods: { boom: () => Promise.reject(new Error("kaboom")) } });
     const caller = await attach({ id: "caller", permissions: ["call:bad"] });
@@ -152,6 +239,30 @@ describe("entities", () => {
 
     const listed = await stranger.entity.list({ kind: "owner.thing", where: { state: "b" } });
     expect(listed.map((d) => d.id)).toEqual(["2"]);
+  });
+
+  test("an upsert with unchanged data is not journaled or announced", async () => {
+    const owner = await attach({ id: "owner", provides: { kinds: ["thing"] }, permissions: ["read-state"] });
+    await owner.entity.registerKind("thing", { type: "object" });
+    const seen: unknown[] = [];
+    await attach(
+      { id: "watcher", permissions: ["subscribe"], subscribes: ["kernel.entity.changed"] },
+      { onEvent: (_name, data: any) => void (data.kind === "owner.thing" && seen.push(data.updatedSeq)) },
+    );
+    const changes = () =>
+      kernel.store.query({ limit: 1000 }).filter((e) => e.type === "event" && (e.body as any).data?.kind === "owner.thing").length;
+
+    const first = await owner.entity.upsert("owner.thing", "1", { state: "a", n: 1 });
+    const again = await owner.entity.upsert("owner.thing", "1", { state: "a", n: 1 });
+    expect(again.updatedSeq).toBe(first.updatedSeq);
+    expect(changes()).toBe(1);
+
+    const changed = await owner.entity.upsert("owner.thing", "1", { state: "b", n: 1 });
+    expect(changed.updatedSeq).toBeGreaterThan(first.updatedSeq);
+    expect(changes()).toBe(2);
+    expect((await owner.entity.get<any>("owner.thing", "1"))!.data.state).toBe("b");
+    await Bun.sleep(20);
+    expect(seen).toEqual([first.updatedSeq, changed.updatedSeq]);
   });
 
   test("exposes plugin state as kernel.plugin entities", async () => {
@@ -308,5 +419,68 @@ describe("op state and traces", () => {
     await expect(caller.invoke("bad", "boom", {})).rejects.toThrow("kaboom");
     const p = await caller.entity.get<any>("kernel.plugin", "bad");
     expect(p!.data.lastError).toMatchObject({ method: "boom", message: expect.stringContaining("kaboom") });
+  });
+});
+
+describe("journal retention", () => {
+  const fill = (n: number, ts: string) => {
+    const stmt = kernel.store.db.prepare("INSERT INTO journal (ts, source, type, body) VALUES (?, 'x', 'lifecycle', '{}')");
+    for (let i = 0; i < n; i++) stmt.run(ts);
+  };
+  const count = () => (kernel.store.db.prepare("SELECT COUNT(*) AS n FROM journal").get() as any).n as number;
+
+  test("deletes entries older than maxAgeDays and keeps newer ones", async () => {
+    await kernel.stop();
+    kernel = new Kernel({ dataDir: dir, log: () => {}, journal: { maxAgeDays: 14, maxRows: 0, pruneIntervalSec: 0 } });
+    const before = count();
+    fill(5, new Date(Date.now() - 20 * 86_400_000).toISOString());
+    fill(3, new Date(Date.now() - 86_400_000).toISOString());
+    expect(kernel.pruneJournal()).toBe(5 + before);
+    expect(count()).toBe(3);
+  });
+
+  test("keeps only the newest maxRows entries and prunes again at startup", async () => {
+    await kernel.stop();
+    kernel = new Kernel({ dataDir: dir, log: () => {}, journal: { maxAgeDays: 0, maxRows: 10, pruneIntervalSec: 0 } });
+    fill(25, new Date().toISOString());
+    expect(kernel.pruneJournal()).toBeGreaterThanOrEqual(15);
+    expect(count()).toBe(10);
+    fill(7, new Date().toISOString());
+    await kernel.stop();
+    kernel = new Kernel({ dataDir: dir, log: () => {}, journal: { maxAgeDays: 0, maxRows: 10, pruneIntervalSec: 0 } });
+    expect(count()).toBe(10);
+  });
+
+  test("checkpoints the WAL after pruning", async () => {
+    await kernel.stop();
+    kernel = new Kernel({ dataDir: dir, log: () => {}, journal: { maxAgeDays: 1, maxRows: 0, pruneIntervalSec: 0 } });
+    fill(2000, new Date(Date.now() - 3 * 86_400_000).toISOString());
+    const wal = join(dir, "me.sqlite-wal");
+    expect(Bun.file(wal).size).toBeGreaterThan(0);
+    kernel.pruneJournal();
+    expect(Bun.file(wal).size).toBe(0);
+  });
+
+  test("vacuums when most of the file is free after pruning", async () => {
+    await kernel.stop();
+    kernel = new Kernel({ dataDir: dir, log: () => {}, journal: { maxAgeDays: 1, maxRows: 0, pruneIntervalSec: 0 } });
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    const stmt = kernel.store.db.prepare("INSERT INTO journal (ts, source, type, body) VALUES (?, 'x', 'lifecycle', ?)");
+    kernel.store.db.transaction(() => {
+      for (let i = 0; i < 30_000; i++) stmt.run(old, JSON.stringify({ pad: "x".repeat(300) }));
+    })();
+    kernel.store.db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    const db = join(dir, "me.sqlite");
+    expect(Bun.file(db).size).toBeGreaterThan(8 * 1024 * 1024);
+    kernel.pruneJournal();
+    expect(Bun.file(db).size).toBeLessThan(1024 * 1024);
+  });
+
+  test("keeps everything when both limits are off", async () => {
+    await kernel.stop();
+    kernel = new Kernel({ dataDir: dir, log: () => {}, journal: { maxAgeDays: 0, maxRows: 0, pruneIntervalSec: 0 } });
+    fill(5, "2000-01-01T00:00:00.000Z");
+    expect(kernel.pruneJournal()).toBe(0);
+    expect(count()).toBeGreaterThanOrEqual(5);
   });
 });
