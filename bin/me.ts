@@ -10,3 +10,4 @@ switch (cmd) {
     console.error("usage: me start [config]");
     process.exit(cmd ? 1 : 0);
 }
+export {};
