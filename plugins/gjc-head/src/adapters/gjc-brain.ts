@@ -21,13 +21,15 @@ export function gjcBrain(opts: { model: string; dataDir: string }): Brain {
         cwd: join(opts.dataDir, "sessions"),
         resume: p.sessionId ?? undefined,
         systemPrompt: SYSTEM,
+        // Short chat replies: reasoning adds latency variance (up to ~6s) without better answers.
+        thinking: "off",
         signal: p.signal,
         onUpdate: p.onUpdate,
       });
       return { text: res.text, sessionId: res.sessionId, violation: res.violation ? { toolName: res.violation.toolName } : null };
     },
     prepare(p) {
-      const warm = prepareGjc({ model: opts.model, cwd: join(opts.dataDir, "sessions"), resume: p.sessionId ?? undefined, systemPrompt: SYSTEM });
+      const warm = prepareGjc({ model: opts.model, cwd: join(opts.dataDir, "sessions"), resume: p.sessionId ?? undefined, systemPrompt: SYSTEM, thinking: "off" });
       return {
         async reply(q) {
           const res = await warm.run(q.prompt, { onUpdate: q.onUpdate, signal: q.signal });
