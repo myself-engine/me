@@ -29,18 +29,28 @@ const plugin = definePlugin({
 void plugin.run();
 await ready;
 
-const config = parseConfig(plugin.config as Record<string, unknown>);
-const expand = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
-const token = readFileSync(expand(config.tokenFile), "utf8").trim();
-if (!token) throw new Error(`discord: token file ${config.tokenFile} is empty`);
+// A missing or broken setup must not crash-loop the plugin (the kernel would quarantine it).
+// Stay connected to the kernel, idle, and say why on stderr (the kernel's plugin log).
+async function start(): Promise<void> {
+  const config = parseConfig(plugin.config as Record<string, unknown>);
+  const expand = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
+  const token = readFileSync(expand(config.tokenFile), "utf8").trim();
+  if (!token) throw new Error(`token file ${config.tokenFile} is empty`);
 
-const dataDir = process.env.ME_DATA_DIR ?? ".";
-mkdirSync(dataDir, { recursive: true });
-const ledger = new Ledger(join(dataDir, "ledger.sqlite"));
-const gateway = discordJsGateway(token);
-const created = createDiscordApp({ gateway, kernel: kernelPort(plugin, config), ledger, cards: sqliteCards(ledger.db), config });
+  const dataDir = process.env.ME_DATA_DIR ?? ".";
+  mkdirSync(dataDir, { recursive: true });
+  const ledger = new Ledger(join(dataDir, "ledger.sqlite"));
+  const gateway = discordJsGateway(token);
+  const created = createDiscordApp({ gateway, kernel: kernelPort(plugin, config), ledger, cards: sqliteCards(ledger.db), config });
 
-await gateway.connect();
-await created.start();
-app = created;
-console.error(`[discord] connected as ${gateway.botUserId}`);
+  await gateway.connect();
+  await created.start();
+  app = created;
+  console.error(`[discord] connected as ${gateway.botUserId}`);
+}
+
+try {
+  await start();
+} catch (err: any) {
+  console.error(`[discord] idle: not started (${err?.message ?? err}). Fix pluginConfig.discord (tokenFile, ownerId) and restart me.`);
+}
