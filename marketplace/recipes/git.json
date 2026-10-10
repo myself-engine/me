@@ -1,0 +1,10 @@
+{
+  "name": "git",
+  "kind": "cli",
+  "description": "현재 프로젝트의 git 상태와 최근 커밋을 읽기 전용으로 조회",
+  "commands": {
+    "status": { "argv": ["git", "status", "--short", "--branch"], "parse": "lines" },
+    "log": { "argv": ["git", "log", "--oneline", "-n", "{n}"], "params": { "n": { "type": "number", "default": 20 } }, "parse": "lines" },
+    "diff-stat": { "argv": ["git", "diff", "--stat"], "parse": "text" }
+  }
+}

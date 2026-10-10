@@ -302,7 +302,12 @@
   - brgr 플러그인 헥사고날 정리 + 수락 시 적용과 커밋
   - 스펙 원본(JSON Schema) + 적합성 테스트
 - 그다음: MCP 브리지 → `me adapt` v0 → 화면 눈 확인
-- 진행: MCP 브리지 ✅, `me adapt mcp` v0 ✅ (브리지 단계만. 마켓플레이스, cli·http·acp 브리지, 에이전트 작성 단계는 아직이다)
+- 진행: MCP 브리지 ✅, `me adapt mcp` v0 ✅
+- 진행: `me adapt` 세 단계 모두 ✅ (2026-10-10)
+  - 1단계 마켓플레이스: `marketplace/recipes/*.json`. 지금은 git, github, filesystem 레시피가 있다. `me adapt <레시피> [--set k=v]`로 설치한다.
+  - 2단계 범용 브리지: mcp, cli. http·acp 브리지는 아직이다.
+  - 3단계 에이전트 작성: `me adapt agent <이름> -- <설명>`이 brgr로 워커에게 맡기고, 적합성 테스트 통과를 완료 기준으로 둔다. 브리지로 되는 일이면 레시피를 쓰라고 지시한다.
+  - 반환: `me adapt export <pluginId> -- <설명>`이 만든 어댑터를 레시피로 되돌린다. env 값(비밀)은 빼고 내보낸다.
 - 진행: 스펙 원본(`spec/protocol.schema.json`)과 적합성 테스트 ✅. 표준 라이브러리만 쓴 Python 플러그인이 통과해서 여러 언어 지원을 증명했다.
 - 2차 웨이브(brgr 워커 병렬) ✅
   - `me doctor`: 외부 도구 버전 기록과 변화 비교, 심링크 점검, 플러그인 적합성 검사. 첫 실행에서 brgr 플러그인의 실제 버그(`taskId` 없는 요청)를 잡았고 수정했다.

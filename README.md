@@ -37,6 +37,16 @@ bun bin/me.ts doctor --json   # 기계용 출력
 
 외부 도구 버전(`$ME_HOME/doctor/versions.json`에 기록하고 지난 실행과 비교), 심링크(`node_modules/@me/*`는 저장소 안을 가리켜야 함, `doctor.symlinkRoots`는 깨진 링크만), 플러그인 적합성을 확인한다. 유료 모델을 부르는 플러그인은 `doctor.skipConformance`(기본 `summarize`, `jev`, `gjc-head`)로 건너뛴다. 아무것도 고치지 않는다.
 
+마켓플레이스 레시피(1단계)와 에이전트 작성(3단계):
+
+```sh
+bun bin/me.ts adapt market                       # 레시피 목록
+bun bin/me.ts adapt --yes git                    # 레시피 설치
+bun bin/me.ts adapt filesystem --set dir=~/notes --yes
+bun bin/me.ts adapt agent weather -- "날씨 API를 me에 붙여 줘"   # brgr 워커에게 맡김
+bun bin/me.ts adapt export cli-git -- "설명"      # 만든 어댑터를 레시피로 반환
+```
+
 ## 설정
 
 - `me.config.json`: 공용 기본값이다. 플러그인 목록과 모델, 하네스, 포트를 담는다.

@@ -1,0 +1,7 @@
+{
+  "name": "filesystem",
+  "kind": "mcp",
+  "description": "지정한 폴더 하나를 MCP filesystem 서버로 노출",
+  "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.8.31", "{dir}"],
+  "params": { "dir": { "description": "노출할 폴더 (절대 경로)", "required": true } }
+}

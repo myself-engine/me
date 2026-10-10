@@ -1,0 +1,9 @@
+{
+  "name": "github",
+  "kind": "cli",
+  "description": "gh로 PR과 이슈 목록을 조회 (읽기 전용)",
+  "commands": {
+    "prs": { "argv": ["gh", "pr", "list", "--repo", "{repo}", "--json", "number,title,author,state,url"], "params": { "repo": { "type": "string", "required": true, "pattern": "^[\\w.-]+/[\\w.-]+$" } }, "parse": "json" },
+    "issues": { "argv": ["gh", "issue", "list", "--repo", "{repo}", "--json", "number,title,state,url"], "params": { "repo": { "type": "string", "required": true, "pattern": "^[\\w.-]+/[\\w.-]+$" } }, "parse": "json" }
+  }
+}
