@@ -48,6 +48,17 @@ export interface PluginInfo {
   permissions: string[];
 }
 
+export interface OpsCheck {
+  id: string;
+  kind: string;
+  ok: boolean;
+  status: "up" | "down" | "unknown";
+  detail: string;
+  latencyMs: number;
+  checkedAt: string;
+  since: string;
+}
+
 export interface Approval {
   approvalId: string;
   requester: string;
@@ -69,6 +80,7 @@ export interface Bootstrap {
   messages: Message[];
   tasks: Task[];
   plugins: PluginInfo[];
+  checks: OpsCheck[];
   approvals: Approval[];
   config: { projects: string[]; defaultProject: string; githubRepo: string | null };
 }

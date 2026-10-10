@@ -15,7 +15,7 @@ mkdirSync(dataDir, { recursive: true });
 const token = crypto.randomUUID().replaceAll("-", "");
 writeFileSync(join(dataDir, "token"), token, { mode: 0o600 });
 
-const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "brgr.task", "kernel.plugin"]);
+const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "brgr.task", "kernel.plugin", "ops.check"]);
 const clients = new Set<ServerWebSocket<unknown>>();
 
 const broadcast = (msg: unknown) => {
@@ -76,11 +76,12 @@ if (access.tailscale.enabled && !access.tailscale.hostname) console.error("[web]
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
 async function bootstrap(req: Access) {
-  const [threads, messages, tasks, plugins, approvals] = await Promise.all([
+  const [threads, messages, tasks, plugins, checks, approvals] = await Promise.all([
     plugin.entity.list({ kind: "gjc-head.thread", limit: 500 }),
     plugin.entity.list({ kind: "gjc-head.message", limit: 1000 }),
     plugin.entity.list({ kind: "brgr.task", limit: 500 }),
     plugin.entity.list({ kind: "kernel.plugin", limit: 100 }),
+    plugin.entity.list({ kind: "ops.check", limit: 500 }),
     plugin.approval.list(),
   ]);
   return {
@@ -90,6 +91,7 @@ async function bootstrap(req: Access) {
     messages: messages.map((d) => d.data),
     tasks: tasks.map((d) => d.data),
     plugins: plugins.map((d) => d.data),
+    checks: checks.map((d) => d.data),
     approvals,
     config: {
       projects: ((plugin.config.projects as string[]) ?? []).map(expand),

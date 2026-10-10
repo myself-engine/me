@@ -1,0 +1,1 @@
+{ "name": "@me/plugin-ops", "private": true, "type": "module", "dependencies": { "@me/sdk": "workspace:*", "@me/protocol": "workspace:*" } }

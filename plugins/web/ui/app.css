@@ -523,6 +523,32 @@ select.harness {
 .dot-quarantined {
   background: var(--bad);
 }
+.dot-up {
+  background: var(--ok);
+}
+.dot-down {
+  background: var(--bad);
+}
+.dot-unknown {
+  background: var(--warn);
+}
+.check-down {
+  border-color: var(--bad);
+}
+.check-detail {
+  margin-top: 4px;
+  font-family: var(--mono);
+  word-break: break-all;
+}
+.pill-check-up {
+  color: var(--ok);
+}
+.pill-check-down {
+  color: var(--bad);
+}
+.pill-check-unknown {
+  color: var(--warn);
+}
 .risk {
   margin-left: auto;
   font-size: 12px;

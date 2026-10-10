@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark-dimmed.css";
-import { Connection, fetchBootstrap, type Approval, type Bootstrap, type Message, type PluginInfo, type ServerMsg, type Task, type Thread } from "./api.ts";
+import { Connection, fetchBootstrap, type Approval, type Bootstrap, type Message, type OpsCheck, type PluginInfo, type ServerMsg, type Task, type Thread } from "./api.ts";
 
 // ---------------------------------------------------------------------------
 // State
@@ -26,6 +26,7 @@ interface State {
   messages: Record<string, Message>;
   tasks: Record<string, Task>;
   plugins: Record<string, PluginInfo>;
+  checks: Record<string, OpsCheck>;
   approvals: Record<string, Approval>;
   live: Record<string, Live>; // by traceId
   config: Bootstrap["config"];
@@ -49,6 +50,7 @@ function reducer(s: State, a: Action): State {
       messages: byId(a.data.messages, "id"),
       tasks: byId(a.data.tasks, "taskId"),
       plugins: byId(a.data.plugins, "id"),
+      checks: byId(a.data.checks ?? [], "id"),
       approvals: byId(a.data.approvals, "approvalId"),
       config: a.data.config,
       viewer: a.data.viewer ?? null,
@@ -66,6 +68,7 @@ function reducer(s: State, a: Action): State {
       if (m.kind === "gjc-head.message") return { ...s, messages: { ...s.messages, [m.id]: m.data } };
       if (m.kind === "brgr.task") return { ...s, tasks: { ...s.tasks, [m.id]: m.data } };
       if (m.kind === "kernel.plugin") return { ...s, plugins: { ...s.plugins, [m.id]: m.data } };
+      if (m.kind === "ops.check") return { ...s, checks: { ...s.checks, [m.id]: m.data } };
       return s;
     }
     case "approval": {
@@ -102,6 +105,7 @@ const initial: State = {
   messages: {},
   tasks: {},
   plugins: {},
+  checks: {},
   approvals: {},
   live: {},
   config: { projects: [], defaultProject: "", githubRepo: null },
@@ -589,6 +593,36 @@ function Composer(props: {
 // Overview
 // ---------------------------------------------------------------------------
 
+const CHECK_LABEL: Record<OpsCheck["status"], string> = { up: "정상", down: "중단", unknown: "알 수 없음" };
+const CHECK_ORDER: Record<OpsCheck["status"], number> = { down: 0, unknown: 1, up: 2 };
+
+function OpsChecks({ checks }: { checks: OpsCheck[] }) {
+  if (checks.length === 0) return null;
+  const sorted = [...checks].sort((a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status] || a.id.localeCompare(b.id));
+  const down = checks.filter((c) => c.status === "down").length;
+  return (
+    <section>
+      <h3>
+        운영 상태 {down > 0 && <span className="count">{down}</span>}
+      </h3>
+      {sorted.map((c) => (
+        <div key={c.id} className={`card check check-${c.status}`}>
+          <div className="card-head">
+            <span className={`dot dot-${c.status}`} title={CHECK_LABEL[c.status]} />
+            <strong>{c.id}</strong>
+            <span className="harness">{c.kind}</span>
+            <span className={`pill pill-check-${c.status}`}>{CHECK_LABEL[c.status]}</span>
+            <span className="sub right" title={`마지막 확인 ${new Date(c.checkedAt).toLocaleString()}`}>
+              {c.latencyMs}ms · {timeAgo(c.since)}부터
+            </span>
+          </div>
+          <div className="sub check-detail">{c.detail}</div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function Overview({ s, conn, notify }: { s: State; conn: Connection | null; notify: (m: string) => void }) {
   const plugins = Object.values(s.plugins).sort((a, b) => a.id.localeCompare(b.id));
   const tasks = Object.values(s.tasks).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -602,6 +636,8 @@ function Overview({ s, conn, notify }: { s: State; conn: Connection | null; noti
   };
   return (
     <div className="overview">
+      <OpsChecks checks={Object.values(s.checks)} />
+
       {approvals.length > 0 && (
         <section>
           <h3>승인 대기</h3>

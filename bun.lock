@@ -85,6 +85,13 @@
         "@me/sdk": "workspace:*",
       },
     },
+    "plugins/ops": {
+      "name": "@me/plugin-ops",
+      "dependencies": {
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
+      },
+    },
     "plugins/slang": {
       "name": "@me/plugin-slang",
       "dependencies": {
@@ -148,6 +155,8 @@
     "@me/plugin-gjc-head": ["@me/plugin-gjc-head@workspace:plugins/gjc-head"],
 
     "@me/plugin-jev": ["@me/plugin-jev@workspace:plugins/jev"],
+
+    "@me/plugin-ops": ["@me/plugin-ops@workspace:plugins/ops"],
 
     "@me/plugin-slang": ["@me/plugin-slang@workspace:plugins/slang"],
 

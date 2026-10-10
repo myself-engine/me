@@ -7,7 +7,8 @@
     "plugins/gjc-head",
     "plugins/brgr",
     "plugins/web",
-    "plugins/approval-policy"
+    "plugins/approval-policy",
+    "plugins/ops"
   ],
   "pluginConfig": {
     "gjc-head": {
@@ -51,6 +52,17 @@
           "payload": {
             "role": "test"
           }
+        }
+      ]
+    },
+    "ops": {
+      "intervalSec": 60,
+      "checks": [
+        {
+          "id": "me-web",
+          "kind": "http",
+          "url": "http://127.0.0.1:7420/",
+          "expectStatus": 200
         }
       ]
     }
