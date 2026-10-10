@@ -1,10 +1,15 @@
 // Plugin SDK: wraps the kernel protocol so a plugin only declares methods and handlers.
 // Trace context (traceId, causationId) propagates automatically through AsyncLocalStorage.
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createConnection } from "node:net";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   Peer,
   RpcError,
   pumpLines,
+  socketLineTransport,
+  takeFirstLine,
   type ApprovalDecision,
   type ApprovalRequestParams,
   type CallParams,
@@ -15,8 +20,10 @@ import {
   type InitializeParams,
   type JournalEntry,
   type JournalQueryParams,
+  type HelloResult,
   type JsonValue,
   type LineTransport,
+  type Manifest,
 } from "@me/protocol";
 
 export { RpcError } from "@me/protocol";
@@ -73,6 +80,11 @@ export class Plugin {
 
   get config(): Record<string, JsonValue> {
     return this.info.config;
+  }
+
+  /** Connects in over the kernel's Unix socket (exec mode B); see `connect`. */
+  connect(opts: Omit<ConnectOptions, "plugin">) {
+    return connect({ ...opts, plugin: this });
   }
 
   /** Connects over stdio (default) or a given transport. Resolves once the transport closes. */
@@ -290,4 +302,53 @@ export function stdioTransport(): LineTransport {
     onClose: (cb) => closeCbs.push(cb),
     close: () => process.exit(0),
   };
+}
+
+/** NDJSON over a Unix domain socket. */
+export function socketTransport(path: string): LineTransport {
+  return socketLineTransport(createConnection(path));
+}
+
+export interface ConnectOptions {
+  /** Defaults to $ME_HOME/kernel.sock (ME_HOME defaults to ~/.me). */
+  socketPath?: string;
+  /** Defaults to $ME_HOME/connect.token. */
+  tokenPath?: string;
+  /** Sent in `hello`; the kernel validates it like a plugin.json and caps its permissions. */
+  manifest: Manifest;
+  plugin: Plugin | PluginDefinition;
+}
+
+export interface Connection {
+  /** What the kernel actually granted (declared ∩ its connectPermissions). */
+  grantedPermissions: HelloResult["grantedPermissions"];
+  /** Resolves when the socket closes; the plugin may then connect again under the same id. */
+  done: Promise<void>;
+}
+
+/**
+ * Exec mode B: dials the kernel socket, sends `hello` with the manifest and connect token, then runs the
+ * plugin over the socket. Rejects with the kernel's RpcError if the hello is refused.
+ */
+export async function connect(opts: ConnectOptions): Promise<Connection> {
+  const home = process.env.ME_HOME ?? join(homedir(), ".me");
+  const socketPath = opts.socketPath ?? join(home, "kernel.sock");
+  const token = (await Bun.file(opts.tokenPath ?? join(home, "connect.token")).text()).trim();
+  const plugin = opts.plugin instanceof Plugin ? opts.plugin : definePlugin(opts.plugin);
+  const raw = socketTransport(socketPath);
+  const { first, rest } = takeFirstLine(raw);
+  raw.send(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "hello", params: { manifest: opts.manifest, token } }));
+  let reply: any;
+  try {
+    reply = JSON.parse(await first);
+  } catch (err) {
+    raw.close();
+    throw new Error(`no hello reply from kernel at ${socketPath}: ${(err as Error).message}`);
+  }
+  if (reply.error) {
+    raw.close();
+    throw new RpcError(reply.error.code, reply.error.message, reply.error.data);
+  }
+  const done = plugin.run(rest);
+  return { grantedPermissions: (reply.result as HelloResult).grantedPermissions, done };
 }

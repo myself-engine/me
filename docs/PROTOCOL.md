@@ -17,7 +17,12 @@
 
 **결정**: JSON-RPC 2.0. 프레임 하나가 한 줄인 NDJSON으로 주고받는다.
 - 커널이 띄우는 플러그인(실행 방식 A): 플러그인의 stdin/stdout. stderr는 커널이 로그로 수집한다.
-- 스스로 접속하는 플러그인(실행 방식 B, 나중): Unix 소켓 위에서 같은 프레임을 쓴다. **바뀌는 건 전송뿐이다.**
+- 스스로 접속하는 플러그인(실행 방식 B): 커널이 여는 Unix 소켓 위에서 같은 프레임을 쓴다. **바뀌는 건 전송뿐이다.**
+  - 소켓: `$ME_HOME/kernel.sock`, 파일 모드 0600. `me.config.json`의 `socket`으로 경로를 바꾸고, `socket: false`면 열지 않는다.
+  - 첫 줄은 반드시 `hello`다: `{"jsonrpc":"2.0","id":0,"method":"hello","params":{"manifest":{...},"token":"..."}}`
+  - `token`은 `$ME_HOME/connect.token`의 내용이다. 커널이 처음 시작할 때 없으면 만든다(0600, 32바이트 난수 hex).
+  - 응답: `{protocolVersion, grantedPermissions}`. 그다음은 실행 방식 A와 똑같이 `initialize`부터 시작한다.
+  - SDK: `connect({socketPath?, tokenPath?, manifest, plugin})` 또는 `plugin.connect({...})`. 기본 전송은 여전히 stdio다.
 
 **버린 대안**
 - HTTP/WebSocket: 로컬 프로세스 사이에서 불필요하게 무겁고 포트가 생긴다.
@@ -59,6 +64,18 @@
 
 - 플러그인이 죽으면 커널은 `restart` 정책에 따라 다시 띄운다. 정해진 시간 안에 재시작 횟수를 넘기면 **격리**하고 `plugin.quarantined` 이벤트를 낸다.
 - 버전 협상: 커널은 매니페스트의 `protocol` 범위와 자기 버전을 비교한다. 겹치지 않으면 실행하지 않는다.
+
+**스스로 접속하는 플러그인(실행 방식 B)**
+```
+플러그인 → 커널:  hello {manifest, token}         (소켓의 첫 줄, id 0)
+커널:            토큰 확인 → validateManifest → 권한 = 선언 ∩ connectPermissions
+커널 → 플러그인:  응답 {protocolVersion, grantedPermissions}
+이후:            initialize부터 실행 방식 A와 같다
+```
+- 거부(JSON-RPC 오류 후 연결 종료): 토큰이 틀림(-32001), 매니페스트가 잘못됨(-32602), 첫 프레임이 `hello`가 아님 또는 같은 id가 이미 실행 중이거나 커널이 띄우는 플러그인의 id임(-32600), 버전 불일치(-32005)
+- 권한 상한: `me.config.json`의 `connectPermissions`. 기본값은 `["read-state", "emit", "subscribe"]`. 실제로 준 권한은 `kernel.plugin` 엔티티의 `permissions`와 저널(`connect: "accepted"`, `declared`, `granted`)에 남는다.
+- 커널은 이 플러그인을 다시 띄우지 않는다. 소켓이 닫히면 `stopped`가 되고, 같은 id로 다시 접속할 수 있다.
+- `kernel.plugin` 엔티티의 `mode`: `spawned`(실행 방식 A), `attached`(같은 프로세스 안의 전송), `connected`(실행 방식 B)
 
 ## 4. 호출 (요청과 응답)
 
@@ -255,7 +272,7 @@ web → subscribe {pattern: "kernel.plugin.*"}, subscribe {pattern: "brgr.task.*
 
 - 대량 `op.update`의 저널 묶음과 압축, 보존 기간
 - 역압(backpressure): 웹이 느릴 때 스트림 처리
-- 스스로 접속하는 플러그인(실행 방식 B)의 소켓 인증 토큰과 신원
+- 실행 방식 B의 신원: 지금은 토큰 하나를 모두가 나눠 쓰고, id는 플러그인이 스스로 밝힌다. 플러그인별 토큰, TCP/Tailscale, TLS는 아직 없다
 - `entity.list`의 `where`를 같음 비교 이상으로 넓힐지
 - 플러그인 설정 값과 비밀 파일 경로 전달 방식 (`initialize.config`의 구조)
 - MCP 어댑터의 매핑: MCP tool을 `invoke` 메서드로, MCP notification을 이벤트로 바꾸는 규칙

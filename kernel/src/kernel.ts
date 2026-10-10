@@ -1,7 +1,9 @@
 // The kernel: supervisor, router, permissions, journal, events, entities, ops, approvals.
 // Spec: docs/PROTOCOL.md. The kernel knows no domain concepts — only plugins, frames and kinds.
-import { mkdirSync, appendFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { mkdirSync, appendFileSync, chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
 import type { Subprocess } from "bun";
 import {
   ErrorCode,
@@ -9,6 +11,8 @@ import {
   Peer,
   RpcError,
   pumpLines,
+  socketLineTransport,
+  takeFirstLine,
   type ApprovalDecision,
   type ApprovalRequestParams,
   type EntityListParams,
@@ -22,11 +26,12 @@ import {
   type OpUpdateParams,
   type Permission,
 } from "@me/protocol";
-import { hasPermission, matchPattern, type LoadedManifest } from "./manifest.ts";
+import { hasPermission, matchPattern, validateManifest, type LoadedManifest } from "./manifest.ts";
 import { Store, type JournalType } from "./store.ts";
 import { validateAgainstSchema } from "./schema.ts";
 
 type HostState = KernelPluginEntity["state"];
+type HostMode = KernelPluginEntity["mode"];
 
 interface Host {
   manifest: LoadedManifest;
@@ -41,8 +46,8 @@ interface Host {
   /** Whether the current `ready` promise has resolved; a restart only re-arms a settled one. */
   readySettled: boolean;
   stopping: boolean;
-  /** In-memory plugins are attached by the host program and never respawned. */
-  attached: boolean;
+  /** Only spawned plugins are respawned; attached and connected ones stop when their transport closes. */
+  mode: HostMode;
 }
 
 interface Op {
@@ -71,7 +76,50 @@ export interface KernelOptions {
   pluginConfig?: Record<string, Record<string, JsonValue>>;
 }
 
+/** What a connect-in plugin may be granted when config sets no `connectPermissions`. */
+export const DEFAULT_CONNECT_PERMISSIONS: Permission[] = ["read-state", "emit", "subscribe"];
+
+export interface ListenOptions {
+  /** Unix socket path; created with mode 0600. */
+  path: string;
+  /** Shared secret file; created (0600, 32 random bytes hex) if missing. Defaults to <dataDir>/connect.token. */
+  tokenPath?: string;
+  /** Upper bound on a connect-in plugin's permissions: it gets the intersection with what it declares. */
+  permissions?: Permission[];
+  /** Time a new connection has to send `hello`. */
+  helloTimeoutMs?: number;
+}
+
 const KERNEL = "kernel";
+
+/** Reads the connect token, creating it on first start. */
+export function ensureConnectToken(path: string): string {
+  if (!existsSync(path)) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, randomBytes(32).toString("hex") + "\n", { mode: 0o600, flag: "wx" });
+    chmodSync(path, 0o600);
+  }
+  const token = readFileSync(path, "utf8").trim();
+  if (!token) throw new Error(`connect token is empty: ${path}`);
+  return token;
+}
+
+function sameSecret(a: string, b: string): boolean {
+  const digest = (s: string) => createHash("sha256").update(s).digest();
+  return timingSafeEqual(digest(a), digest(b));
+}
+
+/** Removes a socket file left by a dead kernel; refuses if a live kernel still answers on it. */
+async function clearStaleSocket(path: string) {
+  if (!existsSync(path)) return;
+  const live = await new Promise<boolean>((res) => {
+    const probe = createConnection(path);
+    probe.once("connect", () => (probe.destroy(), res(true)));
+    probe.once("error", () => res(false));
+  });
+  if (live) throw new Error(`another kernel is listening on ${path}`);
+  rmSync(path, { force: true });
+}
 
 export class Kernel {
   readonly store: Store;
@@ -80,6 +128,9 @@ export class Kernel {
   private approvals = new Map<string, Approval>();
   private log: (msg: string) => void;
   private stopped = false;
+  private server: { server: Server; path: string } | null = null;
+  /** Open connect-in sockets, resolved when each closes. */
+  private sockets = new Map<Socket, Promise<void>>();
 
   constructor(private opts: KernelOptions) {
     mkdirSync(opts.dataDir, { recursive: true });
@@ -95,15 +146,15 @@ export class Kernel {
 
   /** Registers and spawns a plugin process (exec mode A). */
   async spawn(manifest: LoadedManifest): Promise<void> {
-    const host = this.register(manifest, false);
+    const host = this.register(manifest, "spawned");
     if (!host) return;
     this.startProcess(host);
     await host.ready.catch(() => {});
   }
 
-  /** Attaches a plugin over an existing transport (tests, in-process plugins, later sockets). */
-  async attach(manifest: LoadedManifest, transport: LineTransport): Promise<void> {
-    const host = this.register(manifest, true);
+  /** Attaches a plugin over an existing transport (tests, in-process plugins, connect-in sockets). */
+  async attach(manifest: LoadedManifest, transport: LineTransport, mode: "attached" | "connected" = "attached"): Promise<void> {
+    const host = this.register(manifest, mode);
     if (!host) return;
     this.connect(host, transport);
     await host.ready;
@@ -125,6 +176,14 @@ export class Kernel {
         } else h.peer?.close();
       }),
     );
+    if (this.server) {
+      this.server.server.close();
+      rmSync(this.server.path, { force: true });
+    }
+    // Wait for socket close handlers so they run before the store closes.
+    const closing = [...this.sockets.values()];
+    for (const sock of this.sockets.keys()) sock.destroy();
+    await Promise.race([Promise.all(closing), Bun.sleep(2_000)]);
     for (const a of this.approvals.values()) if (a.timer) clearTimeout(a.timer);
     this.store.close();
   }
@@ -133,7 +192,94 @@ export class Kernel {
     return this.hosts.get(id)?.state ?? null;
   }
 
-  private register(manifest: LoadedManifest, attached: boolean): Host | null {
+  // -------------------------------------------------------------------------
+  // Exec mode B: plugins that connect in over a Unix socket
+  // -------------------------------------------------------------------------
+
+  /** Accepts connect-in plugins on a Unix socket (mode 0600). Each must send `hello` with the connect token first. */
+  async listen(o: ListenOptions): Promise<void> {
+    if (this.server) throw new Error(`already listening on ${this.server.path}`);
+    const token = ensureConnectToken(o.tokenPath ?? join(this.opts.dataDir, "connect.token"));
+    const allow = o.permissions ?? DEFAULT_CONNECT_PERMISSIONS;
+    mkdirSync(dirname(o.path), { recursive: true });
+    await clearStaleSocket(o.path);
+    const server = createServer((sock) => this.accept(sock, token, allow, o.helloTimeoutMs ?? 10_000));
+    const umask = process.umask(0o177); // no window where the socket is group/world accessible
+    try {
+      await new Promise<void>((res, rej) => {
+        server.once("error", rej);
+        server.listen(o.path, () => {
+          server.off("error", rej);
+          res();
+        });
+      });
+    } finally {
+      process.umask(umask);
+    }
+    chmodSync(o.path, 0o600);
+    this.server = { server, path: o.path };
+  }
+
+  private accept(sock: Socket, token: string, allow: Permission[], helloTimeoutMs: number) {
+    if (this.stopped) return void sock.destroy();
+    this.sockets.set(sock, new Promise((r) => sock.once("close", () => (this.sockets.delete(sock), r()))));
+    const raw = socketLineTransport(sock);
+    const { first, rest } = takeFirstLine(raw);
+    const timer = setTimeout(() => raw.close(), helloTimeoutMs);
+    first.then(
+      (line) => {
+        clearTimeout(timer);
+        this.hello(line, raw, rest, token, allow);
+      },
+      () => clearTimeout(timer),
+    );
+  }
+
+  /** Validates the first frame of a connect-in socket and, if it is a good `hello`, attaches the plugin. */
+  private hello(line: string, raw: LineTransport, rest: LineTransport, token: string, allow: Permission[]) {
+    let frame: any;
+    let rid: unknown = null;
+    let pluginId: string | null = null;
+    const reject = (code: number, message: string) => {
+      raw.send(JSON.stringify({ jsonrpc: "2.0", id: rid, error: { code, message } }));
+      this.journal(KERNEL, "lifecycle", null, null, { connect: "rejected", pluginId, reason: message });
+      raw.close();
+    };
+    try {
+      frame = JSON.parse(line);
+    } catch {
+      return reject(-32700, "parse error");
+    }
+    rid = typeof frame?.id === "number" || typeof frame?.id === "string" ? frame.id : null;
+    if (frame?.jsonrpc !== "2.0" || frame.method !== "hello" || rid === null) return reject(-32600, "first frame must be a hello request");
+    if (this.stopped) return reject(ErrorCode.TargetUnavailable, "kernel is stopping");
+    const params = frame.params ?? {};
+    if (typeof params.token !== "string" || !sameSecret(params.token, token)) return reject(ErrorCode.PermissionDenied, "bad connect token");
+    let manifest: LoadedManifest;
+    try {
+      manifest = validateManifest(params.manifest, this.server?.path ?? "socket");
+    } catch (err) {
+      return reject(-32602, (err as Error).message);
+    }
+    pluginId = manifest.id;
+    if (PROTOCOL_VERSION < manifest.protocol.min || PROTOCOL_VERSION > manifest.protocol.max) {
+      return reject(ErrorCode.ProtocolMismatch, `kernel speaks protocol ${PROTOCOL_VERSION}`);
+    }
+    const existing = this.hosts.get(manifest.id);
+    if (existing) {
+      if (existing.mode !== "connected") return reject(-32600, `${manifest.id} is registered by the kernel`);
+      if (existing.state !== "stopped") return reject(-32600, `${manifest.id} is already ${existing.state}`);
+      this.hosts.delete(manifest.id); // reconnect under the same id
+    }
+    const declared = manifest.permissions;
+    const granted = declared.filter((p) => hasPermission(allow, p));
+    manifest = { ...manifest, permissions: granted };
+    this.journal(KERNEL, "lifecycle", null, null, { pluginId, connect: "accepted", declared, granted });
+    raw.send(JSON.stringify({ jsonrpc: "2.0", id: rid, result: { protocolVersion: PROTOCOL_VERSION, grantedPermissions: granted } }));
+    void this.attach(manifest, rest, "connected");
+  }
+
+  private register(manifest: LoadedManifest, mode: HostMode): Host | null {
     if (this.hosts.has(manifest.id)) throw new Error(`plugin already registered: ${manifest.id}`);
     let resolveReady!: () => void;
     const ready = new Promise<void>((r) => (resolveReady = r));
@@ -152,7 +298,7 @@ export class Kernel {
       },
       readySettled: false,
       stopping: false,
-      attached,
+      mode,
     };
     this.hosts.set(manifest.id, host);
     if (PROTOCOL_VERSION < manifest.protocol.min || PROTOCOL_VERSION > manifest.protocol.max) {
@@ -217,7 +363,7 @@ export class Kernel {
       onRequest: (method, params) => this.handleRequest(host, method, params),
       onNotification: (method, params) => this.handleNotification(host, method, params),
       onClose: () => {
-        if (host.attached) this.onExit(host, null);
+        if (host.mode !== "spawned") this.onExit(host, null);
       },
     });
     host.peer = peer;
@@ -249,7 +395,7 @@ export class Kernel {
     host.peer = null;
     host.proc = null;
     this.failOpsOf(id);
-    if (host.stopping || this.stopped || host.attached) {
+    if (host.stopping || this.stopped || host.mode !== "spawned") {
       this.setState(host, "stopped", { exitCode: code });
       host.markReady();
       return;
@@ -296,6 +442,7 @@ export class Kernel {
       id: m.id,
       version: m.version,
       state,
+      mode: host.mode,
       pid: host.proc?.pid ?? null,
       restarts: host.restarts,
       permissions: m.permissions,
@@ -358,7 +505,8 @@ export class Kernel {
     const id = host.manifest.id;
     switch (method) {
       case "invoke":
-        return this.invoke(host, params as InvokeParams);
+        // `await` keeps bun test from reporting a denied invoke as an unhandled rejection when the frame came off a socket.
+        return await this.invoke(host, params as InvokeParams);
 
       case "op.subscribe": {
         this.require(host, "subscribe", method);

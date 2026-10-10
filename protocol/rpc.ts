@@ -1,4 +1,5 @@
 // JSON-RPC 2.0 peer over a line transport (NDJSON). Shared by the kernel and the plugin SDK.
+import type { Socket } from "node:net";
 import type { JsonValue, RpcFrame, RpcId } from "./types.ts";
 
 export interface LineTransport {
@@ -180,4 +181,81 @@ export function createPipePair(): [LineTransport, LineTransport] {
     },
   });
   return [side(a, b), side(b, a)];
+}
+
+/** NDJSON over a connected stream socket (exec mode B: Unix socket, later others). */
+export function socketLineTransport(sock: Socket): LineTransport {
+  const lineCbs: ((l: string) => void)[] = [];
+  const closeCbs: (() => void)[] = [];
+  let buf = "";
+  let closed = false;
+  sock.setEncoding("utf8");
+  sock.on("data", (chunk: string) => {
+    buf += chunk;
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      if (line.trim()) lineCbs.forEach((cb) => cb(line));
+    }
+  });
+  sock.on("error", () => {}); // "close" follows
+  sock.on("close", () => {
+    if (closed) return;
+    closed = true;
+    closeCbs.forEach((cb) => cb());
+  });
+  return {
+    send: (line) => {
+      if (!sock.destroyed && sock.writable) sock.write(line + "\n");
+    },
+    onLine: (cb) => lineCbs.push(cb),
+    onClose: (cb) => closeCbs.push(cb),
+    close: () => {
+      if (closed || sock.destroyed) return;
+      sock.end(); // flushes pending writes first
+      setTimeout(() => sock.destroy(), 1_000).unref();
+    },
+  };
+}
+
+/**
+ * Splits off the first inbound line (a handshake frame such as `hello`). Later lines are queued
+ * until `rest` gets a listener, so frames that arrive in the same chunk as the handshake are not lost.
+ */
+export function takeFirstLine(transport: LineTransport): { first: Promise<string>; rest: LineTransport } {
+  let got = false;
+  let resolveFirst!: (l: string) => void;
+  let rejectFirst!: (e: Error) => void;
+  const first = new Promise<string>((res, rej) => ((resolveFirst = res), (rejectFirst = rej)));
+  const lineCbs: ((l: string) => void)[] = [];
+  const queue: string[] = [];
+  transport.onLine((line) => {
+    if (!got) {
+      got = true;
+      resolveFirst(line);
+    } else if (lineCbs.length && !queue.length) lineCbs.forEach((cb) => cb(line));
+    else queue.push(line); // the pending flush drains it, keeping order
+  });
+  transport.onClose(() => {
+    if (!got) rejectFirst(new Error("closed before the first line"));
+  });
+  const rest: LineTransport = {
+    send: (line) => transport.send(line),
+    onLine(cb) {
+      lineCbs.push(cb);
+      if (lineCbs.length === 1 && queue.length) {
+        queueMicrotask(() => {
+          while (queue.length) {
+            const l = queue.shift()!;
+            lineCbs.forEach((c) => c(l));
+          }
+        });
+      }
+    },
+    // Deferred so queued lines are delivered before the close.
+    onClose: (cb) => transport.onClose(() => queueMicrotask(cb)),
+    close: () => transport.close(),
+  };
+  return { first, rest };
 }

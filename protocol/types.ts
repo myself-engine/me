@@ -109,6 +109,22 @@ export interface FrameContext {
 }
 
 // ---------------------------------------------------------------------------
+// Connect-in handshake (§1, §3). Exec mode B: the plugin dials the kernel socket
+// and sends `hello` as its first frame (id 0); `initialize` follows on success.
+// ---------------------------------------------------------------------------
+
+export interface HelloParams {
+  manifest: Manifest;
+  /** Contents of $ME_HOME/connect.token. */
+  token: string;
+}
+export interface HelloResult {
+  protocolVersion: number;
+  /** Declared permissions intersected with the kernel's connectPermissions. */
+  grantedPermissions: Permission[];
+}
+
+// ---------------------------------------------------------------------------
 // Kernel → plugin (§3, §4, §5, §6)
 // ---------------------------------------------------------------------------
 
@@ -268,6 +284,8 @@ export interface JournalEntry {
 }
 
 export interface PluginToKernel {
+  /** Connect-in plugins only: the first frame on the socket, before `initialize`. */
+  hello: RpcRequest<"hello", HelloParams>;
   invoke: RpcRequest<"invoke", InvokeParams>;
   "op.update": RpcNotification<"op.update", OpUpdateParams>;
   "op.end": RpcNotification<"op.end", OpEndParams>;
@@ -306,7 +324,10 @@ export interface KernelPluginEntity {
   id: PluginId;
   version: string;
   state: "starting" | "running" | "stopped" | "quarantined";
+  /** spawned: exec mode A; attached: in-process transport; connected: exec mode B over the kernel socket. */
+  mode: "spawned" | "attached" | "connected";
   pid: number | null;
   restarts: number;
+  /** Granted permissions; for connected plugins, capped by connectPermissions. */
   permissions: Permission[];
 }

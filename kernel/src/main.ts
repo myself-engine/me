@@ -2,13 +2,18 @@
 // Config lists plugin manifests (relative to the config file) and per-plugin config.
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import type { Permission } from "@me/protocol";
 import { Kernel } from "./kernel.ts";
-import { loadManifest } from "./manifest.ts";
+import { isPermission, loadManifest } from "./manifest.ts";
 
 interface Config {
   dataDir?: string;
   plugins: string[];
   pluginConfig?: Record<string, Record<string, any>>;
+  /** Unix socket for connect-in plugins (exec mode B); default $ME_HOME/kernel.sock, false disables it. */
+  socket?: string | false;
+  /** Upper bound on what a connect-in plugin is granted; default ["read-state", "emit", "subscribe"]. */
+  connectPermissions?: Permission[];
 }
 
 const configPath = resolve(process.argv[2] ?? process.env.ME_CONFIG ?? "me.config.json");
@@ -20,6 +25,8 @@ if (await Bun.file(localPath).exists()) {
   const local = (await Bun.file(localPath).json()) as Partial<Config>;
   if (local.dataDir) config.dataDir = local.dataDir;
   if (local.plugins) config.plugins = local.plugins;
+  if (local.socket !== undefined) config.socket = local.socket;
+  if (local.connectPermissions) config.connectPermissions = local.connectPermissions;
   // Machine-specific plugins (e.g. from `me adapt`) are appended, not substituted.
   config.plugins = [...new Set([...config.plugins, ...(((local as any).extraPlugins as string[]) ?? [])])];
   for (const [id, cfg] of Object.entries(local.pluginConfig ?? {})) {
@@ -31,6 +38,13 @@ const dataDir = expand(process.env.ME_HOME ?? config.dataDir ?? "~/.me");
 
 const kernel = new Kernel({ dataDir, pluginConfig: config.pluginConfig });
 console.error(`[kernel] data dir ${dataDir}`);
+
+if (config.socket !== false) {
+  const socketPath = config.socket ? expand(config.socket) : join(dataDir, "kernel.sock");
+  for (const p of config.connectPermissions ?? []) if (!isPermission(p)) throw new Error(`connectPermissions: unknown permission ${p}`);
+  await kernel.listen({ path: socketPath, tokenPath: join(dataDir, "connect.token"), permissions: config.connectPermissions });
+  console.error(`[kernel] listening on ${socketPath}`);
+}
 
 for (const p of config.plugins) {
   const manifest = await loadManifest(join(expand(p), "plugin.json"));
