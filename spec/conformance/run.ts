@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Peer, RpcError, pumpLines, type LineTransport } from "../../protocol/rpc.ts";
-import { PROTOCOL_VERSION, type CallParams, type ShutdownParams } from "../../protocol/types.ts";
+import { PROTOCOL_VERSION, type CallParams, type JsonValue, type ShutdownParams } from "../../protocol/types.ts";
 import { loadManifest } from "../../kernel/src/manifest.ts";
 import { loadSchema, validate, validateDef, type Schema } from "../schema.ts";
 

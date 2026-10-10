@@ -12,6 +12,16 @@
         "typescript": "5.6.3",
       },
     },
+    "bridges/cli": {
+      "name": "@me/bridge-cli",
+      "dependencies": {
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@me/kernel": "workspace:*",
+      },
+    },
     "bridges/mcp": {
       "name": "@me/bridge-mcp",
       "dependencies": {
@@ -107,6 +117,8 @@
   },
   "packages": {
     "@hono/node-server": ["@hono/node-server@2.1.4", "", { "peerDependencies": { "hono": "^4 || ^5.0.0-0" } }, "sha512-2g1qeHl4BduwDn6L8nkAvDrPUWPMlkQ//a5NhP/zIyaXKMjZNRV+cG9Csu+BiJFf6+68pqzjf4Hi5sJGKHuS1g=="],
+
+    "@me/bridge-cli": ["@me/bridge-cli@workspace:bridges/cli"],
 
     "@me/bridge-mcp": ["@me/bridge-mcp@workspace:bridges/mcp"],
 

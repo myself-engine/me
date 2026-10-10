@@ -102,7 +102,7 @@ export async function adaptMcp(
     rmSync(dir, { recursive: true, force: true });
     throw err;
   }
-  await registerLocally(root, pluginId, server);
+  await registerLocally(root, pluginId, { server });
   return { pluginId, manifestPath, tools };
 }
 
@@ -133,12 +133,12 @@ async function probe(manifest: object, dir: string, server: object): Promise<str
 }
 
 /** Machine-specific registration goes to me.local.json (uncommitted): extraPlugins + pluginConfig. */
-async function registerLocally(root: string, pluginId: string, server: object) {
+export async function registerLocally(root: string, pluginId: string, config: object) {
   const path = join(root, "me.local.json");
   const file = Bun.file(path);
   const local: any = (await file.exists()) ? await file.json() : {};
   local.extraPlugins = [...new Set([...(local.extraPlugins ?? []), `plugins/${pluginId}`])];
-  local.pluginConfig = { ...(local.pluginConfig ?? {}), [pluginId]: { ...(local.pluginConfig?.[pluginId] ?? {}), server } };
+  local.pluginConfig = { ...(local.pluginConfig ?? {}), [pluginId]: { ...(local.pluginConfig?.[pluginId] ?? {}), ...config } };
   await Bun.write(path, JSON.stringify(local, null, 2) + "\n");
 }
 
