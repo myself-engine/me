@@ -9,13 +9,23 @@
   --accent-text: #ffffff;
   --user: #e7ecfb;
   --chip: #ececea;
-  --ok: #2f9e44;
-  --warn: #e8590c;
-  --bad: #c92a2a;
-  --code-bg: #22272e;
+  --ok: #2b8a3e;
+  --warn: #c2410c;
+  --bad: #b02525;
+  --code-bg: #f1f1ee;
+  --code-text: #24292f;
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-title: #8250df;
+  --hl-comment: #6e7781;
+  --hl-number: #0550ae;
+  --hl-add: #1a7f37;
+  --hl-add-bg: #dafbe1;
+  --hl-del: #82071e;
+  --hl-del-bg: #ffebe9;
   --radius: 12px;
-  --font: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, "D2Coding", monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,6 +40,20 @@
     --accent-text: #0e0e0d;
     --user: #26304d;
     --chip: #2a2a27;
+    --ok: #69db7c;
+    --warn: #ffa94d;
+    --bad: #ff8787;
+    --code-bg: #22272e;
+    --code-text: #adbac7;
+    --hl-keyword: #f47067;
+    --hl-string: #96d0ff;
+    --hl-title: #dcbdfb;
+    --hl-comment: #768390;
+    --hl-number: #6cb6ff;
+    --hl-add: #8ddb8c;
+    --hl-add-bg: #1b4721;
+    --hl-del: #ffa198;
+    --hl-del-bg: #5d0f12;
   }
 }
 
@@ -570,7 +594,7 @@ select.harness {
   padding: 10px 16px;
   border-radius: 10px;
   max-width: calc(100% - 32px);
-  word-break: break-all;
+  overflow-wrap: anywhere;
   font-size: 14px;
 }
 
@@ -598,5 +622,217 @@ select.harness {
   .overview {
     padding-left: 16px;
     padding-right: 16px;
+  }
+}
+
+/* ---- visual review fixes (Fable, 2026-10-10) ---- */
+
+/* Korean: break between words, never mid-word; long tokens (paths) may still wrap anywhere. */
+body {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* Worker markdown must not outrank the UI's own type scale. */
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-size: 1em;
+  font-weight: 700;
+  margin: 14px 0 4px;
+  line-height: 1.4;
+}
+.md h1 {
+  font-size: 1.1em;
+}
+.md p,
+.md li {
+  margin: 6px 0;
+}
+.md code {
+  font-size: 0.85em;
+}
+.md pre {
+  color: var(--code-text);
+}
+
+/* Code colors follow the page theme. */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-literal {
+  color: var(--hl-keyword);
+}
+.hljs-string,
+.hljs-attr,
+.hljs-regexp {
+  color: var(--hl-string);
+}
+.hljs-title,
+.hljs-section,
+.hljs-type {
+  color: var(--hl-title);
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--hl-comment);
+}
+.hljs-number,
+.hljs-variable {
+  color: var(--hl-number);
+}
+.hljs-addition {
+  color: var(--hl-add);
+  background: var(--hl-add-bg);
+}
+.hljs-deletion {
+  color: var(--hl-del);
+  background: var(--hl-del-bg);
+}
+
+/* Worker report vs. what the system did. */
+.result-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
+}
+.clamp {
+  max-height: 220px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+.outcome {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  color: var(--ok);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+/* Route chip: quiet text, not a loud badge. */
+.chip.route {
+  background: none;
+  padding: 0;
+  font-weight: 600;
+}
+.chip.route.delegate {
+  color: var(--accent);
+}
+.chip.route.direct {
+  color: var(--muted);
+}
+.warn-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* Status pills and counters: tinted background, AA text. */
+.pill,
+.count {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.count {
+  color: var(--warn);
+  font-weight: 700;
+}
+.count.bad {
+  color: var(--bad);
+}
+
+/* Per-message actions appear on hover/focus; always visible on touch screens. */
+.actions {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.msg.assistant:hover .actions,
+.msg.assistant:focus-within .actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .actions {
+    opacity: 1;
+    justify-content: flex-end;
+  }
+}
+
+/* Composer: the idle send button stays legible; long paths truncate from the left. */
+.send:disabled {
+  opacity: 1;
+  background: var(--chip);
+  color: var(--muted);
+  border-color: var(--line);
+}
+.project {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+/* Sidebar weight: "new" is an action, not a selected item. */
+.new-thread {
+  background: none;
+  border: 1px dashed var(--line);
+  color: var(--accent);
+  font-weight: 600;
+}
+.hamburger {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-size: 18px;
+}
+
+/* Overview density. */
+.grid {
+  align-items: start;
+}
+.perms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+}
+.perms span {
+  background: var(--chip);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.check-detail {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Mobile drawer scrim and touch targets. */
+.scrim {
+  display: none;
+}
+@media (max-width: 760px) {
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 9;
+  }
+  .row button,
+  .send {
+    min-height: 40px;
+  }
+  .topbar {
+    padding-top: calc(12px + env(safe-area-inset-top));
   }
 }

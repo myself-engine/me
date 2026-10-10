@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import "highlight.js/styles/github-dark-dimmed.css";
 import { Connection, fetchBootstrap, type Approval, type Bootstrap, type Message, type OpsCheck, type PluginInfo, type ServerMsg, type Task, type Thread } from "./api.ts";
 
 // ---------------------------------------------------------------------------
@@ -151,7 +150,9 @@ function Pill({ state, plugin = false }: { state: string; plugin?: boolean }) {
 }
 
 function shortPath(p: string) {
-  return p.replace(/^\/Users\/[^/]+/, "~");
+  const home = p.replace(/^\/Users\/[^/]+/, "~");
+  const parts = home.split("/").filter(Boolean);
+  return parts.length <= 2 ? home : `…/${parts.slice(-2).join("/")}`;
 }
 
 function timeAgo(iso: string) {
@@ -222,7 +223,8 @@ function App() {
   }, [pendingTrace, s.live]);
 
   return (
-    <div className={`app ${navOpen ? "nav-open" : ""}`}>
+    <div className={`app ${navOpen ? "nav-open" : ""}`} onKeyDown={(e) => e.key === "Escape" && setNavOpen(false)}>
+      {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
       <aside className="sidebar">
         <div className="brand">
           <span className="logo">◐</span> me
@@ -234,10 +236,22 @@ function App() {
           <span className={`conn conn-${status}`} title={status} />
         </div>
         <nav className="tabs">
-          <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>
+          <button
+            className={view === "chat" ? "on" : ""}
+            onClick={() => {
+              setView("chat");
+              setNavOpen(false);
+            }}
+          >
             채팅
           </button>
-          <button className={view === "overview" ? "on" : ""} onClick={() => setView("overview")}>
+          <button
+            className={view === "overview" ? "on" : ""}
+            onClick={() => {
+              setView("overview");
+              setNavOpen(false);
+            }}
+          >
             한눈에 보기 {pendingCount > 0 && <span className="count">{pendingCount}</span>}
           </button>
         </nav>
@@ -386,9 +400,14 @@ function AssistantMessage({ m, s, conn, notify }: { m: Message; s: State; conn: 
           </span>
         )}
         {m.judgement && (
-          <span className={`chip ${m.route === "direct" ? "direct" : "delegate"}`} title={`${m.judgement.source} · ${m.judgement.model}`}>
-            간단함 {Math.round(m.judgement.simpleProb * 100)}% · {m.route === "direct" ? "직접 답변" : "위임"}
-            {m.judgement.source === "fast-path" ? " · 빠른 답변" : m.judgement.source === "fallback" ? " · 대체 판정" : " · Jev"}
+          <span
+            className={`chip route ${m.route === "direct" ? "direct" : "delegate"}`}
+            title={`간단함 ${Math.round(m.judgement.simpleProb * 100)}% · ${
+              m.judgement.source === "fast-path" ? "빠른 답변" : m.judgement.source === "fallback" ? "대체 판정" : "Jev"
+            } · ${m.judgement.model}`}
+          >
+            {m.route === "direct" ? "직접 답변" : "위임"}
+            {m.judgement.source === "fallback" && <span className="warn-dot" aria-label="대체 판정" />}
           </span>
         )}
         {streaming && !m.judgement && <span className="chip soft pulse">판단 중…</span>}
@@ -421,10 +440,33 @@ function AssistantMessage({ m, s, conn, notify }: { m: Message; s: State; conn: 
       {(m.error || live?.error) && <div className="card error">⚠️ {m.error ?? live?.error}</div>}
 
       <div className="actions">
-        <button className="link" onClick={fileIssue}>
-          이슈
+        <button className="link" onClick={fileIssue} title="이 대화의 기록을 붙여 GitHub 이슈로 올려요">
+          문제 신고
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The worker's own words, labeled and collapsible; a trailing unfenced diff is rendered as a diff block. */
+function WorkerReport({ text }: { text: string }) {
+  const at = text.search(/\n?diff --git /);
+  const prose = at >= 0 ? text.slice(0, at).trim() : text;
+  const diff = at >= 0 && !text.slice(0, at).includes("```") ? text.slice(at).trim() : null;
+  const long = text.length > 600;
+  const [open, setOpen] = useState(!long);
+  return (
+    <div className="result">
+      <div className="result-label">워커 보고</div>
+      <div className={open ? "" : "clamp"}>
+        <Markdown text={prose} />
+        {diff && <Markdown text={"```diff\n" + diff + "\n```"} />}
+      </div>
+      {long && (
+        <button className="link" onClick={() => setOpen((v) => !v)}>
+          {open ? "접기" : "더 보기"}
+        </button>
+      )}
     </div>
   );
 }
@@ -499,13 +541,13 @@ function DelegationCard({ m, approval, task, conn, notify }: { m: Message; appro
         </div>
       )}
 
-      {task?.resultText && (
-        <div className="result">
-          <Markdown text={task.resultText} />
+      {task?.resultText && <WorkerReport text={task.resultText} />}
+      {task?.error && <div className="card error">⚠️ {task.error}</div>}
+      {task?.commitSha && (
+        <div className="outcome" title={task.project}>
+          ✓ 커밋 {task.commitSha.slice(0, 8)} · {shortPath(task.project)}
         </div>
       )}
-      {task?.error && <div className="card error">⚠️ {task.error}</div>}
-      {task?.commitSha && <div className="sub">커밋 {task.commitSha.slice(0, 8)} · {shortPath(task.project)}</div>}
 
       {task && conn && (
         <div className="row">
@@ -557,7 +599,7 @@ function Composer(props: {
     <div className="composer">
       <div className="composer-top">
         {props.lockProject ? (
-          <span className="project">📁 {shortPath(props.project)}</span>
+          <span className="project" title={props.project}>📁 {shortPath(props.project)}</span>
         ) : (
           <select value={props.project} onChange={(e) => props.setProject(e.target.value)} aria-label="프로젝트">
             {props.projects.map((p) => (
@@ -593,7 +635,7 @@ function Composer(props: {
 // Overview
 // ---------------------------------------------------------------------------
 
-const CHECK_LABEL: Record<OpsCheck["status"], string> = { up: "정상", down: "중단", unknown: "알 수 없음" };
+const CHECK_LABEL: Record<OpsCheck["status"], string> = { up: "정상", down: "응답 없음", unknown: "알 수 없음" };
 const CHECK_ORDER: Record<OpsCheck["status"], number> = { down: 0, unknown: 1, up: 2 };
 
 function OpsChecks({ checks }: { checks: OpsCheck[] }) {
@@ -603,7 +645,7 @@ function OpsChecks({ checks }: { checks: OpsCheck[] }) {
   return (
     <section>
       <h3>
-        운영 상태 {down > 0 && <span className="count">{down}</span>}
+        운영 상태 {down > 0 && <span className="count bad">{down}</span>}
       </h3>
       {sorted.map((c) => (
         <div key={c.id} className={`card check check-${c.status}`}>
@@ -613,7 +655,8 @@ function OpsChecks({ checks }: { checks: OpsCheck[] }) {
             <span className="harness">{c.kind}</span>
             <span className={`pill pill-check-${c.status}`}>{CHECK_LABEL[c.status]}</span>
             <span className="sub right" title={`마지막 확인 ${new Date(c.checkedAt).toLocaleString()}`}>
-              {c.latencyMs}ms · {timeAgo(c.since)}부터
+              {c.status === "up" && `${c.latencyMs}ms · `}
+              {timeAgo(c.since) === "방금" ? "방금 전부터" : `${timeAgo(c.since)}부터`}
             </span>
           </div>
           <div className="sub check-detail">{c.detail}</div>
@@ -666,12 +709,14 @@ function Overview({ s, conn, notify }: { s: State; conn: Connection | null; noti
               <div className="card-head">
                 <span className={`dot dot-${p.state}`} />
                 <strong>{p.id}</strong>
-                <Pill state={p.state} plugin />
+                {p.state !== "running" && <Pill state={p.state} plugin />}
               </div>
               <div className="sub">
                 v{p.version} · pid {p.pid ?? "-"} · 재시작 {p.restarts}
               </div>
-              <div className="perms">{p.permissions.join(" · ") || "권한 없음"}</div>
+              <div className="perms">
+                {p.permissions.length ? p.permissions.map((perm) => <span key={perm}>{perm}</span>) : <span>권한 없음</span>}
+              </div>
             </div>
           ))}
         </div>
