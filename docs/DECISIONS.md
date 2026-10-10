@@ -199,6 +199,8 @@
 - 작업은 `brgr.task` 엔티티로 저장하고, 상태가 바뀔 때마다 이벤트를 낸다.
 - 대상 저장소에 커밋되지 않은 변경이 있으면 위임이 거부된다. 오류 메시지는 한국어로 보여 준다.
 - 실제 Claude Code 위임으로 실행, 결과, diff, 수락, 거절을 모두 확인했다.
+- 🟡 안쪽 헥사고날: `domain/`(상태 전이, 커밋 메시지, diff 파일 목록), `ports/`(BrgrCli, Git, TaskStore, Events), `adapters/`(brgr·git CLI, 커널 SDK), `app/`(유스케이스). `main.ts`는 배선만 한다.
+- 🟡 수락 = 적용 + 커밋(9.4-2): sealed만 수락하고, 작업 트리(추적 파일)가 깨끗해야 `brgr accept` → `brgr apply --workspace <project> --execute` → diff가 건드린 파일만 스테이징해 커밋한다. 성공하면 `applied`(commitSha, appliedAt), 실패하면 `apply-failed`. 실제 brgr/git으로는 아직 확인하지 않았다.
 
 ## 11. 웹 ✅
 

@@ -6,7 +6,7 @@
   "permissions": ["read-state", "emit", "shell"],
   "provides": {
     "methods": ["task.delegate", "task.result", "task.diff", "task.accept", "task.reject", "task.cancel", "harness.list"],
-    "events": ["brgr.task.running", "brgr.task.sealed", "brgr.task.failed", "brgr.task.awaiting-input", "brgr.task.accepted", "brgr.task.rejected"],
+    "events": ["brgr.task.running", "brgr.task.sealed", "brgr.task.failed", "brgr.task.awaiting-input", "brgr.task.accepted", "brgr.task.applied", "brgr.task.apply-failed", "brgr.task.rejected", "brgr.task.cancelled"],
     "kinds": ["task"]
   },
   "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }
