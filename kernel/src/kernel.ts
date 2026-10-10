@@ -415,7 +415,10 @@ export class Kernel {
         if (!approval) throw new RpcError(ErrorCode.TargetUnavailable, `unknown approval: ${params.approvalId}`);
         if (approval.requester === id) throw new RpcError(ErrorCode.PermissionDenied, "a plugin cannot decide its own approval");
         if (params.decision !== "approve" && params.decision !== "reject") throw new RpcError(-32602, "decision must be approve or reject");
-        this.resolveApproval(approval, { decision: params.decision, note: params.note }, id);
+        if (params.amend !== undefined && (typeof params.amend !== "object" || params.amend === null || Array.isArray(params.amend))) {
+          throw new RpcError(-32602, "amend must be an object");
+        }
+        this.resolveApproval(approval, { decision: params.decision, note: params.note, ...(params.amend ? { amend: params.amend } : {}) }, id);
         return {};
       }
 

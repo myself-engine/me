@@ -212,6 +212,8 @@ export interface ApprovalRequestParams {
 export interface ApprovalDecision {
   decision: "approve" | "reject";
   note?: string;
+  /** Changes the decider made to the request's payload (e.g. a different harness). Only meaningful on approve. */
+  amend?: Record<string, JsonValue>;
 }
 
 // §10

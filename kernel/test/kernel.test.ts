@@ -181,6 +181,19 @@ describe("approvals", () => {
     expect(await decision).toMatchObject({ decision: "approve", note: "ok" });
   });
 
+  test("the decider can amend the request when approving", async () => {
+    let pending: any = null;
+    const ui = await attach(
+      { id: "ui", permissions: ["approve.decide", "subscribe"], subscribes: ["kernel.approval.*"] },
+      { onEvent: (name, data) => void (name === "kernel.approval.pending" && (pending = data)) },
+    );
+    const head = await attach({ id: "head", permissions: ["approve.request"] });
+    const decision = head.approval.request({ summary: "delegate", risk: "low", payload: { harness: "local.gjc" } });
+    for (let i = 0; i < 50 && !pending; i++) await Bun.sleep(5);
+    await ui.approval.decide(pending.approvalId, { decision: "approve", amend: { harness: "local.claude-code" } });
+    expect(await decision).toMatchObject({ decision: "approve", amend: { harness: "local.claude-code" } });
+  });
+
   test("expired approvals resolve as rejected", async () => {
     const head = await attach({ id: "head", permissions: ["approve.request"] });
     const decision = await head.approval.request({ summary: "x", risk: "low", expiresInSec: 0.05 });
