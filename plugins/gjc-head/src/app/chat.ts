@@ -3,11 +3,18 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { chooseHarness, decideRoute, fastPathJudgement, isFastPath } from "../domain/routing.ts";
-import type { DelegationState, Message, Thread } from "../domain/types.ts";
-import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
+import { brainChoice, checkHeadChoice, checkWorkerChoice, EFFORTS, WORKER_EFFORTS } from "../domain/settings.ts";
+import type { DelegationState, Effort, HeadSettings, Message, Thread } from "../domain/types.ts";
+import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, ModelCatalog, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
 
 export interface HeadConfig {
   harnesses: string[];
+  /** Initial defaults for the head; once the user changes them, the stored settings win. */
+  model: string;
+  effort: Effort;
+  favoriteModels: string[];
+  /** Favourite worker models per harness, offered at approval. */
+  workerModels: Record<string, string[]>;
   simpleThreshold: number;
   approvalExpiresSec: number;
   defaultProject: string;
@@ -22,9 +29,16 @@ export interface HeadPorts {
   delegator: Delegator;
   store: Store;
   events: Events;
+  models: ModelCatalog;
 }
 
-export interface SendParams {
+/** A head choice: a model id, an effort, or null to go back to the default. */
+export interface Choice {
+  model?: string | null;
+  effort?: Effort | null;
+}
+
+export interface SendParams extends Choice {
   threadId?: string;
   text: string;
   project?: string;
@@ -34,7 +48,45 @@ const now = () => new Date().toISOString();
 const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 export function createHead(ports: HeadPorts, config: HeadConfig) {
-  const { brain, normalizer, summarizer, judge, approvals, delegator, store, events } = ports;
+  const { brain, normalizer, summarizer, judge, approvals, delegator, store, events, models } = ports;
+
+  /** Stored settings, with the config's favourites and worker choices always current. */
+  async function settings(): Promise<HeadSettings> {
+    const saved = await store.getSettings();
+    return {
+      id: "default",
+      model: saved?.model ?? config.model,
+      effort: saved?.effort ?? config.effort,
+      favorites: [...new Set([...config.favoriteModels, config.model])],
+      efforts: EFFORTS,
+      workers: { models: config.workerModels, efforts: WORKER_EFFORTS },
+    };
+  }
+
+  /** Changes the defaults for new threads (and threads without their own choice). */
+  async function setDefaults(p: Choice) {
+    checkHeadChoice(p);
+    const s = await settings();
+    if (p.model) s.model = p.model.trim();
+    if (p.effort) s.effort = p.effort;
+    await store.saveSettings(s);
+    return s;
+  }
+
+  /** Applies a choice to a thread; null clears it back to the default. */
+  function applyChoice(thread: Thread, p: Choice) {
+    checkHeadChoice(p);
+    if (p.model !== undefined) thread.model = p.model ? p.model.trim() : null;
+    if (p.effort !== undefined) thread.effort = p.effort ?? null;
+  }
+
+  async function setThread(p: Choice & { threadId: string }) {
+    const thread = await store.getThread(p.threadId);
+    if (!thread) throw new Error(`unknown thread ${p.threadId}`);
+    applyChoice(thread, p);
+    await store.saveThread(thread);
+    return thread;
+  }
 
   async function saveMessage(m: Message) {
     await store.saveMessage(m);
@@ -60,10 +112,13 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
 
   async function send(p: SendParams, turn: Turn) {
     if (!p.text?.trim()) throw new Error("text is required");
+    checkHeadChoice(p);
     const threshold = config.simpleThreshold;
 
     const thread = await ensureThread(p);
     if (p.project && expandHome(p.project) !== thread.project) thread.project = expandHome(p.project);
+    applyChoice(thread, p);
+    const choice = brainChoice(thread, await settings());
     turn.update({ kind: "thread", threadId: thread.id, project: thread.project });
 
     const user: Message = { id: crypto.randomUUID(), threadId: thread.id, role: "user", text: p.text, ts: now(), traceId: turn.traceId, status: "done" };
@@ -73,7 +128,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     turn.update({ kind: "message", userMessageId: user.id, messageId: reply.id });
 
     // Start the brain now; if the answer turns out to be direct, its startup is already done.
-    let warm = brain.prepare?.({ sessionId: thread.sessionId }) ?? null;
+    let warm = brain.prepare?.({ sessionId: thread.sessionId, ...choice }) ?? null;
     try {
       turn.phase?.("understanding", "이해 중");
       const understood = await normalizer.normalize(p.text);
@@ -103,7 +158,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         turn.phase?.("answering", "답변 작성 중");
         const w = warm;
         warm = null;
-        await answerDirectly(thread, reply, p.text, turn, w);
+        await answerDirectly(thread, reply, p.text, turn, w, choice);
       }
       else {
         // Delegated: the warm brain will never get a prompt.
@@ -127,7 +182,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     return { threadId: thread.id, messageId: reply.id, route: reply.route ?? null, status: reply.status };
   }
 
-  async function answerDirectly(thread: Thread, reply: Message, text: string, turn: Turn, warm: WarmBrain | null) {
+  async function answerDirectly(thread: Thread, reply: Message, text: string, turn: Turn, warm: WarmBrain | null, choice: { model: string; effort: Effort }) {
     reply.status = "streaming";
     await saveMessage(reply);
     const onUpdate = (u: BrainUpdate) => {
@@ -136,7 +191,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     };
     const res = warm
       ? await warm.reply({ prompt: text, signal: turn.signal, onUpdate })
-      : await brain.reply({ prompt: text, sessionId: thread.sessionId, signal: turn.signal, onUpdate });
+      : await brain.reply({ prompt: text, sessionId: thread.sessionId, signal: turn.signal, onUpdate, ...choice });
     if (res.violation) {
       await events.guardViolation({ messageId: reply.id, toolName: res.violation.toolName });
       throw new Error(`head tried to use tool ${res.violation.toolName}; run aborted`);
@@ -159,6 +214,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       payload: {
         harness: s.harness,
         harnesses: config.harnesses,
+        workers: { models: config.workerModels, efforts: WORKER_EFFORTS },
         brief,
         ...(criterion ? { criterion } : {}),
         ...(s.role ? { role: s.role } : {}),
@@ -184,10 +240,13 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       reply.delegation.harness = harness;
       reply.delegation.suggestedHarness = s.harness;
     }
+    const worker = checkWorkerChoice({ harness, model: decision.amend?.model, effort: decision.amend?.effort });
+    Object.assign(reply.delegation, worker);
 
     turn.phase?.("delegating", "위임 중");
     const task = await delegator.delegate({
       harness,
+      ...worker,
       objective: brief,
       criterion,
       project: thread.project,
@@ -209,5 +268,17 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     }
   }
 
-  return { registerKinds: () => store.registerKinds(), send, onTaskEvent };
+  return {
+    /** Registers kinds and stores the settings once, so screens can read them as an entity. */
+    async init() {
+      await store.registerKinds();
+      await store.saveSettings(await settings());
+    },
+    send,
+    onTaskEvent,
+    settings,
+    setDefaults,
+    setThread,
+    models: () => models.list(),
+  };
 }

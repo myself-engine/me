@@ -1,6 +1,6 @@
 // What the head's use case needs from the outside world. Adapters implement these over
 // the kernel SDK and GJC; the use case and domain never import either directly.
-import type { Judgement, Message, Summary, Thread, Understood } from "../domain/types.ts";
+import type { Effort, HeadSettings, Judgement, Message, ModelInfo, Summary, Thread, Understood } from "../domain/types.ts";
 
 /** Streamed output of the head's own reply; kinds match the chat.send op.update contract. */
 export type BrainUpdate =
@@ -22,11 +22,22 @@ export interface WarmBrain {
   cancel(): void;
 }
 
+/** Which model the head replies with, and how hard it thinks. */
+export interface BrainChoice {
+  model: string;
+  effort: Effort;
+}
+
 export interface Brain {
   /** Generates a direct reply, resuming the thread's conversation when sessionId is set. */
-  reply(p: { prompt: string; sessionId: string | null; signal: AbortSignal; onUpdate: (u: BrainUpdate) => void }): Promise<BrainReply>;
+  reply(p: { prompt: string; sessionId: string | null; signal: AbortSignal; onUpdate: (u: BrainUpdate) => void } & BrainChoice): Promise<BrainReply>;
   /** Optional: start early so startup overlaps with judging; used only if the answer is direct. */
-  prepare?(p: { sessionId: string | null }): WarmBrain;
+  prepare?(p: { sessionId: string | null } & BrainChoice): WarmBrain;
+}
+
+/** The models the head could run. */
+export interface ModelCatalog {
+  list(): Promise<ModelInfo[]>;
 }
 
 export interface Normalizer {
@@ -55,7 +66,7 @@ export interface Approvals {
 }
 
 export interface Delegator {
-  delegate(p: { harness: string; objective: string; criterion?: string; project: string; origin: Record<string, unknown> }): Promise<{ taskId: string }>;
+  delegate(p: { harness: string; model?: string; effort?: string; objective: string; criterion?: string; project: string; origin: Record<string, unknown> }): Promise<{ taskId: string }>;
 }
 
 export interface Store {
@@ -64,6 +75,8 @@ export interface Store {
   saveThread(t: Thread): Promise<void>;
   saveMessage(m: Message): Promise<void>;
   messagesByTask(taskId: string): Promise<Message[]>;
+  getSettings(): Promise<HeadSettings | null>;
+  saveSettings(s: HeadSettings): Promise<void>;
 }
 
 export interface Events {

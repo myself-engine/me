@@ -8,7 +8,7 @@ import { AppContext, type Ctx } from "./context.ts";
 import { downCount, OpsScreen } from "./ops.tsx";
 import { ProjectsScreen } from "./projects.tsx";
 import { chatHref, isDeep, NEW_THREAD, replace, useRoute, type Route, type Tab } from "./routes.ts";
-import { initial, reducer, toneOf, workItems } from "./state.ts";
+import { initial, reducer, toneOf, workItems, type HeadChoice } from "./state.ts";
 import { TasksScreen } from "./tasks.tsx";
 import { TraceDrawer } from "./timeline.tsx";
 
@@ -91,10 +91,10 @@ function App() {
     }
   }, [pendingTrace, s.live]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, choice?: HeadChoice) => {
     if (!conn) return;
     try {
-      const res = await conn.request<{ traceId: string }>("chat.send", { threadId: threadId ?? undefined, text, project: project || undefined });
+      const res = await conn.request<{ traceId: string }>("chat.send", { threadId: threadId ?? undefined, text, project: project || undefined, ...choice });
       if (!threadId) setPendingTrace(res.traceId);
     } catch (err: any) {
       notify(err.message);
@@ -179,7 +179,7 @@ function skipToMain(e: MouseEvent) {
   document.getElementById("main")?.focus();
 }
 
-function Screen({ route, ...chat }: { route: Route; project: string; setProject: (p: string) => void; onSend: (t: string) => void }) {
+function Screen({ route, ...chat }: { route: Route; project: string; setProject: (p: string) => void; onSend: (t: string, choice?: HeadChoice) => void }) {
   switch (route.tab) {
     case "chat":
       return <ChatScreen threadId={route.threadId} {...chat} />;

@@ -1,0 +1,170 @@
+// The head's model and effort: a chip above the composer and the sheet it opens.
+import { useEffect, useMemo, useState } from "react";
+import type { Connection, Effort, ModelInfo, Thread } from "./api.ts";
+import { useApp } from "./context.ts";
+import { useBusy, useFocusTrap } from "./shared.tsx";
+import { headChoice, shortModel, type HeadChoice } from "./state.ts";
+
+const EFFORT_LABEL: Record<Effort, string> = {
+  off: "생각 안 함",
+  minimal: "최소",
+  low: "낮음",
+  medium: "보통",
+  high: "높음",
+  xhigh: "매우 높음",
+  max: "최대",
+};
+export const effortLabel = (e: string) => EFFORT_LABEL[e as Effort] ?? e;
+
+/** `gjc --list-models` takes seconds; one request per page load is enough. */
+let catalog: Promise<ModelInfo[]> | null = null;
+const loadCatalog = (conn: Connection) => (catalog ??= conn.request<ModelInfo[]>("head.models").catch((err) => ((catalog = null), Promise.reject(err))));
+
+/** Shows what the next reply will use; opens the picker. `thread` is null for a new thread, whose choice is the draft. */
+export function HeadChip({ thread, draft, setDraft }: { thread: Thread | null; draft: HeadChoice; setDraft: (c: HeadChoice) => void }) {
+  const { s } = useApp();
+  const [open, setOpen] = useState(false);
+  const cur = headChoice(thread ?? draft, s.headSettings);
+  if (!cur) return null;
+  return (
+    <>
+      <button className="head-chip" onClick={() => setOpen(true)} aria-haspopup="dialog">
+        <span className="sr">대화 엔진: </span>
+        {shortModel(cur.model)} · {effortLabel(cur.effort)}
+        {cur.isDefault && <span className="muted"> (기본값)</span>}
+        <span className="chip-chev" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open && <HeadSheet thread={thread} draft={draft} setDraft={setDraft} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null; draft: HeadChoice; setDraft: (c: HeadChoice) => void; onClose: () => void }) {
+  const { s, conn, notify } = useApp();
+  const d = s.headSettings!;
+  const cur = headChoice(thread ?? draft, d)!;
+  const [model, setModel] = useState(cur.model);
+  const [effort, setEffort] = useState<Effort>(cur.effort);
+  const [query, setQuery] = useState("");
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [busy, act] = useBusy(notify);
+  const panel = useFocusTrap(onClose);
+
+  useEffect(() => {
+    if (!conn) return;
+    let alive = true;
+    loadCatalog(conn)
+      .then((m) => alive && setModels(m))
+      .catch((err) => alive && setListError(err.message));
+    return () => {
+      alive = false;
+    };
+  }, [conn]);
+
+  const info = models?.find((m) => m.id === model);
+  const efforts = info?.efforts ?? d.efforts;
+  // A model that cannot think at the picked level falls back to its nearest offered level.
+  useEffect(() => {
+    if (!efforts.includes(effort)) setEffort(efforts.includes("off") ? "off" : efforts[0]!);
+  }, [model, efforts.join(",")]);
+
+  const shown = useMemo(() => {
+    const top = [...new Set([model, d.model, ...d.favorites])];
+    const q = query.trim().toLowerCase();
+    if (!q) return top.map((id) => ({ id, favorite: true }));
+    const found = (models ?? []).filter((m) => m.id.toLowerCase().includes(q)).slice(0, 40);
+    return found.map((m) => ({ id: m.id, favorite: top.includes(m.id) }));
+  }, [model, d.model, d.favorites.join(","), query, models]);
+
+  const applyHere = () =>
+    act(async () => {
+      if (!thread) setDraft({ model, effort });
+      else await conn!.request("head.thread.set", { threadId: thread.id, model, effort });
+      onClose();
+    });
+  const saveDefault = () =>
+    act(async () => {
+      await conn!.request("head.defaults.set", { model, effort });
+      // This thread now follows the defaults instead of keeping its own copy.
+      if (!thread) setDraft({});
+      else if (thread.model || thread.effort) await conn!.request("head.thread.set", { threadId: thread.id, model: null, effort: null });
+      onClose();
+    });
+  const followDefault = () =>
+    act(async () => {
+      if (!thread) setDraft({});
+      else await conn!.request("head.thread.set", { threadId: thread.id, model: null, effort: null });
+      onClose();
+    });
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <aside className="drawer head-sheet" role="dialog" aria-modal="true" aria-labelledby="head-title" ref={panel}>
+        <header className="drawer-head">
+          <div>
+            <h2 className="drawer-title" id="head-title">
+              대화 엔진
+            </h2>
+            <div className="drawer-sub">{thread ? "이 대화의 답변에 쓸 모델과 생각 정도" : "새 대화에 쓸 모델과 생각 정도"}</div>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="닫기">
+            ✕
+          </button>
+        </header>
+        <div className="drawer-body stack">
+          <fieldset className="pick">
+            <legend>생각 정도 (effort)</legend>
+            <div className="seg">
+              {efforts.map((e) => (
+                <label key={e} className={`seg-item${e === effort ? " on" : ""}`}>
+                  <input type="radio" name="effort" value={e} checked={e === effort} onChange={() => setEffort(e)} />
+                  {effortLabel(e)}
+                </label>
+              ))}
+            </div>
+            <p className="pick-note muted">높을수록 답이 깊어지지만 느려져요. 짧은 대화는 "생각 안 함"이 빨라요.</p>
+          </fieldset>
+          <fieldset className="pick">
+            <legend>모델</legend>
+            <input type="search" className="pick-search" placeholder="모델 검색 (예: sol, kimi, gemini)" aria-label="모델 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
+            {query && !models && !listError && <p className="muted">모델 목록을 불러오는 중…</p>}
+            {listError && <p className="muted">모델 목록을 못 불러왔어요: {listError}</p>}
+            {query && models && shown.length === 0 && <p className="muted">"{query}"에 맞는 모델이 없어요.</p>}
+            <ul className="pick-list">
+              {shown.map((m) => (
+                <li key={m.id}>
+                  <label className={`pick-row${m.id === model ? " on" : ""}`}>
+                    <input type="radio" name="model" value={m.id} checked={m.id === model} onChange={() => setModel(m.id)} />
+                    <span className="pick-name">{shortModel(m.id)}</span>
+                    <span className="pick-sub muted">
+                      {m.id.slice(0, m.id.lastIndexOf("/"))}
+                      {m.id === d.model ? " · 기본값" : ""}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <p className="pick-note muted">Claude 모델은 대화 엔진에서 쓸 수 없어 목록에 없어요.</p>
+          </fieldset>
+        </div>
+        <footer className="drawer-foot actions-row">
+          <button className="primary" disabled={busy || !conn} onClick={applyHere}>
+            {thread ? "이 대화에 적용" : "새 대화에 적용"}
+          </button>
+          <button className="quiet" disabled={busy || !conn} onClick={saveDefault}>
+            기본값으로 저장
+          </button>
+          {!cur.isDefault && (
+            <button className="link" disabled={busy || !conn} onClick={followDefault}>
+              기본값 따르기
+            </button>
+          )}
+        </footer>
+      </aside>
+    </>
+  );
+}

@@ -33,7 +33,13 @@ const kernel = new Kernel({
   dataDir: home,
   log: () => {},
   pluginConfig: {
-    "gjc-head": { harnesses: ["local.claude-code", "local.codex"], defaultProject: project, simpleThreshold: 0.8 },
+    "gjc-head": {
+      harnesses: ["local.claude-code", "local.codex"],
+      defaultProject: project,
+      simpleThreshold: 0.8,
+      favoriteModels: ["openai-codex/gpt-6.1-sol"],
+      workerModels: { "local.codex": ["gpt-6.1-sol"], "local.claude-code": ["opus"] },
+    },
     web: { port },
   },
 });
@@ -48,7 +54,7 @@ const brgr = definePlugin({
     "task.delegate": async (p: any) => {
       const taskId = `e2e-${crypto.randomUUID().slice(0, 8)}`;
       const now = new Date().toISOString();
-      const task = { taskId, harness: p.harness, objective: p.objective, project: p.project, criterion: p.criterion ?? "", origin: p.origin ?? null, state: "running", outcome: null, resultText: null, error: null, decisionReason: null, commitSha: null, appliedAt: null, createdAt: now, updatedAt: now };
+      const task = { taskId, harness: p.harness, ...(p.model ? { model: p.model } : {}), ...(p.effort ? { effort: p.effort } : {}), objective: p.objective, project: p.project, criterion: p.criterion ?? "", origin: p.origin ?? null, state: "running", outcome: null, resultText: null, error: null, decisionReason: null, commitSha: null, appliedAt: null, createdAt: now, updatedAt: now };
       tasks.set(taskId, task);
       await brgr.entity.upsert("brgr.task", taskId, task);
       await brgr.emit("task.running", { taskId, state: "running", harness: p.harness });
@@ -150,6 +156,8 @@ try {
     const deltas = ups.filter((u) => u.kind === "text_delta").length;
     const route = ups.find((u) => u.kind === "judgement")?.route;
     if (route !== "direct") throw new Error(`route ${route}`);
+    const err = ups.find((u) => u.kind === "error")?.message;
+    if (err) throw new Error(`reply failed: ${err}`);
     for (const ph of ["understanding", "judging", "answering", "done"]) if (!phases.includes(ph)) throw new Error(`missing phase ${ph}`);
     if (deltas < 2) throw new Error(`only ${deltas} text deltas`);
     return `phases=${phases.join("→")} deltas=${deltas}`;
@@ -179,9 +187,10 @@ try {
   await check("위임: 판정 → 지시서 → 승인(하네스 변경) → 결과 → 수락 → 커밋", async () => {
     const { traceId, approval } = await delegate("이 프로젝트에 NOTES.md 파일 만들어서 hello 한 줄만 써 줘");
     if (!approval.payload?.brief) throw new Error("approval has no brief");
-    await request("approval.decide", { approvalId: approval.approvalId, decision: "approve", amend: { harness: "local.codex" } });
+    await request("approval.decide", { approvalId: approval.approvalId, decision: "approve", amend: { harness: "local.codex", model: "gpt-6.1-sol", effort: "high" } });
     const sealed = await waitFor((m) => m.type === "entity" && m.kind === "brgr.task" && m.data.state === "sealed", 30_000, "sealed task");
     if (sealed.data.harness !== "local.codex") throw new Error(`harness ${sealed.data.harness} (amend ignored)`);
+    if (sealed.data.model !== "gpt-6.1-sol" || sealed.data.effort !== "high") throw new Error(`worker ${sealed.data.model}/${sealed.data.effort} (amend ignored)`);
     const diff = await request("task.diff", { taskId: sealed.data.taskId });
     if (!String(diff.diff).includes("NOTES.md")) throw new Error("diff missing file");
     const applied = await request("task.accept", { taskId: sealed.data.taskId });
@@ -198,6 +207,25 @@ try {
     const msg = inbox.filter((m) => m.type === "entity" && m.kind === "gjc-head.message" && m.data.traceId === traceId && m.data.role === "assistant").at(-1)?.data;
     if (msg?.delegation?.state !== "rejected") throw new Error(`delegation state ${msg?.delegation?.state}`);
     return "rejected";
+  });
+
+  await check("대화 엔진: 모델·effort 설정", async () => {
+    const boot = await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json();
+    const d = boot.headSettings;
+    if (!d?.model || !d.favorites?.includes("openai-codex/gpt-6.1-sol")) throw new Error(`headSettings ${JSON.stringify(d)}`);
+    const thread = boot.threads.find((t: any) => boot.messages.some((m: any) => m.traceId === directTrace && m.threadId === t.id));
+    // A thread's own effort, then a reply that runs with it.
+    await request("head.thread.set", { threadId: thread.id, effort: "low" });
+    const { traceId } = await request("chat.send", { threadId: thread.id, text: "고마워! 한 줄로 정리해 줘" });
+    const end = await waitFor((m) => m.type === "op.end" && m.traceId === traceId, 90_000, "op.end");
+    if (end.error || end.result?.status !== "done") throw new Error(end.error ?? `reply ${end.result?.status}`);
+    const t = (await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json()).threads.find((x: any) => x.id === thread.id);
+    if (t.effort !== "low") throw new Error(`thread effort ${t.effort}`);
+    const refused = await request("head.defaults.set", { model: "anthropic/claude-opus-5-5" }).then(() => null, (e: Error) => e.message);
+    if (!refused) throw new Error("Anthropic model accepted as head default");
+    const models = await request("head.models");
+    if (!Array.isArray(models) || models.length === 0 || models.some((m: any) => /claude|anthropic/i.test(m.id))) throw new Error(`models ${models?.length}`);
+    return `effort=low reply ok, models=${models.length}, anthropic refused`;
   });
 
   await check("상태: kernel.op 기록", async () => {

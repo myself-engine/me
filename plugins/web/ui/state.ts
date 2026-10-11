@@ -1,5 +1,5 @@
 // Client state: one reducer fed by the bootstrap snapshot and the server's WebSocket pushes.
-import type { Approval, Bootstrap, Message, Op, OpsCheck, PluginInfo, ServerMsg, Task, Thread } from "./api.ts";
+import type { Approval, Bootstrap, Effort, HeadSettings, Message, Op, OpsCheck, PluginInfo, ServerMsg, Task, Thread } from "./api.ts";
 
 /** What has streamed in for one request (by traceId) before the message entity catches up. */
 export interface Live {
@@ -22,6 +22,8 @@ export interface State {
   ops: Record<string, Op>;
   checks: Record<string, OpsCheck>;
   approvals: Record<string, Approval>;
+  /** The head's defaults and pickers; null until gjc-head has stored them. */
+  headSettings: HeadSettings | null;
   live: Record<string, Live>;
   config: Bootstrap["config"];
   viewer: Bootstrap["viewer"];
@@ -44,6 +46,7 @@ export function reducer(s: State, a: Action): State {
       ops: byId(a.data.ops ?? [], "opId"),
       checks: Object.fromEntries((a.data.checks ?? []).map((c) => [`${c.source ?? "ops"}/${c.id}`, c])),
       approvals: byId(a.data.approvals, "approvalId"),
+      headSettings: a.data.headSettings ?? null,
       config: a.data.config,
       viewer: a.data.viewer ?? null,
     };
@@ -54,6 +57,7 @@ export function reducer(s: State, a: Action): State {
       if (m.kind === "gjc-head.thread") return { ...s, threads: { ...s.threads, [m.id]: m.data } };
       if (m.kind === "gjc-head.message") return { ...s, messages: { ...s.messages, [m.id]: m.data } };
       if (m.kind === "brgr.task") return { ...s, tasks: { ...s.tasks, [m.id]: m.data } };
+      if (m.kind === "gjc-head.settings") return { ...s, headSettings: m.data };
       if (m.kind === "kernel.plugin") return { ...s, plugins: { ...s.plugins, [m.id]: m.data } };
       if (m.kind === "kernel.op") return { ...s, ops: { ...s.ops, [m.id]: m.data } };
       if (m.kind === "ops.check") return { ...s, checks: { ...s.checks, [m.id]: m.data } };
@@ -97,6 +101,7 @@ export const initial: State = {
   ops: {},
   checks: {},
   approvals: {},
+  headSettings: null,
   live: {},
   config: { projects: [], defaultProject: "", githubRepo: null },
   viewer: null,
@@ -105,6 +110,21 @@ export const initial: State = {
 // ---------------------------------------------------------------------------
 // Derived views
 // ---------------------------------------------------------------------------
+
+/** A head choice for a thread or a new-thread draft; unset fields follow the defaults. */
+export interface HeadChoice {
+  model?: string | null;
+  effort?: Effort | null;
+}
+
+/** The model and effort a thread (or a draft) will reply with, and whether that is the default. */
+export function headChoice(own: HeadChoice | null | undefined, d: HeadSettings | null): { model: string; effort: Effort; isDefault: boolean } | null {
+  if (!d) return null;
+  return { model: own?.model || d.model, effort: own?.effort ?? d.effort, isDefault: !own?.model && !own?.effort };
+}
+
+/** A model id without its provider, for chips: openai-codex/gpt-6.1-sol → gpt-6.1-sol. */
+export const shortModel = (id: string) => id.slice(id.lastIndexOf("/") + 1);
 
 /** Status tone: the only place colour carries meaning (Needs You / running / done / failed / muted). */
 export type Tone = "needs" | "running" | "done" | "failed" | "muted" | "none";

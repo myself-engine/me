@@ -1,8 +1,8 @@
 // Timeline drawer: one request's call tree (kernel trace.get), refreshed while its ops are still moving.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { TraceNode, TraceResult } from "./api.ts";
 import { useApp } from "./context.ts";
-import { StatusDot, duration, elapsed, useBusy, useNow } from "./shared.tsx";
+import { StatusDot, duration, elapsed, useBusy, useFocusTrap, useNow } from "./shared.tsx";
 import type { Tone } from "./state.ts";
 
 const TARGET_LABEL: Record<string, string> = {
@@ -117,46 +117,6 @@ export function TraceDrawer({ traceId, messageId, onClose }: { traceId: string; 
   );
 }
 
-const FOCUSABLE = 'a[href], button:not(:disabled), select:not(:disabled), textarea:not(:disabled), input:not(:disabled), summary, [tabindex]:not([tabindex="-1"])';
-
-/**
- * Modal focus handling for the drawer: focus moves in on open, Tab and Shift+Tab stay inside,
- * Escape closes, and focus returns to whatever opened it.
- */
-function useFocusTrap(onClose: () => void) {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    const items = () => [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter((el) => el.offsetParent !== null);
-    items()[0]?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key !== "Tab" || !ref.current) return;
-      const list = items();
-      if (list.length === 0) return;
-      const first = list[0]!;
-      const last = list[list.length - 1]!;
-      const inside = ref.current.contains(document.activeElement);
-      if (e.shiftKey && (document.activeElement === first || !inside)) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      if (opener?.isConnected) opener.focus();
-    };
-  }, [onClose]);
-  return ref;
-}
 
 function TraceItem({ n, now }: { n: TraceNode; now: number }) {
   const [tone, label] = NODE_TONE[n.status];

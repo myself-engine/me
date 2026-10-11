@@ -6,8 +6,33 @@ export interface Thread {
   title: string;
   project: string;
   sessionId: string | null;
+  /** The head's model and effort for this thread; unset means the defaults in HeadSettings. */
+  model?: string | null;
+  effort?: Effort | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** GJC's thinking levels, used as the head's effort. */
+export type Effort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/** One model GJC can run; `efforts` is null when GJC does not say which levels it takes. */
+export interface ModelInfo {
+  id: string;
+  efforts: Effort[] | null;
+}
+
+/** The head's settings, stored as one entity so every screen sees changes live. */
+export interface HeadSettings {
+  id: "default";
+  /** Defaults for new threads and threads without their own choice. */
+  model: string;
+  effort: Effort;
+  /** Models shown first in pickers (config). */
+  favorites: string[];
+  efforts: Effort[];
+  /** Choices offered when approving a delegation (config): favourite models per harness and effort levels. */
+  workers: { models: Record<string, string[]>; efforts: string[] };
 }
 
 export type DelegationState = "awaiting-approval" | "rejected" | "delegated" | "running" | "sealed" | "accepted" | "failed" | "awaiting-input" | "cancelled" | "applied" | "apply-failed";
@@ -49,6 +74,9 @@ export interface Delegation {
   criterion?: string;
   approvalId?: string;
   note?: string;
+  /** Worker model and effort picked at approval; unset means the harness's own default. */
+  model?: string;
+  effort?: string;
 }
 
 export interface Message {

@@ -19,7 +19,7 @@ export interface GjcRunOptions {
   /** Tool names GJC may execute. Empty means no tools at all. */
   allowTools?: string[];
   systemPrompt?: string;
-  thinking?: "off" | "minimal" | "low" | "medium" | "high";
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   onUpdate?: (u: GjcUpdate) => void;
   signal?: AbortSignal;
   /** Retries on provider rate limits (429). */

@@ -218,6 +218,13 @@ describe("other methods", () => {
     expect(events.names()).toEqual(["task.running", "task.sealed"]);
   });
 
+  test("delegate passes the worker model and effort to brgr and keeps them on the task", async () => {
+    const { brgr, store, service } = setup();
+    await service.delegate({ harness: "local.codex", model: "gpt-6.1-sol", effort: "high", objective: "obj", project: "/repo" });
+    expect(brgr.calls[0]![1]).toMatchObject({ harness: "local.codex", model: "gpt-6.1-sol", effort: "high" });
+    expect(store.tasks.get("t-new")).toMatchObject({ model: "gpt-6.1-sol", effort: "high" });
+  });
+
   test("delegate surfaces uncommitted-change refusals in Korean", async () => {
     const { brgr, service } = setup();
     brgr.responses.run = fail("error: workspace has uncommitted changes");

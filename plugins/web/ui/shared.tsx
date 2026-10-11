@@ -1,5 +1,5 @@
 // Small pieces every screen uses: the status dot, markdown, headers, time and path formatting.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { fenceLanguage, highlight } from "./highlight.ts";
@@ -154,4 +154,45 @@ export function useBusy(notify: (m: string) => void) {
     }
   };
   return [busy, act] as const;
+}
+
+const FOCUSABLE = 'a[href], button:not(:disabled), select:not(:disabled), textarea:not(:disabled), input:not(:disabled), summary, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Modal focus handling for drawers and sheets: focus moves in on open, Tab and Shift+Tab stay inside,
+ * Escape closes, and focus returns to whatever opened it.
+ */
+export function useFocusTrap(onClose: () => void) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const items = () => [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter((el) => el.offsetParent !== null);
+    items()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !ref.current) return;
+      const list = items();
+      if (list.length === 0) return;
+      const first = list[0]!;
+      const last = list[list.length - 1]!;
+      const inside = ref.current.contains(document.activeElement);
+      if (e.shiftKey && (document.activeElement === first || !inside)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [onClose]);
+  return ref;
 }

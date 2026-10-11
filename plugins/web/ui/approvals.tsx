@@ -4,6 +4,7 @@ import type { Approval } from "./api.ts";
 import { useApp } from "./context.ts";
 import { chatHref } from "./routes.ts";
 import { Empty, Header, StatusDot, repoName, shortPath, toolName, useBusy } from "./shared.tsx";
+import { effortLabel } from "./head.tsx";
 import { isDelegationApproval } from "./state.ts";
 
 const RISK_LABEL: Record<Approval["risk"], string> = { low: "위험 낮음", medium: "위험 보통", high: "위험 높음" };
@@ -38,17 +39,24 @@ export function ApprovalCard({ a, inline = false }: { a: Approval; inline?: bool
   const harnesses: string[] = Array.isArray(p.harnesses) ? p.harnesses : suggested ? [suggested] : [];
   const [picked, setPicked] = useState<string | null>(null);
   const harness = picked ?? suggested;
+  // Worker model and effort; "" keeps the tool's own default. Models are config favourites per tool, or typed.
+  const workers: { models: Record<string, string[]>; efforts: string[] } = p.workers ?? { models: {}, efforts: [] };
+  const favorites = (harness && workers.models[harness]) || [];
+  const [model, setModel] = useState("");
+  const [typing, setTyping] = useState(false);
+  const [effort, setEffort] = useState("");
   const delegation = isDelegationApproval(a);
   const message = delegation ? s.messages[p.messageId] : undefined;
 
   const decide = (decision: "approve" | "reject") =>
     act(async () => {
       if (!conn) return;
-      await conn.request("approval.decide", {
-        approvalId: a.approvalId,
-        decision,
-        ...(decision === "approve" && harness && harness !== suggested ? { amend: { harness } } : {}),
-      });
+      const amend = {
+        ...(harness && harness !== suggested ? { harness } : {}),
+        ...(model.trim() ? { model: model.trim() } : {}),
+        ...(effort ? { effort } : {}),
+      };
+      await conn.request("approval.decide", { approvalId: a.approvalId, decision, ...(decision === "approve" && Object.keys(amend).length ? { amend } : {}) });
     });
 
   return (
@@ -71,7 +79,15 @@ export function ApprovalCard({ a, inline = false }: { a: Approval; inline?: bool
       {harnesses.length > 0 && harness && (
         <label className="field">
           <span>실행 도구</span>
-          <select value={harness} disabled={busy} onChange={(e) => setPicked(e.target.value)}>
+          <select
+            value={harness}
+            disabled={busy}
+            onChange={(e) => {
+              setPicked(e.target.value);
+              setModel("");
+              setTyping(false);
+            }}
+          >
             {(harnesses.includes(harness) ? harnesses : [harness, ...harnesses]).map((h) => (
               <option key={h} value={h}>
                 {toolName(h)}
@@ -80,6 +96,43 @@ export function ApprovalCard({ a, inline = false }: { a: Approval; inline?: bool
             ))}
           </select>
         </label>
+      )}
+      {delegation && harness && (
+        <div className="field-row">
+          <label className="field">
+            <span>모델</span>
+            {typing ? (
+              <input className="field-input" value={model} disabled={busy} placeholder="모델 이름" aria-label="모델 이름" onChange={(e) => setModel(e.target.value)} />
+            ) : (
+              <select
+                value={model}
+                disabled={busy}
+                onChange={(e) => (e.target.value === "\u0000" ? (setTyping(true), setModel("")) : setModel(e.target.value))}
+              >
+                <option value="">기본값</option>
+                {favorites.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+                <option value={"\u0000"}>직접 입력…</option>
+              </select>
+            )}
+          </label>
+          {workers.efforts.length > 0 && (
+            <label className="field">
+              <span>effort</span>
+              <select value={effort} disabled={busy} onChange={(e) => setEffort(e.target.value)}>
+                <option value="">기본값</option>
+                {workers.efforts.map((e) => (
+                  <option key={e} value={e}>
+                    {effortLabel(e)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       )}
       {delegation && harness && <p className="result-note muted">승인하면 이 프로젝트에서 {toolName(harness)} 작업이 시작돼요.</p>}
       <div className="actions-row">

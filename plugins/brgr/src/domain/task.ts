@@ -17,6 +17,9 @@ export interface Task {
   objective: string;
   project: string;
   criterion: string;
+  /** Worker model and effort asked for at delegation; absent means the harness default. */
+  model?: string;
+  effort?: string;
   origin: Record<string, unknown> | null;
   state: TaskState;
   outcome: string | null;
@@ -70,6 +73,8 @@ export function transition(task: Task, to: TaskState, patch: TaskPatch, at: stri
 export interface NewTask {
   taskId: string;
   harness: string;
+  model?: string;
+  effort?: string;
   objective: string;
   project: string;
   criterion: string;

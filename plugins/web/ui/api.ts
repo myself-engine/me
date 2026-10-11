@@ -5,12 +5,32 @@ import type { KernelOpEntity, TraceNode, TraceResult } from "@me/protocol";
 export type Op = KernelOpEntity;
 export type { TraceNode, TraceResult };
 
+export type Effort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface Thread {
   id: string;
   title: string;
   project: string;
+  /** The head's model and effort for this thread; unset follows HeadSettings. */
+  model?: string | null;
+  effort?: Effort | null;
   updatedAt: string;
   createdAt: string;
+}
+
+/** gjc-head.settings: the head's defaults and the choices offered for the head and for workers. */
+export interface HeadSettings {
+  model: string;
+  effort: Effort;
+  favorites: string[];
+  efforts: Effort[];
+  workers: { models: Record<string, string[]>; efforts: string[] };
+}
+
+/** One model the head can run; `efforts` is null when unknown. */
+export interface ModelInfo {
+  id: string;
+  efforts: Effort[] | null;
 }
 
 export interface Message {
@@ -26,7 +46,7 @@ export interface Message {
   judgement?: { simpleProb: number; confidence: number; source: string; model: string };
   route?: "direct" | "delegate";
   taskId?: string | null;
-  delegation?: { state: string; harness: string; suggestedHarness?: string; brief: string; criterion?: string; approvalId?: string; note?: string };
+  delegation?: { state: string; harness: string; suggestedHarness?: string; brief: string; criterion?: string; approvalId?: string; note?: string; model?: string; effort?: string };
   error?: string;
 }
 
@@ -36,6 +56,9 @@ export interface Task {
   objective: string;
   project: string;
   criterion?: string;
+  /** Worker model and effort asked for at delegation. */
+  model?: string;
+  effort?: string;
   state: string;
   outcome: string | null;
   resultText: string | null;
@@ -97,6 +120,7 @@ export interface Bootstrap {
   ops: Op[];
   checks: OpsCheck[];
   approvals: Approval[];
+  headSettings?: HeadSettings | null;
   config: { projects: string[]; defaultProject: string; githubRepo: string | null };
 }
 

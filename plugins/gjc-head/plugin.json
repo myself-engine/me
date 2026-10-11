@@ -15,9 +15,9 @@
     "network"
   ],
   "provides": {
-    "methods": ["chat.send"],
+    "methods": ["chat.send", "chat.settings", "chat.settings.set", "chat.thread.set", "chat.models"],
     "events": ["gjc-head.message.changed", "gjc-head.guard.violation"],
-    "kinds": ["thread", "message"]
+    "kinds": ["thread", "message", "settings"]
   },
   "subscribes": ["brgr.task.*"],
   "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }

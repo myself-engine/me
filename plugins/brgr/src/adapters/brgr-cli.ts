@@ -7,7 +7,12 @@ export function brgrCli(owner: () => string, bin = "brgr"): BrgrCli {
   return {
     run: (r) =>
       brgr(
-        ["run", r.objective, "--harness", r.harness, "--criterion", r.criterion, "--capture-diff", "--deadline-seconds", String(r.deadlineSeconds), "--json"],
+        [
+          "run", r.objective, "--harness", r.harness, "--criterion", r.criterion, "--capture-diff", "--deadline-seconds", String(r.deadlineSeconds),
+          ...(r.model ? ["--model", r.model] : []),
+          ...(r.effort ? ["--effort", r.effort] : []),
+          "--json",
+        ],
         r.project,
       ),
     wait: (taskId) => brgr(["wait", taskId, "--json"]),

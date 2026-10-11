@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { diffTotals, parseDiffStat, splitDiff } from "./diff.ts";
 import { fenceLanguage, highlight } from "./highlight.ts";
 import { isDeep, parseRoute, taskHref } from "./routes.ts";
-import { initial, reducer, threadTone, toneOf, workItems, type State } from "./state.ts";
+import { headChoice, initial, reducer, shortModel, threadTone, toneOf, workItems, type State } from "./state.ts";
 
 describe("parseRoute", () => {
   test("defaults to chat", () => {
@@ -121,5 +121,20 @@ describe("highlight", () => {
   });
   test("escapes the source", () => {
     expect(highlight("<img src=x onerror=alert(1)>", "html")).not.toContain("<img");
+  });
+});
+
+describe("head choice", () => {
+  const d = { model: "openai-codex/gpt-5.6-luna", effort: "off" as const, favorites: [], efforts: [], workers: { models: {}, efforts: [] } };
+  test("follows the defaults until a thread has its own choice", () => {
+    expect(headChoice({}, d)).toEqual({ model: d.model, effort: "off", isDefault: true });
+    expect(headChoice({ model: null, effort: "high" }, d)).toEqual({ model: d.model, effort: "high", isDefault: false });
+    expect(headChoice({}, null)).toBeNull();
+  });
+  test("settings entities land in state and chips drop the provider", () => {
+    const s = reducer(initial, { type: "server", msg: { type: "entity", kind: "gjc-head.settings", id: "default", data: d } });
+    expect(s.headSettings?.model).toBe(d.model);
+    expect(shortModel("openai-codex/gpt-6.1-sol")).toBe("gpt-6.1-sol");
+    expect(shortModel("bare")).toBe("bare");
   });
 });

@@ -1,14 +1,15 @@
 // 대화: thread list, the conversation itself, and the composer.
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Message, Task } from "./api.ts";
+import type { Message, Task, Thread } from "./api.ts";
 import { ApprovalCard } from "./approvals.tsx";
 import { useApp } from "./context.ts";
 import { diffTotals, parseDiffStat } from "./diff.ts";
 import { chatHref, NEW_THREAD, taskHref } from "./routes.ts";
 import { Empty, Header, Markdown, StatusDot, elapsed, repoName, shortPath, stateLabel, timeAgo, toolName, useBusy, useNow } from "./shared.tsx";
-import { TONE_LABEL, threadTone, toneOf, turnOp, type Live } from "./state.ts";
+import { effortLabel, HeadChip } from "./head.tsx";
+import { TONE_LABEL, threadTone, toneOf, turnOp, type HeadChoice, type Live } from "./state.ts";
 
-export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string) => void }) {
+export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
   const open = props.threadId !== null;
   return (
     <div className={`split${open ? " has-detail" : ""}`}>
@@ -61,7 +62,7 @@ function ThreadList({ activeId }: { activeId: string | null }) {
   );
 }
 
-function Conversation(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string) => void }) {
+function Conversation(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
   const { s, conn } = useApp();
   const { threadId } = props;
   const messages = useMemo(
@@ -106,6 +107,8 @@ function Conversation(props: { threadId: string | null; project: string; setProj
       </div>
       <TurnAnnouncer key={threadId ?? NEW_THREAD} m={messages.filter((x) => x.role === "assistant").at(-1)} />
       <Composer
+        key={threadId ?? NEW_THREAD}
+        thread={thread}
         onSend={props.onSend}
         disabled={!conn}
         project={thread?.project ?? props.project}
@@ -262,7 +265,7 @@ function DelegationLine({ m }: { m: Message }) {
   const body = (
     <>
       <StatusDot tone={tone} hideLabel />
-      <span className="dl-harness">{toolName(task?.harness ?? d.harness)}</span>
+      <span className="dl-harness">{workerLabel(task ?? d)}</span>
       <span className="dl-goal">{task?.objective ?? d.brief}</span>
       <span className={`dl-state tone-text tone-${tone}`}>{stateLabel(state)}</span>
       <span className="dl-time">{time}</span>
@@ -290,6 +293,10 @@ function DelegationLine({ m }: { m: Message }) {
     </div>
   );
 }
+
+/** "Codex · gpt-6.1-sol · 높음": the tool, plus the model and effort when they were picked at approval. */
+const workerLabel = (w: { harness: string; model?: string; effort?: string }) =>
+  [toolName(w.harness), w.model, w.effort && effortLabel(w.effort)].filter(Boolean).join(" · ");
 
 /** States where a delegation's result sits in the thread as a card instead of a line. */
 const RESULT_STATES = new Set(["sealed", "accepted", "applied", "apply-failed"]);
@@ -323,7 +330,7 @@ function ResultCard({ task, time }: { task: Task; time: string }) {
     <article className="card result inline" aria-label="작업 결과">
       <div className="card-head">
         <StatusDot tone={tone} label={stateLabel(task.state)} />
-        <span className="muted">{toolName(task.harness)}</span>
+        <span className="muted">{workerLabel(task)}</span>
         <span className="muted right">{time}</span>
       </div>
       {summary && <p className="approval-summary">{summary}</p>}
@@ -362,7 +369,8 @@ function ResultCard({ task, time }: { task: Task; time: string }) {
 }
 
 function Composer(props: {
-  onSend: (t: string) => void;
+  thread: Thread | null;
+  onSend: (t: string, choice?: HeadChoice) => void;
   disabled: boolean;
   project: string;
   projects: string[];
@@ -370,10 +378,12 @@ function Composer(props: {
   setProject: (p: string) => void;
 }) {
   const [text, setText] = useState("");
+  // A new thread's model and effort, sent with its first message; an existing thread stores its own.
+  const [draft, setDraft] = useState<HeadChoice>({});
   const submit = () => {
     const t = text.trim();
     if (!t || props.disabled) return;
-    props.onSend(t);
+    props.onSend(t, props.thread ? undefined : draft);
     setText("");
   };
   return (
@@ -392,6 +402,7 @@ function Composer(props: {
             ))}
           </select>
         )}
+        <HeadChip thread={props.thread} draft={draft} setDraft={setDraft} />
       </div>
       <div className="composer-box">
         <textarea

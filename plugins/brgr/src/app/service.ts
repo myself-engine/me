@@ -15,6 +15,8 @@ export interface ServiceDeps {
 
 export interface DelegateParams {
   harness: string;
+  model?: string;
+  effort?: string;
   objective: string;
   project: string;
   criterion?: string;
@@ -61,7 +63,8 @@ export function createService(deps: ServiceDeps) {
     if (!p.project) throw new Error("project directory is required");
     if (!p.harness.startsWith("local.")) throw new Error(`unknown harness id: ${p.harness}`);
     const criterion = p.criterion ?? DEFAULT_CRITERION;
-    const r = await brgr.run({ objective: p.objective, harness: p.harness, criterion, deadlineSeconds: deps.deadlineSeconds(), project: p.project });
+    const worker = { ...(p.model ? { model: p.model } : {}), ...(p.effort ? { effort: p.effort } : {}) };
+    const r = await brgr.run({ objective: p.objective, harness: p.harness, criterion, deadlineSeconds: deps.deadlineSeconds(), project: p.project, ...worker });
     if (r.code !== 0) {
       const msg = r.stderr.trim() || r.stdout.trim();
       if (/uncommitted changes/.test(msg)) throw new Error(`대상 저장소에 커밋되지 않은 변경이 있어 위임할 수 없어요: ${p.project}`);
@@ -70,7 +73,7 @@ export function createService(deps: ServiceDeps) {
     }
     const receipt = JSON.parse(r.stdout);
     const task = createTask(
-      { taskId: receipt.task_id, harness: p.harness, objective: p.objective, project: p.project, criterion, origin: p.origin ?? null },
+      { taskId: receipt.task_id, harness: p.harness, ...worker, objective: p.objective, project: p.project, criterion, origin: p.origin ?? null },
       now(),
     );
     await store.put(task);

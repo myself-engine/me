@@ -14,6 +14,9 @@ export interface RunRequest {
   deadlineSeconds: number;
   /** Repository the worker branches from; brgr runs with this as cwd. */
   project: string;
+  /** Worker model and effort; unset means the harness's own default. */
+  model?: string;
+  effort?: string;
 }
 
 /** The brgr CLI. Every call returns the raw process result; callers interpret exit codes and JSON. */

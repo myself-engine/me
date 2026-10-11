@@ -16,7 +16,7 @@ mkdirSync(dataDir, { recursive: true });
 const token = crypto.randomUUID().replaceAll("-", "");
 writeFileSync(join(dataDir, "token"), token, { mode: 0o600 });
 
-const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "brgr.task", "kernel.plugin", "kernel.op"]);
+const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "gjc-head.settings", "brgr.task", "kernel.plugin", "kernel.op"]);
 /** ops runs once per machine (ops on this Mac, ops-<name> on servers); each owns `<id>.check`. */
 const OPS_KIND = /^(ops(?:-[a-z0-9-]+)?)\.check$/;
 const isOpsPlugin = (id: string) => id === "ops" || id.startsWith("ops-");
@@ -104,7 +104,7 @@ async function recentOps() {
 }
 
 async function bootstrap(req: Access) {
-  const [threads, messages, tasks, plugins, ops, checks, approvals] = await Promise.all([
+  const [threads, messages, tasks, plugins, ops, checks, approvals, headSettings] = await Promise.all([
     plugin.entity.list({ kind: "gjc-head.thread", limit: 500 }),
     plugin.entity.list({ kind: "gjc-head.message", limit: 1000 }),
     plugin.entity.list({ kind: "brgr.task", limit: 500 }),
@@ -112,6 +112,7 @@ async function bootstrap(req: Access) {
     recentOps(),
     opsChecks(),
     plugin.approval.list(),
+    plugin.entity.get("gjc-head.settings", "default").catch(() => null),
   ]);
   return {
     token,
@@ -123,6 +124,7 @@ async function bootstrap(req: Access) {
     ops,
     checks: checks.map((d) => d.data),
     approvals,
+    headSettings: headSettings?.data ?? null,
     config: {
       projects: ((plugin.config.projects as string[]) ?? []).map(expand),
       defaultProject: expand((plugin.config.defaultProject as string) ?? ""),
@@ -138,7 +140,7 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
     case "chat.send": {
       const traceId = crypto.randomUUID();
       const { opId, done } = await plugin.withTrace(traceId, () =>
-        plugin.invokeStream("gjc-head", "chat.send", { threadId: m.threadId, text: m.text, project: m.project }, {
+        plugin.invokeStream("gjc-head", "chat.send", { threadId: m.threadId, text: m.text, project: m.project, model: m.model, effort: m.effort }, {
           timeoutMs: 600_000,
           onUpdate: (update) => broadcast({ type: "op.update", opId, update, traceId }),
         }),
@@ -148,6 +150,12 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
         .catch((err) => broadcast({ type: "op.end", opId, error: String(err?.message ?? err), traceId }));
       return { opId, traceId };
     }
+    case "head.models":
+      return plugin.invoke("gjc-head", "chat.models", {}, { timeoutMs: 90_000 });
+    case "head.defaults.set":
+      return plugin.invoke("gjc-head", "chat.settings.set", { model: m.model, effort: m.effort });
+    case "head.thread.set":
+      return plugin.invoke("gjc-head", "chat.thread.set", { threadId: m.threadId, model: m.model, effort: m.effort });
     case "approval.decide":
       return plugin.approval.decide(m.approvalId, { decision: m.decision, note: m.note, ...(m.amend ? { amend: m.amend } : {}) });
     case "task.diff":
