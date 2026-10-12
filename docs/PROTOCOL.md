@@ -172,7 +172,7 @@ A → 커널:  op.cancel {opId}                    (선택)
 | `write-state:<kind>` | 해당 종류 쓰기 |
 | `emit` | 자기 이름공간에 이벤트 발행 |
 | `subscribe` | 이벤트, 스트림 구독 |
-| `call:<plugin>` 또는 `call:*` | 해당 플러그인의 메서드 호출 |
+| `call:<plugin>`, `call:<접두어>-*` 또는 `call:*` | 해당 플러그인의 메서드 호출. `call:ops-*`는 id가 `ops-`로 시작하는 플러그인 전부(원격으로 붙은 사본 등) |
 | `approve.request` | 사용자 승인 요청 |
 | `approve.decide` | 승인 결정 전달. 사용자 화면을 가진 플러그인만 가진다 |
 | `journal.read` | 저널 조회 (이슈 스냅샷용) |

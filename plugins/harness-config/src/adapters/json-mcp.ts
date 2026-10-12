@@ -75,13 +75,13 @@ export function mergeEntry(existing: unknown, native: Record<string, unknown>, o
   return out;
 }
 
-function detectIndent(text: string): string | number {
+export function detectIndent(text: string): string | number {
   const m = /\n([ \t]+)\S/.exec(text);
   if (m) return m[1]!;
   return text.trim().includes("\n") ? 2 : text.trim() ? 0 : 2;
 }
 
-function parseObject(text: string, path: string): Record<string, any> {
+export function parseObject(text: string, path: string): Record<string, any> {
   let obj: unknown;
   try {
     obj = JSON.parse(text);

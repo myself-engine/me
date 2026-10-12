@@ -8,7 +8,7 @@
 //   me adapt agent <name> -- <what to adapt>        delegate writing an adapter through brgr (stage 3)
 //   me adapt export <pluginId> -- <description>     turn an adapted plugin into a recipe
 //   me connect <plugin-dir> --host <ip> [--port N]  run a plugin on this machine for a remote kernel
-//   me config plan | import [--write] | apply --yes   harness configs (MCP, instructions) from one source
+//   me config plan | import [--write] | apply --yes   harness configs (MCP, instructions, skills, hooks) from one source
 //   me tailscale status|on|off [--https-port N]   phone access over the tailnet (never public)
 //   me doctor [--json]                     tool versions, symlinks, plugin conformance
 //   me release [--patch] [--dry-run] [--skip-e2e]   checks, tag, restart the running me, refresh remote copies

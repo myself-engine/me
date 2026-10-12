@@ -1,0 +1,11 @@
+{
+  "name": "@me/bridge-acp",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/config.ts" },
+  "dependencies": {
+    "@me/sdk": "workspace:*",
+    "@me/protocol": "workspace:*"
+  },
+  "devDependencies": { "@me/kernel": "workspace:*" }
+}

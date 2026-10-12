@@ -127,6 +127,11 @@ export class Ledger {
     return { epoch: 0, sessionId: null };
   }
 
+  /** True once the conversation has been seen (created by conversation(), setSession() or newEpoch()). */
+  hasConversation(origin: Origin): boolean {
+    return this.db.prepare("SELECT 1 FROM conversations WHERE origin = ?").get(originKey(origin)) !== null;
+  }
+
   setSession(origin: Origin, sessionId: string) {
     this.conversation(origin);
     this.db.prepare("UPDATE conversations SET session_id = ?, updated_at = ? WHERE origin = ?").run(sessionId, this.now(), originKey(origin));

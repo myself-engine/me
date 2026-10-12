@@ -4,7 +4,8 @@ import { createService } from "../app/service.ts";
 import type { Events } from "../ports/index.ts";
 import { nodeFileSystem } from "./fs.ts";
 import { secretResolver } from "./secrets.ts";
-import { harnessFiles } from "./targets.ts";
+import { nodeSkillStore } from "./skills.ts";
+import { harnessFiles, skillDirs, UNSUPPORTED } from "./targets.ts";
 
 export interface ComposeOptions {
   /** Home directory the harness files live under. Required: nothing falls back to the real home here. */
@@ -25,12 +26,16 @@ const expand = (p: string, home: string, base: string) =>
 
 export function composeService(o: ComposeOptions) {
   const sourcePath = o.sourcePath ? expand(o.sourcePath, o.home, o.meHome) : join(o.meHome, "harness-config", "source.json");
+  const paths = { home: o.home, projectDir: o.projectDir ? expand(o.projectDir, o.home, o.meHome) : undefined };
   return createService({
     fs: nodeFileSystem(),
+    skills: nodeSkillStore(),
     clock: { now: () => new Date() },
     secrets: secretResolver(o.env, o.home),
     events: o.events,
-    files: harnessFiles({ home: o.home, projectDir: o.projectDir ? expand(o.projectDir, o.home, o.meHome) : undefined }),
+    files: harnessFiles(paths),
+    skillDirs: skillDirs(paths),
+    unsupported: UNSUPPORTED,
     sourcePath,
     home: o.home,
   });

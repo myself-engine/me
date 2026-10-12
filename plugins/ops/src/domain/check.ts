@@ -1,14 +1,19 @@
 // Check specs and status transitions. Pure: no I/O, no clock reads.
+import { parseActions, type ActionInfo, type ActionRun, type ActionSpec } from "./action.ts";
 
 export type Status = "up" | "down" | "unknown";
 
-export type CheckSpec =
+export type CheckSpec = (
   | { id: string; kind: "http"; url: string; expectStatus: number; timeoutMs: number; contains?: string }
   | { id: string; kind: "tcp"; host: string; port: number; timeoutMs: number }
   | { id: string; kind: "process"; match: string }
   | { id: string; kind: "launchd"; label: string }
   | { id: string; kind: "herdr-pane"; paneId: string }
-  | { id: string; kind: "command"; argv: string[]; expectExit: number; timeoutMs: number };
+  | { id: string; kind: "command"; argv: string[]; expectExit: number; timeoutMs: number }
+) & {
+  /** Operational actions offered on this check; each runs only after the user approves it. */
+  actions?: ActionSpec[];
+};
 
 export type CheckKind = CheckSpec["kind"];
 
@@ -30,6 +35,10 @@ export interface CheckRecord {
   checkedAt: string;
   /** When the current status started. */
   since: string;
+  /** Actions offered on this check (set by the service, not by observe). */
+  actions?: ActionInfo[];
+  /** The last action run on this check, if any. */
+  lastAction?: ActionRun | null;
 }
 
 /** In-memory state per check: the confirmed record plus a candidate status that has not been confirmed yet. */
@@ -59,6 +68,8 @@ export function needsStore(stored: { record: CheckRecord; at: number } | null, n
   if (!stored) return true;
   const a = stored.record;
   if (a.status !== next.status || a.ok !== next.ok || a.since !== next.since || a.detail !== next.detail || a.kind !== next.kind) return true;
+  if (JSON.stringify(a.actions ?? []) !== JSON.stringify(next.actions ?? [])) return true;
+  if (JSON.stringify(a.lastAction ?? null) !== JSON.stringify(next.lastAction ?? null)) return true;
   return now - stored.at >= heartbeatMs;
 }
 
@@ -107,7 +118,13 @@ const str = (v: unknown): v is string => typeof v === "string" && v.length > 0;
 const posInt = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback);
 const int = (v: unknown, fallback: number) => (typeof v === "number" && Number.isInteger(v) ? v : fallback);
 
-function parseCheck(raw: any): CheckSpec {
+function parseCheck(raw: any, uid: number | null): CheckSpec {
+  const spec = parseProbe(raw);
+  const actions = parseActions(raw.actions, uid);
+  return actions.length ? { ...spec, actions } : spec;
+}
+
+function parseProbe(raw: any): CheckSpec {
   if (!raw || typeof raw !== "object") throw new Error("check must be an object");
   const id = raw.id;
   if (!str(id) || !ID_RE.test(id)) throw new Error("id must be a non-empty string of letters, digits, _ . : -");
@@ -141,7 +158,8 @@ function parseCheck(raw: any): CheckSpec {
   }
 }
 
-export function parseConfig(config: Record<string, unknown> | undefined): OpsConfig {
+/** `uid` resolves launchd action targets (`gui/<uid>/<job>`); without it launchd actions are rejected. */
+export function parseConfig(config: Record<string, unknown> | undefined, opts: { uid?: number | null } = {}): OpsConfig {
   const rawChecks = Array.isArray(config?.checks) ? (config!.checks as unknown[]) : [];
   const checks: CheckSpec[] = [];
   const errors: OpsConfig["errors"] = [];
@@ -149,7 +167,7 @@ export function parseConfig(config: Record<string, unknown> | undefined): OpsCon
   rawChecks.forEach((raw: any, index) => {
     const id = typeof raw?.id === "string" ? raw.id : null;
     try {
-      const spec = parseCheck(raw);
+      const spec = parseCheck(raw, opts.uid ?? null);
       if (seen.has(spec.id)) throw new Error(`duplicate id: ${spec.id}`);
       seen.add(spec.id);
       checks.push(spec);

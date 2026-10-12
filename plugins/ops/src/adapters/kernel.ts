@@ -1,7 +1,7 @@
-// CheckStore and Events over the kernel SDK (entity store and event bus), plus the real clock.
+// CheckStore, Events and Approvals over the kernel SDK (entity store, event bus, approval gate), plus the real clock.
 import type { Plugin } from "@me/sdk";
 import type { CheckRecord } from "../domain/check.ts";
-import type { CheckStore, Clock, Events } from "../ports/index.ts";
+import type { Approvals, CheckStore, Clock, Events } from "../ports/index.ts";
 
 /** Entity kind for this instance: `<plugin id>.check`, so several ops instances (one per machine) can coexist. */
 export const kindFor = (pluginId: string) => `${pluginId}.check`;
@@ -18,6 +18,8 @@ export const KIND_SCHEMA = {
     latencyMs: { type: "number" },
     checkedAt: { type: "string" },
     since: { type: "string" },
+    actions: { type: "array" },
+    lastAction: { type: ["object", "null"] },
   },
 };
 
@@ -34,6 +36,16 @@ export function kernelEvents(plugin: Plugin): Events {
   return {
     emit: async (name, data) => {
       await plugin.emit(name, data);
+    },
+  };
+}
+
+export function kernelApprovals(plugin: Plugin): Approvals {
+  return {
+    // `amend` is ignored on purpose: an action's argv comes only from config.
+    request: async (req) => {
+      const r = await plugin.approval.request(req);
+      return { decision: r.decision, ...(r.note ? { note: r.note } : {}) };
     },
   };
 }

@@ -35,14 +35,15 @@ export function isPermission(p: unknown): p is Permission {
   return (
     ["read-state", "emit", "subscribe", "call:*", "approve.request", "approve.decide", "journal.read", "shell", "network"].includes(p) ||
     /^write-state:[a-z0-9.-]+$/.test(p) ||
-    /^call:[a-z][a-z0-9-]*$/.test(p)
+    // `call:ops-*` grants every plugin whose id starts with `ops-` (e.g. remote copies connected under their own ids).
+    /^call:[a-z][a-z0-9-]*(-\*)?$/.test(p)
   );
 }
 
 export function hasPermission(granted: readonly Permission[], needed: Permission): boolean {
   if (granted.includes(needed)) return true;
-  if (needed.startsWith("call:") && granted.includes("call:*")) return true;
-  return false;
+  if (!needed.startsWith("call:")) return false;
+  return granted.some((g) => g === "call:*" || (g.startsWith("call:") && g.endsWith("-*") && needed.startsWith(g.slice(0, -1))));
 }
 
 /** `a.b.*` matches `a.b.c` and `a.b.c.d`; `*` alone matches everything. */

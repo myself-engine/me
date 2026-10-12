@@ -37,6 +37,15 @@ bun bin/me.ts adapt mcp <이름> -- <MCP 서버 명령...>
 
 범용 MCP 브리지(`bridges/mcp`)로 `mcp-<이름>` 플러그인을 만든다. 먼저 매니페스트가 요구하는 권한(`shell`, `network`)을 보여 주고 승인을 받는다. TTY면 y/N으로 묻고, 아니면 `--yes`가 있어야 한다. 그다음 실제로 띄워서 도구 목록을 확인하고 적합성 테스트를 통과하면 `me.local.json`에 등록한다(`extraPlugins`, `pluginConfig`). 실패하면 만든 디렉터리를 지운다. 다시 시작하면 불러온다. 다른 플러그인은 `tools.list`, `tools.call`, `resources.list`, `resources.read`로 호출한다.
 
+범용 브리지는 네 개다. 설정만 쓰면 플러그인이 된다.
+
+- `bridges/mcp`: MCP 서버 (`me adapt mcp`)
+- `bridges/cli`: 명령줄 도구, argv 템플릿 (`me adapt cli`)
+- `bridges/http`: HTTP 엔드포인트. 비밀 헤더는 파일 경로로 받는다. [설명](bridges/http/README.md)
+- `bridges/acp`: Agent Client Protocol 에이전트. 세션을 열고 프롬프트 진행을 스트리밍한다. [설명](bridges/acp/README.md)
+
+http와 acp는 아직 `me adapt`가 없다. 매니페스트(`renderManifest`)와 `pluginConfig`를 직접 만든다.
+
 ## 점검
 
 ```sh
@@ -72,6 +81,27 @@ bun bin/me.ts config import --write    # ~/.me/harness-config/source.draft.json 
 bun bin/me.ts config plan              # 하네스별 바뀔 내용
 bun bin/me.ts config apply --yes       # 백업 후 적용
 ```
+
+원본(`~/.me/harness-config/source.json`)은 MCP 서버, 지시문 조각, Skills, Hook을 한곳에 둔다. 항목마다 `share`(`"all"` 또는 하네스 목록)로 어느 하네스에 보낼지 정한다.
+
+```json
+{
+  "mcpServers":   { "notion": { "url": "https://mcp.notion.com/mcp", "share": "all" } },
+  "instructions": { "style":  { "file": "fragments/style.md", "share": ["claude-code", "codex"] } },
+  "skills": {
+    "review": { "dir": "skills/review", "share": "all" },
+    "fmt":    { "dir": "skills/fmt", "mode": "copy", "share": ["codex"] }
+  },
+  "hooks": {
+    "fmt-after-edit": { "event": "PostToolUse", "matcher": "Edit|Write", "command": "bunx prettier --write .", "timeout": 30, "share": "all" }
+  }
+}
+```
+
+- Skill: `SKILL.md`가 든 폴더. 기본은 심볼릭 링크이고 `"mode": "copy"`면 복사한다. 각 하네스의 skills 폴더(`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`, `~/.gjc/agent/skills`)에 같은 이름으로 링크하거나 복사한다. 원본이 선언하지 않은 이름은 건드리지 않는다. 바꾸기 전 항목은 skills 폴더 옆 `skills.me-backup-<시각>/`에 남긴다.
+- Hook: 이벤트에 붙는 셸 명령 한 줄. Claude Code(`~/.claude/settings.json`)와 Codex(`~/.codex/hooks.json`)에만 쓴다. 명령 끝에 `# me:harness-config <이름>` 표식을 붙여 원본이 소유한 항목을 알아본다. 표식 없는 Hook은 사용자 것이라 건드리지 않는다.
+- OpenCode와 GJC는 명령형 Hook 형식이 없다(둘 다 JS/TS 플러그인). 추측해서 쓰지 않고, `plan`의 `unsupported`에 건너뛴 항목을 보여 준다.
+- Codex는 새 Hook이나 바뀐 Hook을 처음 실행할 때 신뢰 여부를 다시 물을 수 있다. Codex는 신뢰 상태를 Hook 순번으로 기억해서, 앞쪽의 관리 Hook을 지우면 뒤에 있던 사용자 Hook도 다시 물을 수 있다. `config.toml`의 `[features]`와 `[hooks.state]`는 손대지 않는다.
 
 ## 폰에서 쓰기 (Tailscale, 공개 아님)
 

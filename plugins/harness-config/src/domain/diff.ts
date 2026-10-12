@@ -7,7 +7,9 @@
 // Names the source does not declare are never touched; `list` reports them as unmanaged.
 // Inside an owned entry only the neutral fields (type/command/args/env/url/headers) are owned;
 // adapters keep harness-only fields such as Codex `startup_timeout_sec` or GJC `sharing`.
-import type { HarnessId, McpServer, Scope } from "./model.ts";
+// The same rules apply to hooks (identified by a marker the adapter appends to the command) and
+// to skills (identified by their entry name in a harness's skills directory).
+import type { HarnessId, Hook, McpServer, Scope, SkillMode } from "./model.ts";
 
 export const REF_RE = /\$\{(env|file):([^}]+)\}/g;
 export const hasRef = (v: string) => new RegExp(REF_RE.source).test(v);
@@ -151,6 +153,91 @@ export function diffInstructions(
       diff.changed.push({ name, fields: [{ field: "content", before: lines(cur), after: lines(text) }] });
       change.upsert[name] = normText(text);
     } else diff.unchanged.push(name);
+  }
+  for (const name of Object.keys(current)) {
+    if (declared.has(name) && !(name in desired)) {
+      diff.removed.push({ name });
+      change.remove.push(name);
+    }
+  }
+  return { diff, change };
+}
+
+/** Same rules for hooks. Commands are shown as written; source commands hold no references. */
+export function diffHooks(
+  desired: Record<string, Hook>,
+  current: Record<string, Hook>,
+  declared: ReadonlySet<string>,
+): { diff: SectionDiff; change: Change<Hook> } {
+  const diff = emptyDiff();
+  const change: Change<Hook> = { upsert: {}, remove: [] };
+  const KEYS = ["event", "matcher", "command", "timeout"] as const;
+  const view = (h: Hook) => Object.fromEntries(KEYS.filter((k) => h[k] !== undefined).map((k) => [k, h[k]]));
+  for (const [name, h] of Object.entries(desired)) {
+    const cur = current[name];
+    if (!cur) {
+      diff.added.push({ name, after: view(h) });
+      change.upsert[name] = h;
+      continue;
+    }
+    const fields = KEYS.filter((k) => !same(cur[k], h[k])).map((k) => ({ field: k, before: cur[k], after: h[k] }));
+    if (fields.length === 0) diff.unchanged.push(name);
+    else {
+      diff.changed.push({ name, fields });
+      change.upsert[name] = h;
+    }
+  }
+  for (const name of Object.keys(current)) {
+    if (declared.has(name) && !(name in desired)) {
+      diff.removed.push({ name });
+      change.remove.push(name);
+    }
+  }
+  return { diff, change };
+}
+
+/** What sits at `<skills dir>/<name>`. Link targets are real paths, so links through a dotfile stack compare equal. */
+export type SkillState = { kind: "link"; target: string } | { kind: "dir"; files: number; hash: string } | { kind: "file" };
+
+export interface DesiredSkill {
+  mode: SkillMode;
+  /** Absolute source directory, as written (not resolved); a link points here. */
+  source: string;
+  /** The state an installed copy or link must have. */
+  state: SkillState;
+}
+
+const skillView = (s: SkillState): Record<string, unknown> =>
+  s.kind === "link"
+    ? { mode: "link", target: s.target }
+    : s.kind === "dir"
+      ? { mode: "copy", content: `${s.files} files #${s.hash.slice(0, 8)}` }
+      : { mode: "file" };
+
+/** Same rules for skills; a copied skill's content is shown as a file count and a short hash only. */
+export function diffSkills(
+  desired: Record<string, DesiredSkill>,
+  current: Record<string, SkillState>,
+  declared: ReadonlySet<string>,
+): { diff: SectionDiff; change: Change<DesiredSkill> } {
+  const diff = emptyDiff();
+  const change: Change<DesiredSkill> = { upsert: {}, remove: [] };
+  for (const [name, d] of Object.entries(desired)) {
+    const cur = current[name];
+    const after: Record<string, unknown> = { ...skillView(d.state), ...(d.mode === "link" ? { target: d.source } : {}) };
+    if (!cur) {
+      diff.added.push({ name, after });
+      change.upsert[name] = d;
+    } else if (same(cur, d.state)) diff.unchanged.push(name);
+    else {
+      const before = skillView(cur);
+      const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+      diff.changed.push({
+        name,
+        fields: keys.filter((k) => !same(before[k], after[k])).map((k) => ({ field: k, before: before[k], after: after[k] })),
+      });
+      change.upsert[name] = d;
+    }
   }
   for (const name of Object.keys(current)) {
     if (declared.has(name) && !(name in desired)) {

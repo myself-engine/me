@@ -164,6 +164,12 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       return plugin.invoke("brgr", "task.accept", { taskId: m.taskId, reason: m.reason }, { timeoutMs: 120_000 });
     case "task.reject":
       return plugin.invoke("brgr", "task.reject", { taskId: m.taskId, reason: m.reason }, { timeoutMs: 120_000 });
+    case "ops.action.run": {
+      // The target comes from the client, so only ops instances are reachable here; argv is never sent, only ids.
+      const source = String(m.source ?? "ops");
+      if (!isOpsPlugin(source)) throw new Error(`not an ops instance: ${source}`);
+      return plugin.invoke(source, "actions.run", { checkId: m.checkId, actionId: m.actionId });
+    }
     case "slang.add":
       return plugin.invoke("slang", "dict.add", { from: m.from, to: m.to });
     case "trace.get":

@@ -21,7 +21,7 @@ Every agent (Claude Code, Codex, GJC, brgr workers) follows these rules. Read `d
 - `kernel/`: domain-free core (supervisor, router, journal, entities, permissions, approvals, ops, traces). It must not learn domain words.
 - `protocol/`: public types. The source of truth is `spec/protocol.schema.json`. Change both, then run `bun spec/generate.ts`.
 - `sdk/`: plugin SDK. `plugins/`: one directory per plugin. Big plugins are hexagonal (`domain/ ports/ adapters/ app/`).
-- `bridges/`: generic MCP and CLI bridges. `tools/`: CLI subcommands (`adapt`, `doctor`, `config`, `remote`, `tailscale`, `release`). `bin/me.ts`: the CLI.
+- `bridges/`: generic bridges, configured instead of coded: `mcp` (MCP server over stdio), `cli` (argv templates), `http` (HTTP endpoints, secret headers from files), `acp` (Agent Client Protocol agent over stdio). `tools/`: CLI subcommands (`adapt`, `doctor`, `config`, `remote`, `tailscale`, `release`). `bin/me.ts`: the CLI.
 - `plugins/web/ui/`: React UI, one file per screen. Status is a dot plus a text label; color only for state; Korean strings.
 
 ## Conventions

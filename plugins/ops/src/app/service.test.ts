@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseConfig, type CheckRecord, type CheckSpec, type Observation, type Status } from "../domain/check.ts";
-import type { CheckStore, Clock, Events, Probe } from "../ports/index.ts";
+import type { ApprovalRequest, Approvals, CheckStore, Clock, Events, Exec, ExecResult, Probe } from "../ports/index.ts";
 import { createService } from "./service.ts";
 
 const T0 = Date.UTC(2026, 9, 10, 9, 0, 0);
@@ -297,5 +297,212 @@ describe("methods", () => {
     expect(h.entries[0]!.checkedAt).toBe(new Date(T0 + 3000).toISOString());
     expect(service.history({ id: "web", limit: 1 }).entries).toHaveLength(1);
     expect(() => service.history({ id: "nope" })).toThrow("unknown check");
+  });
+});
+
+/** Approvals the test answers by hand; `fail` makes request throw, like a kernel without approve.request. */
+class FakeApprovals implements Approvals {
+  requests: ApprovalRequest[] = [];
+  fail: string | null = null;
+  private answer: ((d: { decision: "approve" | "reject"; note?: string }) => void) | null = null;
+  request = (req: ApprovalRequest) => {
+    this.requests.push(req);
+    if (this.fail) return Promise.reject(new Error(this.fail));
+    return new Promise<{ decision: "approve" | "reject"; note?: string }>((resolve) => (this.answer = resolve));
+  };
+  decide(decision: "approve" | "reject", note?: string) {
+    const a = this.answer;
+    this.answer = null;
+    a!({ decision, ...(note ? { note } : {}) });
+  }
+}
+
+/** Records every argv; the result is set by the test. */
+class FakeExec implements Exec {
+  runs: { argv: string[]; timeoutMs: number }[] = [];
+  result: ExecResult = { code: 0, stdout: "restarted", stderr: "", timedOut: false };
+  run = async (argv: string[], timeoutMs: number) => {
+    this.runs.push({ argv, timeoutMs });
+    return this.result;
+  };
+}
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+describe("actions", () => {
+  function withActions(opts: { approvals?: FakeApprovals; store?: MemoryStore } = {}) {
+    const config = parseConfig(
+      {
+        confirm: 2,
+        checks: [
+          {
+            id: "bot",
+            kind: "process",
+            match: "bot",
+            actions: [
+              { id: "restart", label: "다시 시작", kind: "systemd-user-restart", unit: "bot.service" },
+              { id: "kick", label: "launchd 재시작", kind: "launchd-restart", job: "com.example.bot", risk: "high", timeoutMs: 5000 },
+            ],
+          },
+          { id: "web", kind: "http", url: "http://127.0.0.1:1/" },
+        ],
+      },
+      { uid: 501 },
+    );
+    expect(config.errors).toEqual([]);
+    const clock = new FakeClock();
+    const store = opts.store ?? new MemoryStore();
+    const events = new FakeEvents();
+    const approvals = opts.approvals ?? new FakeApprovals();
+    const exec = new FakeExec();
+    const p = scriptedProbe();
+    const service = createService({ config, probe: p.probe, clock, store, events, exec, approvals, machine: "rapi-agent (ops-rapi)", actionSettleMs: 0, log: () => {} });
+    return { service, clock, store, events, approvals, exec, ...p };
+  }
+
+  test("check data lists its actions with the exact argv", async () => {
+    const h = withActions();
+    h.answers.set("bot", "down");
+    await h.service.run();
+    const bot = h.service.list().checks.find((c: any) => c.id === "bot") as any;
+    expect(bot.actions).toEqual([
+      { id: "restart", label: "다시 시작", argv: ["systemctl", "--user", "restart", "bot.service"], risk: "medium" },
+      { id: "kick", label: "launchd 재시작", argv: ["launchctl", "kickstart", "-k", "gui/501/com.example.bot"], risk: "high" },
+    ]);
+    expect(h.store.records.get("bot")!.actions).toHaveLength(2);
+    expect((h.service.list().checks.find((c: any) => c.id === "web") as any).actions).toBeUndefined();
+  });
+
+  test("approve: asks first, runs the configured argv, re-checks, and records the result", async () => {
+    const h = withActions();
+    h.answers.set("bot", "down");
+    await h.service.run();
+    const started = h.service.runAction({ checkId: "bot", actionId: "restart" });
+    expect(started).toMatchObject({ checkId: "bot", actionId: "restart", state: "waiting" });
+    await flush();
+    // Nothing runs before the user decides.
+    expect(h.exec.runs).toEqual([]);
+    expect(h.approvals.requests).toHaveLength(1);
+    const req = h.approvals.requests[0]!;
+    expect(req.risk).toBe("medium");
+    expect(req.summary).toContain("rapi-agent (ops-rapi)");
+    expect(req.summary).toContain('"systemctl" "--user" "restart" "bot.service"');
+    expect(req.payload).toMatchObject({ kind: "ops.action", checkId: "bot", actionId: "restart", argv: ["systemctl", "--user", "restart", "bot.service"] });
+    expect(h.store.records.get("bot")!.lastAction).toMatchObject({ state: "waiting", actionId: "restart" });
+
+    h.answers.set("bot", "up");
+    h.calls.length = 0;
+    h.approvals.decide("approve");
+    await h.service.idle();
+    expect(h.exec.runs).toEqual([{ argv: ["systemctl", "--user", "restart", "bot.service"], timeoutMs: 30_000 }]);
+    expect(h.calls).toEqual(["bot"]);
+    const last = h.store.records.get("bot")!.lastAction!;
+    expect(last).toMatchObject({ state: "done", exitCode: 0, output: "restarted", machine: "rapi-agent (ops-rapi)", recheck: { status: "up" } });
+    // The re-check is one observation; the status still needs confirming like any other run.
+    expect(h.store.records.get("bot")!.status).toBe("down");
+    expect(h.events.emitted.at(-1)).toEqual({
+      name: "action.finished",
+      data: { id: "bot", actionId: "restart", machine: "rapi-agent (ops-rapi)", state: "done", exitCode: 0, recheck: "up" },
+    });
+  });
+
+  test("reject: nothing runs and the card says so", async () => {
+    const h = withActions();
+    await h.service.run();
+    h.service.runAction({ checkId: "bot", actionId: "restart" });
+    await flush();
+    h.approvals.decide("reject", "지금은 안 돼");
+    await h.service.idle();
+    expect(h.exec.runs).toEqual([]);
+    expect(h.store.records.get("bot")!.lastAction).toMatchObject({ state: "rejected", note: "거절됨: 지금은 안 돼" });
+  });
+
+  test("an expired approval is a reject", async () => {
+    const h = withActions();
+    await h.service.run();
+    h.service.runAction({ checkId: "bot", actionId: "restart" });
+    await flush();
+    h.approvals.decide("reject", "expired");
+    await h.service.idle();
+    expect(h.exec.runs).toEqual([]);
+    expect(h.store.records.get("bot")!.lastAction).toMatchObject({ state: "rejected", note: "승인 요청이 만료됐어요" });
+  });
+
+  test("an approval gate that refuses (no approve.request) fails without running", async () => {
+    const approvals = new FakeApprovals();
+    approvals.fail = "permission denied: approve.request";
+    const h = withActions({ approvals });
+    await h.service.run();
+    h.service.runAction({ checkId: "bot", actionId: "restart" });
+    await h.service.idle();
+    expect(h.exec.runs).toEqual([]);
+    expect(h.store.records.get("bot")!.lastAction).toMatchObject({ state: "failed", note: "승인을 요청하지 못했어요: permission denied: approve.request" });
+  });
+
+  test("a failing or timed-out command is recorded as failed, with its output", async () => {
+    const h = withActions();
+    await h.service.run();
+    h.exec.result = { code: 1, stdout: "", stderr: "Unit bot.service not found.", timedOut: false };
+    h.service.runAction({ checkId: "bot", actionId: "restart" });
+    await flush();
+    h.approvals.decide("approve");
+    await h.service.idle();
+    expect(h.store.records.get("bot")!.lastAction).toMatchObject({ state: "failed", exitCode: 1, output: "Unit bot.service not found." });
+
+    h.exec.result = { code: -1, stdout: "", stderr: "", timedOut: true };
+    h.service.runAction({ checkId: "bot", actionId: "kick" });
+    await flush();
+    expect(h.approvals.requests.at(-1)!.risk).toBe("high");
+    h.approvals.decide("approve");
+    await h.service.idle();
+    expect(h.exec.runs.at(-1)!.timeoutMs).toBe(5000);
+    expect(h.store.records.get("bot")!.lastAction).toMatchObject({ state: "failed", timedOut: true, note: "5초 안에 끝나지 않아 멈췄어요" });
+  });
+
+  test("bad params are refused before the approval gate is touched", async () => {
+    const h = withActions();
+    expect(() => h.service.runAction({})).toThrow("checkId is required");
+    expect(() => h.service.runAction({ checkId: "nope", actionId: "restart" })).toThrow("unknown check: nope");
+    expect(() => h.service.runAction({ checkId: "bot" })).toThrow("actionId is required");
+    expect(() => h.service.runAction({ checkId: "bot", actionId: "rm -rf /" })).toThrow("unknown action on bot");
+    expect(() => h.service.runAction({ checkId: "web", actionId: "restart" })).toThrow("unknown action on web");
+    // Extra fields never reach the argv.
+    h.service.runAction({ checkId: "bot", actionId: "restart", argv: ["sh", "-c", "evil"] } as any);
+    await flush();
+    h.approvals.decide("approve");
+    await h.service.idle();
+    expect(h.exec.runs[0]!.argv).toEqual(["systemctl", "--user", "restart", "bot.service"]);
+    expect(h.approvals.requests).toHaveLength(1);
+  });
+
+  test("one action per check at a time", async () => {
+    const h = withActions();
+    await h.service.run();
+    h.service.runAction({ checkId: "bot", actionId: "restart" });
+    expect(() => h.service.runAction({ checkId: "bot", actionId: "kick" })).toThrow("already waiting or running");
+    await flush();
+    h.approvals.decide("reject");
+    await h.service.idle();
+    expect(() => h.service.runAction({ checkId: "bot", actionId: "kick" })).not.toThrow();
+  });
+
+  test("an instance without exec and approvals refuses actions", () => {
+    const config = parseConfig({ checks: [{ id: "bot", kind: "process", match: "bot", actions: [{ id: "r", label: "다시 시작", kind: "command", argv: ["true"] }] }] });
+    const service = createService({ config, probe: scriptedProbe().probe, clock: new FakeClock(), store: new MemoryStore(), events: new FakeEvents() });
+    expect(() => service.runAction({ checkId: "bot", actionId: "r" })).toThrow("actions are not available");
+  });
+
+  test("a run left waiting by a previous process is closed as failed on load, and stored", async () => {
+    const first = withActions();
+    await first.service.run();
+    first.service.runAction({ checkId: "bot", actionId: "restart" });
+    await flush();
+    expect(first.store.records.get("bot")!.lastAction!.state).toBe("waiting");
+
+    const second = withActions({ store: first.store });
+    await second.service.load();
+    expect((second.service.list().checks.find((c: any) => c.id === "bot") as any).lastAction).toMatchObject({ state: "failed", note: "ops가 다시 시작되어 결과를 알 수 없어요" });
+    await second.service.run({ id: "bot" });
+    expect(second.store.records.get("bot")!.lastAction!.state).toBe("failed");
   });
 });

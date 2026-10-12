@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "protocol": { "min": 1, "max": 1 },
   "run": { "command": ["bun", "src/main.ts"] },
-  "permissions": ["read-state", "emit", "network", "shell"],
+  "permissions": ["read-state", "emit", "network", "shell", "approve.request"],
   "provides": {
-    "methods": ["checks.list", "checks.run", "checks.history"],
-    "events": ["ops.check.changed", "ops.check.down"],
+    "methods": ["checks.list", "checks.run", "checks.history", "actions.run"],
+    "events": ["ops.check.changed", "ops.check.down", "ops.action.finished"],
     "kinds": ["check"]
   },
   "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }

@@ -1,0 +1,8 @@
+{
+  "id": "http-sample",
+  "version": "0.0.0",
+  "protocol": { "min": 1, "max": 1 },
+  "run": { "command": ["bun", "../../../src/main.ts"] },
+  "permissions": ["network"],
+  "provides": { "methods": ["hello", "info", "echo"] }
+}

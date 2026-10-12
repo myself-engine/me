@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { diffInstructions, diffServers, importServers, placeholderize, redactUrl } from "./diff.ts";
+import { diffHooks, diffInstructions, diffServers, diffSkills, importServers, placeholderize, redactUrl } from "./diff.ts";
 import { routes, validateSource, type McpServer, type Target } from "./model.ts";
 
 const T = (harness: Target["harness"], scope: Target["scope"] = "user", section: Target["section"] = "mcpServers"): Target => ({
@@ -26,6 +26,26 @@ describe("share policy", () => {
     expect(() => validateSource({ mcpServers: { x: { share: "all" } } })).toThrow(/command or url/);
     expect(() => validateSource({ mcpServers: { x: { command: "a", env: { K: 1 }, share: "all" } } })).toThrow(/env/);
     expect(validateSource({ _import: {}, mcpServers: { x: { command: "a", share: "all" } } }).mcpServers.x!.share).toBe("all");
+  });
+
+  test("validateSource checks skills and hooks", () => {
+    const ok = validateSource({
+      skills: { s: { dir: "skills/s", share: "all" } },
+      hooks: { h: { event: "PreToolUse", matcher: "Bash", command: " guard.sh ", timeout: 5, share: ["codex"] } },
+    });
+    expect(ok.skills.s).toEqual({ dir: "skills/s", share: "all" });
+    expect(ok.hooks.h).toEqual({ event: "PreToolUse", matcher: "Bash", command: "guard.sh", timeout: 5, share: ["codex"] });
+    expect(() => validateSource({ skills: { s: { share: "all" } } })).toThrow(/dir is required/);
+    expect(() => validateSource({ skills: { "..": { dir: "x", share: "all" } } })).toThrow(/name/);
+    expect(() => validateSource({ skills: { "a/b": { dir: "x", share: "all" } } })).toThrow(/name/);
+    expect(() => validateSource({ skills: { s: { dir: "x", mode: "move", share: "all" } } })).toThrow(/mode/);
+    const hook = (h: Record<string, unknown>) => validateSource({ hooks: { h: { event: "Stop", command: "c", share: "all", ...h } } });
+    expect(() => hook({ event: "stop" })).toThrow(/event/);
+    expect(() => hook({ command: "a\nb" })).toThrow(/single line/);
+    expect(() => hook({ command: "a \\" })).toThrow(/backslash/);
+    expect(() => hook({ command: "a # me:harness-config x" })).toThrow(/me:harness-config/);
+    expect(() => hook({ timeout: 0 })).toThrow(/timeout/);
+    expect(() => hook({ matcher: 1 })).toThrow(/matcher/);
   });
 });
 
@@ -57,6 +77,23 @@ describe("diffServers", () => {
 
   test("urls lose query strings and credentials in plan output", () => {
     expect(redactUrl("https://u:p@host.example/mcp?token=abc")).toBe("https://host.example/mcp?<redacted>");
+  });
+
+  test("hooks and skills diff by name; undeclared names are never removed", () => {
+    const h = diffHooks(
+      { a: { event: "Stop", command: "a" }, b: { event: "Stop", command: "b2" } },
+      { b: { event: "Stop", command: "b" }, gone: { event: "Stop", command: "g" }, stray: { event: "Stop", command: "s" } },
+      new Set(["a", "b", "gone"]),
+    );
+    expect(h.diff.added.map((x) => x.name)).toEqual(["a"]);
+    expect(h.diff.changed).toEqual([{ name: "b", fields: [{ field: "command", before: "b", after: "b2" }] }]);
+    expect(h.diff.removed).toEqual([{ name: "gone" }]);
+
+    const link = { mode: "link" as const, source: "/src/s", state: { kind: "link" as const, target: "/real/s" } };
+    const k = diffSkills({ s: link, t: link }, { s: { kind: "link", target: "/real/s" }, t: { kind: "link", target: "/other" }, u: { kind: "file" } }, new Set(["s", "t"]));
+    expect(k.diff.unchanged).toEqual(["s"]);
+    expect(k.diff.changed).toEqual([{ name: "t", fields: [{ field: "target", before: "/other", after: "/src/s" }] }]);
+    expect(k.diff.removed).toEqual([]);
   });
 
   test("instructions diff by content", () => {

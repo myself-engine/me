@@ -1,10 +1,50 @@
 // 상태: is everything fine, per-machine checks, what each part of me does, projects; raw diagnostics folded.
+// A failing check card offers its configured actions; pressing one asks for approval (the card shows up in 작업).
 import { useState } from "react";
 import type { OpsCheck, PluginInfo } from "./api.ts";
 import { useApp } from "./context.ts";
 import { ProjectsSection } from "./projects.tsx";
-import { Header, Section, StatusDot, elapsed, timeAgo, useNow } from "./shared.tsx";
+import { taskHref } from "./routes.ts";
+import { Header, Section, StatusDot, elapsed, timeAgo, useBusy, useNow } from "./shared.tsx";
 import { activeOps, type Tone } from "./state.ts";
+
+/** What the ops plugin adds to a check record when the check declares actions (plugins/ops domain/action.ts). */
+interface CheckAction {
+  id: string;
+  label: string;
+  argv: string[];
+  risk: "medium" | "high";
+}
+interface ActionRun {
+  actionId: string;
+  label: string;
+  argv: string[];
+  machine: string;
+  state: "waiting" | "running" | "done" | "failed" | "rejected";
+  requestedAt: string;
+  finishedAt?: string;
+  exitCode?: number;
+  timedOut?: boolean;
+  output?: string;
+  note?: string;
+  recheck?: { status: OpsCheck["status"]; detail: string; checkedAt: string };
+}
+type Check = OpsCheck & { actions?: CheckAction[]; lastAction?: ActionRun | null };
+
+const RUN_STATUS: Record<ActionRun["state"], [Tone, string]> = {
+  waiting: ["needs", "승인 대기"],
+  running: ["running", "실행 중"],
+  done: ["done", "완료"],
+  failed: ["failed", "실패"],
+  rejected: ["muted", "거절됨"],
+};
+const busyRun = (r?: ActionRun | null) => r?.state === "waiting" || r?.state === "running";
+/** A check that recovered after an action keeps its card this long, so the result stays readable. */
+const RECENT_RUN_MS = 10 * 60_000;
+const showsCard = (c: Check, now: number) => {
+  const r = c.lastAction;
+  return c.status !== "up" || busyRun(r) || (!!r && now - Date.parse(r.finishedAt ?? r.requestedAt) < RECENT_RUN_MS);
+};
 
 const CHECK_LABEL: Record<OpsCheck["status"], string> = { up: "정상", down: "응답 없음", unknown: "알 수 없음" };
 const CHECK_ORDER: Record<OpsCheck["status"], number> = { down: 0, unknown: 1, up: 2 };
@@ -138,7 +178,8 @@ function RunningNow() {
 }
 
 /** One group per machine; machines with something down come first. Healthy checks are chips, problems are cards. */
-function Machines({ checks }: { checks: OpsCheck[] }) {
+function Machines({ checks }: { checks: Check[] }) {
+  const now = useNow(30_000);
   if (checks.length === 0)
     return (
       <Section label="기기">
@@ -159,10 +200,10 @@ function Machines({ checks }: { checks: OpsCheck[] }) {
           <div className="machine-label">
             {machine} · {list.filter((c) => c.status === "up").length}/{list.length} 정상
           </div>
-          {list.some((c) => c.status === "up") && (
+          {list.some((c) => !showsCard(c, now)) && (
             <div className="up-chips" role="group" aria-label="정상">
               {list
-                .filter((c) => c.status === "up")
+                .filter((c) => !showsCard(c, now))
                 .sort((a, b) => a.id.localeCompare(b.id))
                 .map((c) => (
                   <span key={`${c.source ?? "ops"}/${c.id}`} className="up-chip" title={`${c.kind} · ${c.latencyMs}ms · ${c.detail}`}>
@@ -173,24 +214,94 @@ function Machines({ checks }: { checks: OpsCheck[] }) {
             </div>
           )}
           {[...list]
-            .filter((c) => c.status !== "up")
+            .filter((c) => showsCard(c, now))
             .sort((a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status] || a.id.localeCompare(b.id))
             .map((c) => (
-              <div key={`${c.source ?? "ops"}/${c.id}`} className={`card check check-${c.status}`}>
-                <div className="card-head">
-                  <StatusDot tone={CHECK_TONE[c.status]} label={CHECK_LABEL[c.status]} />
-                  <strong>{c.id}</strong>
-                  <span className="muted">{c.kind}</span>
-                  <span className="muted right" title={`마지막 확인 ${new Date(c.checkedAt).toLocaleString()}`}>
-                    {timeAgo(c.since) === "방금" ? "방금 전부터" : `${timeAgo(c.since)}부터`}
-                  </span>
-                </div>
-                <div className="check-detail">{c.detail}</div>
-              </div>
+              <CheckCard key={`${c.source ?? "ops"}/${c.id}`} c={c} />
             ))}
         </div>
       ))}
     </Section>
+  );
+}
+
+/** A check that is not up (or has an action in flight): status, detail, its actions and the last action's result. */
+function CheckCard({ c }: { c: Check }) {
+  const { conn, notify } = useApp();
+  const [busy, act] = useBusy(notify);
+  const actions = c.actions ?? [];
+  const last = c.lastAction;
+  const run = (a: CheckAction) =>
+    act(async () => {
+      if (!conn) return;
+      // Only ids go to the server; the ops instance looks up the argv in its own config.
+      await conn.request("ops.action.run", { source: c.source ?? "ops", checkId: c.id, actionId: a.id });
+      notify(`'${a.label}' 승인을 요청했어요. 작업 탭에서 승인하면 실행돼요.`);
+    });
+  return (
+    <div className={`card check check-${c.status}`}>
+      <div className="card-head">
+        <StatusDot tone={CHECK_TONE[c.status]} label={CHECK_LABEL[c.status]} />
+        <strong>{c.id}</strong>
+        <span className="muted">{c.kind}</span>
+        <span className="muted right" title={`마지막 확인 ${new Date(c.checkedAt).toLocaleString()}`}>
+          {timeAgo(c.since) === "방금" ? "방금 전부터" : `${timeAgo(c.since)}부터`}
+        </span>
+      </div>
+      <div className="check-detail">{c.detail}</div>
+      {actions.length > 0 && c.status !== "up" && (
+        <>
+          <div className="actions-row" role="group" aria-label={`${c.id} 조치`}>
+            {actions.map((a) => (
+              <button key={a.id} disabled={busy || !conn || busyRun(last)} onClick={() => run(a)}>
+                {a.label}
+              </button>
+            ))}
+          </div>
+          <details className="fold">
+            <summary>누르면 실행할 명령 · 승인 후에만 실행돼요</summary>
+            {actions.map((a) => (
+              <p key={a.id} className="brief">
+                {a.label}
+                {a.risk === "high" ? " (위험 높음)" : ""}: <span className="mono">{a.argv.join(" ")}</span>
+              </p>
+            ))}
+          </details>
+        </>
+      )}
+      {last && <LastAction run={last} />}
+    </div>
+  );
+}
+
+function LastAction({ run }: { run: ActionRun }) {
+  const [tone, label] = RUN_STATUS[run.state] ?? ["none", run.state];
+  const when = run.finishedAt ?? run.requestedAt;
+  const facts = [
+    run.exitCode !== undefined && !run.timedOut ? `종료 코드 ${run.exitCode}` : null,
+    run.recheck ? `다시 확인: ${CHECK_LABEL[run.recheck.status] ?? run.recheck.status}` : null,
+  ].filter(Boolean);
+  return (
+    <>
+      <p className="result-note">
+        <StatusDot tone={tone} label={label} /> 마지막 조치 '{run.label}' · {timeAgo(when)}
+        {facts.length > 0 && ` · ${facts.join(" · ")}`}
+      </p>
+      {run.note && <p className="result-note muted">{run.note}</p>}
+      {run.state === "waiting" && (
+        <p className="result-note">
+          <a className="link" href={taskHref()}>
+            작업 탭에서 승인하기 ›
+          </a>
+        </p>
+      )}
+      {run.output && (
+        <details className="fold">
+          <summary>출력</summary>
+          <p className="brief check-detail">{run.output}</p>
+        </details>
+      )}
+    </>
   );
 }
 

@@ -1,12 +1,13 @@
 // Ports: what the harness-config plugin needs from the outside world.
-import type { Change } from "../domain/diff.ts";
-import type { McpServer, Target } from "../domain/model.ts";
+import type { Change, SkillState } from "../domain/diff.ts";
+import type { Hook, McpServer, SkillMode, Target } from "../domain/model.ts";
 
 /**
  * One harness configuration file, as a codec over its text: no I/O here, the app reads and writes
- * through FileSystem. T is McpServer for MCP sections and the block text for instruction files.
+ * through FileSystem. T is McpServer for MCP sections, the block text for instruction files and
+ * Hook for hook settings.
  */
-export interface HarnessConfigFile<T = McpServer | string> {
+export interface HarnessConfigFile<T = McpServer | string | Hook> {
   target: Target;
   /** Absolute path (may be a symlink; FileSystem writes through it). */
   path: string;
@@ -37,6 +38,35 @@ export interface FileSystem {
   write(path: string, text: string): Promise<void>;
   /** Copies the current file (through symlinks) to a sibling `<real>.<suffix>`; returns its path, or null if missing. */
   backup(path: string, suffix: string): Promise<string | null>;
+}
+
+/** A harness's skills directory: one entry (directory or symlink) per skill, named like the skill. */
+export interface SkillsDir {
+  target: Target;
+  /** Absolute path of the skills directory (may be a symlink or missing). */
+  path: string;
+}
+
+/** A harness section the plugin deliberately does not write, with the reason shown in plan and list. */
+export interface Unsupported {
+  harness: Target["harness"];
+  section: Target["section"];
+  reason: string;
+}
+
+/** Directory-level I/O for skills. Never follows an entry's symlink when replacing or removing it. */
+export interface SkillStore {
+  /** Entry names directly under `dir`, dot-entries skipped; [] when `dir` is missing. */
+  names(dir: string): Promise<string[]>;
+  /** What sits at `path` (not followed); null when missing. A link reports its real target. */
+  inspect(path: string): Promise<SkillState | null>;
+  /** Real path behind any symlinks; null when missing. */
+  realpath(path: string): Promise<string | null>;
+  /** Copies `<dir>/<name>` (a link stays a link) to `<real dir>.<suffix>/<name>`; returns that path, or null if missing. */
+  backup(dir: string, name: string, suffix: string): Promise<string | null>;
+  /** Replaces `<dir>/<name>` with a symlink to `source`, or a copy of it. */
+  install(dir: string, name: string, source: string, mode: SkillMode): Promise<void>;
+  remove(dir: string, name: string): Promise<void>;
 }
 
 export interface Clock {

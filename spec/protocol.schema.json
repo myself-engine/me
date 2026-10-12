@@ -200,7 +200,7 @@
         },
         {
           "type": "string",
-          "pattern": "^call:[a-z][a-z0-9-]*$"
+          "pattern": "^call:[a-z][a-z0-9-]*(-\\*)?$"
         }
       ]
     },

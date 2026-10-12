@@ -1,0 +1,12 @@
+{
+  "name": "@me/plugin-slack",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@me/sdk": "workspace:*",
+    "@me/protocol": "workspace:*",
+    "@me/messenger": "workspace:*",
+    "@slack/socket-mode": "3.1.0",
+    "@slack/web-api": "8.2.0"
+  }
+}

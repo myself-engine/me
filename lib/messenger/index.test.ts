@@ -42,7 +42,10 @@ const msg = (o: Partial<InboundMessage>): InboundMessage => ({
 const policy: Policy = { dm: "owner-only", ownerId: "owner", allowlist: ["friend"], openGroups: ["discord/group/open1"] };
 
 test("a DM and a channel are different conversations with separate sessions", () => {
+  expect(ledger.hasConversation(dm)).toBe(false);
   ledger.setSession(dm, "s-dm");
+  expect(ledger.hasConversation(dm)).toBe(true);
+  expect(ledger.hasConversation(team)).toBe(false);
   ledger.setSession(team, "s-team");
   expect(ledger.conversation(dm).sessionId).toBe("s-dm");
   expect(ledger.conversation(team).sessionId).toBe("s-team");

@@ -48,13 +48,40 @@ const METHOD_RE = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 const PARAM_TYPES = new Set(["string", "number", "boolean"]);
 const PARSE_MODES = new Set(["text", "json", "lines"]);
 
-function placeholders(s: string): string[] {
+export function placeholders(s: string): string[] {
   return [...s.matchAll(PLACEHOLDER)].map((m) => m[1]!);
 }
 
 function typeOk(type: ParamType, v: unknown): v is ParamValue {
   if (type === "number") return typeof v === "number" && Number.isFinite(v);
   return typeof v === type;
+}
+
+/** Checks param declarations, reporting each problem through `at`; shared with the HTTP bridge. */
+export function checkParamSpecs(raw: unknown, at: (msg: string) => void): Record<string, ParamSpec> {
+  const params = (raw ?? {}) as Record<string, ParamSpec>;
+  if (typeof params !== "object" || Array.isArray(params)) {
+    at("params must be an object");
+    return {};
+  }
+  for (const [p, spec] of Object.entries(params)) {
+    if (!spec || !PARAM_TYPES.has(spec.type)) {
+      at(`params.${p}.type must be string, number or boolean`);
+      continue;
+    }
+    if (spec.pattern !== undefined) {
+      try {
+        new RegExp(spec.pattern);
+      } catch {
+        at(`params.${p}.pattern is not a valid regular expression`);
+      }
+    }
+    if (spec.enum !== undefined && (!Array.isArray(spec.enum) || !spec.enum.every((e) => typeOk(spec.type, e)))) {
+      at(`params.${p}.enum must be an array of ${spec.type}`);
+    }
+    if (spec.default !== undefined && !typeOk(spec.type, spec.default)) at(`params.${p}.default must be a ${spec.type}`);
+  }
+  return params;
 }
 
 /** Throws with every problem found; returns the config typed. */
@@ -79,25 +106,7 @@ export function validateConfig(raw: unknown): CliConfig {
       at("argv must be a non-empty array of strings");
       continue;
     }
-    const params = c.params ?? {};
-    if (typeof params !== "object" || Array.isArray(params)) at("params must be an object");
-    for (const [p, spec] of Object.entries(params)) {
-      if (!spec || !PARAM_TYPES.has(spec.type)) {
-        at(`params.${p}.type must be string, number or boolean`);
-        continue;
-      }
-      if (spec.pattern !== undefined) {
-        try {
-          new RegExp(spec.pattern);
-        } catch {
-          at(`params.${p}.pattern is not a valid regular expression`);
-        }
-      }
-      if (spec.enum !== undefined && (!Array.isArray(spec.enum) || !spec.enum.every((e) => typeOk(spec.type, e)))) {
-        at(`params.${p}.enum must be an array of ${spec.type}`);
-      }
-      if (spec.default !== undefined && !typeOk(spec.type, spec.default)) at(`params.${p}.default must be a ${spec.type}`);
-    }
+    const params = checkParamSpecs(c.params, at);
     if (placeholders(c.argv[0]!).length) at("argv[0] cannot contain placeholders");
     for (const el of c.argv) for (const ph of placeholders(el)) if (!(ph in params)) at(`argv uses undeclared param {${ph}}`);
     if (c.cwd !== undefined) {
@@ -118,7 +127,11 @@ export function validateConfig(raw: unknown): CliConfig {
  * Unknown params, wrong types, missing required params and pattern/enum mismatches are errors.
  */
 export function validateParams(cmd: CommandSpec, raw: unknown): Record<string, ParamValue> {
-  const specs = cmd.params ?? {};
+  return checkParams(cmd.params, raw);
+}
+
+/** validateParams for any param declarations; shared with the HTTP bridge. */
+export function checkParams(specs: Record<string, ParamSpec> = {}, raw: unknown): Record<string, ParamValue> {
   if (raw === undefined || raw === null) raw = {};
   if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("params must be an object");
   const given = raw as Record<string, unknown>;

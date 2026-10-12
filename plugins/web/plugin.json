@@ -9,6 +9,8 @@
     "call:gjc-head",
     "call:brgr",
     "call:slang",
+    "call:ops",
+    "call:ops-*",
     "approve.decide",
     "journal.read",
     "network",

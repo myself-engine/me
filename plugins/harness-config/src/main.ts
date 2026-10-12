@@ -1,11 +1,12 @@
-// harness-config plugin: one source of MCP servers and instruction fragments, rendered into each
-// coding harness's own config file (DECISIONS §15 설정 통합 관리).
+// harness-config plugin: one source of MCP servers, instruction fragments, skills and hooks, rendered
+// into each coding harness's own config files (DECISIONS §15 설정 통합 관리).
 //
 // Writing harness config files (~/.claude.json, ~/.codex/config.toml, opencode.json, GJC mcp.json,
-// AGENTS.md/CLAUDE.md) is this plugin's whole purpose. The kernel has no file-write permission, so
+// AGENTS.md/CLAUDE.md, ~/.claude/settings.json, ~/.codex/hooks.json) and skill entries in each
+// harness's skills directory is this plugin's whole purpose. The kernel has no file-write permission, so
 // the manifest asks only for read-state and emit; there is no shell and no network access.
 // Writes are gated instead: `apply` needs the planId of a fresh `plan` and an approvalId the caller
-// got from kernel approval, and every file is backed up next to itself before it is replaced.
+// got from kernel approval, and every file (or skill entry) is backed up before it is replaced.
 //
 // Config: sourcePath (default $ME_HOME/harness-config/source.json), projectDir (enables Claude Code's
 // project .mcp.json). This file only wires ports to adapters; logic lives in domain/ and app/.

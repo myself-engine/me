@@ -48,6 +48,10 @@ export interface Fixture {
   meHome: string;
   /** Real location of ~/.codex/config.toml (it is a symlink, as on the real machine). */
   codexReal: string;
+  /** Real location of ~/.config/opencode/skills (the directory itself is a symlink, as on the real machine). */
+  opencodeSkillsReal: string;
+  /** Source skill directories. */
+  skillSrc: { review: string; fmt: string };
   env: Record<string, string>;
   write(rel: string, text: string, mode?: number): string;
   cleanup(): void;
@@ -116,6 +120,52 @@ export function makeFixture(): Fixture {
     ) + "\n",
   );
   write("home/.claude/CLAUDE.md", "# My global rules\n\nBe nice.\n", 0o644);
+  write(
+    "home/.claude/settings.json",
+    JSON.stringify(
+      {
+        model: "opus",
+        permissions: { allow: ["Bash(ls:*)"] },
+        hooks: {
+          Stop: [{ hooks: [{ type: "command", command: "notify.sh" }] }],
+          PostToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "user-fmt.sh", timeout: 5 }] }],
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    0o644,
+  );
+  // A hook me wrote earlier for Codex; the source no longer shares it with Codex, so it is removed.
+  write(
+    "home/.codex/hooks.json",
+    JSON.stringify(
+      {
+        hooks: {
+          SessionStart: [{ hooks: [{ type: "command", command: "codex-start.sh" }] }],
+          Stop: [{ hooks: [{ type: "command", command: "printf old # me:harness-config bell", statusMessage: "bell" }] }],
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+
+  // Skills: source directories, plus what each harness holds now.
+  const reviewSrc = join(meHome, "harness-config", "skills", "review");
+  const fmtSrc = join(meHome, "harness-config", "skills", "fmt");
+  write("me-home/harness-config/skills/review/SKILL.md", "---\nname: review\ndescription: Review a diff\n---\nRead the diff.\n", 0o644);
+  write("me-home/harness-config/skills/fmt/SKILL.md", "---\nname: fmt\ndescription: Format\n---\nRun the formatter.\n", 0o644);
+  write("me-home/harness-config/skills/fmt/scripts/run.sh", "#!/bin/sh\nexit 0\n", 0o755);
+  write("home/.claude/skills/mine/SKILL.md", "---\nname: mine\n---\nunmanaged\n", 0o644);
+  write("agents/skills/shared/SKILL.md", "---\nname: shared\n---\nunmanaged link\n", 0o644);
+  symlinkSync(join(root, "agents", "skills", "shared"), join(home, ".claude", "skills", "shared"));
+  // Codex holds an older, hand-copied review skill: the link replaces it, after a backup.
+  write("home/.codex/skills/review/SKILL.md", "---\nname: review\n---\nold copy\n", 0o644);
+  const opencodeSkillsReal = join(root, "stack", "opencode", "skills");
+  mkdirSync(opencodeSkillsReal, { recursive: true });
+  symlinkSync(opencodeSkillsReal, join(home, ".config", "opencode", "skills"));
+  symlinkSync(reviewSrc, join(opencodeSkillsReal, "review"));
   write("home/.config/me/pencil.key", `${SECRETS.pencilKey}\n`);
 
   write(
@@ -127,6 +177,14 @@ export function makeFixture(): Fixture {
           pencil: { command: "pencil", args: ["--stdio"], env: { API_KEY: "${file:~/.config/me/pencil.key}" }, share: ["claude-code", "codex"] },
         },
         instructions: { style: { file: "fragments/style.md", share: ["claude-code", "codex"] } },
+        skills: {
+          review: { dir: "skills/review", share: "all" },
+          fmt: { dir: "skills/fmt", mode: "copy", share: ["codex"] },
+        },
+        hooks: {
+          "fmt-after-edit": { event: "PostToolUse", matcher: "Edit|Write", command: "bunx prettier --write .", timeout: 30, share: "all" },
+          bell: { event: "Stop", command: "printf '\\a'", share: ["claude-code"] },
+        },
       },
       null,
       2,
@@ -139,6 +197,8 @@ export function makeFixture(): Fixture {
     home,
     meHome,
     codexReal,
+    opencodeSkillsReal,
+    skillSrc: { review: reviewSrc, fmt: fmtSrc },
     env: { HOME: home, ME_HOME: meHome, NOTION_TOKEN: SECRETS.notionToken },
     write,
     cleanup: () => rmSync(root, { recursive: true, force: true }),

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { composeService } from "../adapters/compose.ts";
 import { makeFixture, SECRETS, type Fixture } from "./fixtures.ts";
@@ -175,12 +175,191 @@ describe("apply", () => {
   test("harness filter limits plan and apply", async () => {
     const s = svc();
     const plan = await s.plan({ harnesses: ["gjc"] });
-    expect(plan.targets.map((t) => t.target)).toEqual(["gjc:user", "gjc:instructions"]);
+    expect(plan.targets.map((t) => t.target)).toEqual(["gjc:user", "gjc:instructions", "gjc:skills"]);
+    expect(plan.unsupported).toEqual([{ target: "gjc:hooks", harness: "gjc", reason: expect.stringContaining("GJC"), skipped: ["fmt-after-edit"] }]);
     const before = read(".claude.json");
     await s.apply({ planId: plan.planId, approvalId: "a", harnesses: ["gjc"] });
     expect(read(".claude.json")).toBe(before);
     expect(json(".gjc/agent/mcp.json").mcpServers.pencil).toBeUndefined();
     await expect(s.plan({ harnesses: ["vim"] })).rejects.toThrow(/unknown harness/);
+  });
+});
+
+describe("skills", () => {
+  test("plan links, copies, replaces and leaves unmanaged entries alone", async () => {
+    const plan = await svc().plan();
+    expect(plan.ok).toBe(true);
+    const claude = target(plan, "claude-code:skills");
+    expect(claude.path).toBe(join(fx.home, ".claude/skills"));
+    expect(claude.diff.added).toEqual([{ name: "review", after: { mode: "link", target: fx.skillSrc.review } }]);
+    // Codex: review is a hand-made copy (becomes a link), fmt is copied in.
+    const codex = target(plan, "codex:skills").diff;
+    expect(names(codex.added)).toEqual(["fmt"]);
+    expect(codex.added.find((a) => a.name === "fmt")!.after).toMatchObject({ mode: "copy", content: expect.stringMatching(/^2 files #/) });
+    expect(codex.changed).toEqual([
+      { name: "review", fields: [{ field: "mode", before: "copy", after: "link" }, expect.objectContaining({ field: "content" }), { field: "target", before: undefined, after: fx.skillSrc.review }] },
+    ]);
+    // OpenCode's skills directory is a symlink and already links review: nothing to do.
+    expect(target(plan, "opencode:skills").diff.unchanged).toEqual(["review"]);
+    expect(target(plan, "gjc:skills")).toMatchObject({ exists: false, diff: { added: [{ name: "review" }] } });
+    const all = JSON.stringify(plan.targets.map((t) => t.diff));
+    for (const n of ["mine", "shared"]) expect(all).not.toContain(`"${n}"`);
+  });
+
+  test("apply backs up beside the skills directory, writes only owned entries, then has nothing to do", async () => {
+    const s = svc();
+    const plan = await s.plan();
+    const res = await s.apply({ planId: plan.planId, approvalId: "a" });
+    const codexSkills = join(fx.home, ".codex/skills");
+
+    expect(readlinkSync(join(fx.home, ".claude/skills/review"))).toBe(fx.skillSrc.review);
+    expect(readlinkSync(join(codexSkills, "review"))).toBe(fx.skillSrc.review);
+    expect(lstatSync(join(codexSkills, "fmt")).isDirectory()).toBe(true);
+    expect(readFileSync(join(codexSkills, "fmt/scripts/run.sh"), "utf8")).toBe("#!/bin/sh\nexit 0\n");
+    expect(statSync(join(codexSkills, "fmt/scripts/run.sh")).mode & 0o111).not.toBe(0);
+    expect(readlinkSync(join(fx.home, ".gjc/agent/skills/review"))).toBe(fx.skillSrc.review);
+    // Unmanaged entries and the OpenCode directory link survive.
+    expect(readFileSync(join(fx.home, ".claude/skills/mine/SKILL.md"), "utf8")).toContain("unmanaged");
+    expect(lstatSync(join(fx.home, ".claude/skills/shared")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(join(fx.home, ".config/opencode/skills")).isSymbolicLink()).toBe(true);
+    // No temp entries are left inside a skills directory.
+    for (const d of [join(fx.home, ".claude/skills"), codexSkills, fx.opencodeSkillsReal])
+      expect(readdirSync(d).filter((n) => n.includes("me-tmp"))).toEqual([]);
+
+    // Codex's old copy is backed up beside the skills directory, not inside it.
+    const backup = res.applied.find((a) => a.target === "codex:skills")!.backup!;
+    expect(dirname(backup)).toBe(join(fx.home, ".codex"));
+    expect(backup).toMatch(/skills\.me-backup-/);
+    expect(readFileSync(join(backup, "review/SKILL.md"), "utf8")).toContain("old copy");
+    expect(readdirSync(codexSkills).some((n) => n.includes("backup"))).toBe(false);
+    // Nothing existed for claude's review, so no backup directory.
+    expect(res.applied.find((a) => a.target === "claude-code:skills")!.backup).toBeNull();
+    expect(res.applied.some((a) => a.target === "opencode:skills")).toBe(false);
+
+    expect((await s.plan()).changes).toBe(0);
+  });
+
+  test("an edited copy is changed; a skill no longer shared is removed with a backup", async () => {
+    const s = svc();
+    await s.apply({ planId: (await s.plan()).planId, approvalId: "a" });
+    fx.write("me-home/harness-config/skills/fmt/SKILL.md", "---\nname: fmt\n---\nnew text\n");
+    let plan = await s.plan({ harnesses: ["codex"] });
+    expect(names(target(plan, "codex:skills").diff.changed)).toEqual(["fmt"]);
+    await s.apply({ planId: plan.planId, approvalId: "a", harnesses: ["codex"] });
+    expect(readFileSync(join(fx.home, ".codex/skills/fmt/SKILL.md"), "utf8")).toContain("new text");
+
+    const src = JSON.parse(readFileSync(join(fx.meHome, "harness-config/source.json"), "utf8"));
+    src.skills.review.share = ["opencode"];
+    fx.write("me-home/harness-config/source.json", JSON.stringify(src));
+    plan = await s.plan({ harnesses: ["claude-code"] });
+    expect(target(plan, "claude-code:skills").diff.removed).toEqual([{ name: "review" }]);
+    const res = await s.apply({ planId: plan.planId, approvalId: "a", harnesses: ["claude-code"] });
+    expect(existsSync(join(fx.home, ".claude/skills/review"))).toBe(false);
+    // The backup of a link is a link, and the source directory it pointed at is untouched.
+    const backup = res.applied.find((a) => a.target === "claude-code:skills")!.backup!;
+    expect(readlinkSync(join(backup, "review"))).toBe(fx.skillSrc.review);
+    expect(existsSync(join(fx.skillSrc.review, "SKILL.md"))).toBe(true);
+  });
+
+  test("a missing SKILL.md or a source inside the skills directory is a target error", async () => {
+    fx.write("home/.claude/skills/inside/SKILL.md", "x\n");
+    fx.write("me-home/harness-config/skills/empty/README.md", "x\n");
+    fx.write(
+      "me-home/harness-config/source.json",
+      JSON.stringify({
+        skills: { inside: { dir: "~/.claude/skills/inside", share: ["claude-code"] }, empty: { dir: "skills/empty", share: ["codex"] } },
+      }),
+    );
+    const s = svc();
+    const plan = await s.plan();
+    expect(plan.ok).toBe(false);
+    expect(target(plan, "claude-code:skills").error).toMatch(/inside .*lies inside/);
+    expect(target(plan, "codex:skills").error).toMatch(/no SKILL\.md/);
+    await expect(s.apply({ planId: plan.planId, approvalId: "a" })).rejects.toThrow(/refusing to apply/);
+    expect(readFileSync(join(fx.home, ".claude/skills/inside/SKILL.md"), "utf8")).toBe("x\n");
+  });
+
+  test("apply refuses when a skill entry changed after plan", async () => {
+    const s = svc();
+    const plan = await s.plan({ harnesses: ["codex"] });
+    fx.write("home/.codex/skills/review/SKILL.md", "edited after plan\n");
+    await expect(s.apply({ planId: plan.planId, approvalId: "a", harnesses: ["codex"] })).rejects.toThrow(/stale|changed during apply/);
+    expect(readFileSync(join(fx.home, ".codex/skills/review/SKILL.md"), "utf8")).toBe("edited after plan\n");
+  });
+});
+
+describe("hooks", () => {
+  test("plan adds, removes and marks unsupported harnesses explicitly", async () => {
+    const plan = await svc().plan();
+    expect(plan.ok).toBe(true);
+    const claude = target(plan, "claude-code:hooks");
+    expect(claude.path).toBe(join(fx.home, ".claude/settings.json"));
+    expect(claude.diff.added).toEqual([
+      { name: "fmt-after-edit", after: { event: "PostToolUse", matcher: "Edit|Write", command: "bunx prettier --write .", timeout: 30 } },
+      { name: "bell", after: { event: "Stop", command: "printf '\\a'" } },
+    ]);
+    const codex = target(plan, "codex:hooks").diff;
+    expect(names(codex.added)).toEqual(["fmt-after-edit"]);
+    expect(codex.removed).toEqual([{ name: "bell" }]);
+    expect(plan.targets.some((t) => t.target === "opencode:hooks" || t.target === "gjc:hooks")).toBe(false);
+    expect(plan.unsupported.map((u) => [u.target, u.skipped])).toEqual([
+      ["opencode:hooks", ["fmt-after-edit"]],
+      ["gjc:hooks", ["fmt-after-edit"]],
+    ]);
+  });
+
+  test("apply writes marked entries, keeps the user's hooks and keys, and backs up first", async () => {
+    const before = { claude: read(".claude/settings.json"), codex: read(".codex/hooks.json") };
+    const s = svc();
+    const res = await s.apply({ planId: (await s.plan()).planId, approvalId: "a" });
+    expect(readFileSync(res.applied.find((a) => a.target === "claude-code:hooks")!.backup!, "utf8")).toBe(before.claude);
+    expect(readFileSync(res.applied.find((a) => a.target === "codex:hooks")!.backup!, "utf8")).toBe(before.codex);
+
+    const claude = json(".claude/settings.json");
+    expect(claude.model).toBe("opus");
+    expect(claude.permissions).toEqual({ allow: ["Bash(ls:*)"] });
+    expect(claude.hooks).toEqual({
+      Stop: [
+        { hooks: [{ type: "command", command: "notify.sh" }] },
+        { hooks: [{ type: "command", command: "printf '\\a' # me:harness-config bell" }] },
+      ],
+      PostToolUse: [
+        { matcher: "Edit", hooks: [{ type: "command", command: "user-fmt.sh", timeout: 5 }] },
+        { matcher: "Edit|Write", hooks: [{ type: "command", command: "bunx prettier --write . # me:harness-config fmt-after-edit", timeout: 30 }] },
+      ],
+    });
+    // Codex: the old managed Stop hook and its now-empty event are gone; the user's hook stays.
+    expect(json(".codex/hooks.json").hooks).toEqual({
+      SessionStart: [{ hooks: [{ type: "command", command: "codex-start.sh" }] }],
+      PostToolUse: [{ matcher: "Edit|Write", hooks: [{ type: "command", command: "bunx prettier --write . # me:harness-config fmt-after-edit", timeout: 30 }] }],
+    });
+    // OpenCode and GJC files are not touched for hooks.
+    expect(res.applied.some((a) => a.target.endsWith(":hooks") && !a.target.startsWith("claude-code") && !a.target.startsWith("codex"))).toBe(false);
+    expect((await s.plan()).changes).toBe(0);
+  });
+
+  test("a changed command is replaced in place and harness-only keys survive", async () => {
+    fx.write(
+      "home/.codex/hooks.json",
+      JSON.stringify({
+        hooks: { PostToolUse: [{ matcher: "Edit|Write", hooks: [{ type: "command", command: "old-fmt # me:harness-config fmt-after-edit", statusMessage: "fmt" }] }] },
+      }),
+    );
+    const s = svc();
+    const plan = await s.plan({ harnesses: ["codex"] });
+    expect(target(plan, "codex:hooks").diff.changed).toEqual([
+      {
+        name: "fmt-after-edit",
+        fields: [
+          { field: "command", before: "old-fmt", after: "bunx prettier --write ." },
+          { field: "timeout", before: undefined, after: 30 },
+        ],
+      },
+    ]);
+    await s.apply({ planId: plan.planId, approvalId: "a", harnesses: ["codex"] });
+    expect(json(".codex/hooks.json").hooks.PostToolUse).toEqual([
+      { matcher: "Edit|Write", hooks: [{ type: "command", command: "bunx prettier --write . # me:harness-config fmt-after-edit", statusMessage: "fmt", timeout: 30 }] },
+    ]);
   });
 });
 
@@ -247,6 +426,11 @@ describe("list", () => {
     expect(l.source.mcpServers.pencil!.targets).toEqual(["claude-code:user", "codex:user"]);
     expect(l.source.mcpServers.notion!.targets).toEqual(["claude-code:user", "codex:user", "opencode:user", "gjc:user"]);
     expect(l.files.find((f) => f.target === "claude-code:user")).toMatchObject({ managed: ["pencil"], unmanaged: ["private-claude"] });
+    expect(l.source.skills.review!.targets).toEqual(["claude-code:skills", "codex:skills", "opencode:skills", "gjc:skills"]);
+    expect(l.source.hooks["fmt-after-edit"]!.targets).toEqual(["claude-code:hooks", "codex:hooks"]);
+    expect(l.files.find((f) => f.target === "claude-code:skills")).toMatchObject({ managed: [], unmanaged: ["mine", "shared"] });
+    expect(l.files.find((f) => f.target === "codex:hooks")).toMatchObject({ managed: ["bell"], unmanaged: [] });
+    expect(l.unsupported.map((u) => u.target)).toEqual(["opencode:hooks", "gjc:hooks"]);
     secretFree(l);
   });
 });

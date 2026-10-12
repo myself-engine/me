@@ -1,0 +1,12 @@
+{
+  "name": "@me/bridge-http",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/config.ts" },
+  "dependencies": {
+    "@me/sdk": "workspace:*",
+    "@me/protocol": "workspace:*",
+    "@me/bridge-cli": "workspace:*"
+  },
+  "devDependencies": { "@me/kernel": "workspace:*" }
+}
