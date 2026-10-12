@@ -135,4 +135,41 @@ describe("parseTaskStatus", () => {
     expect(parseTaskStatus("[]", "r1")).toEqual({ workspace: null, base: null });
     expect(parseTaskStatus(JSON.stringify({ task_id: "r1", workspace: "" }), "r1")).toEqual({ workspace: null, base: null });
   });
+
+  test("reads the nested brgr status shape (task.workspace, task.evidence.base_commit)", () => {
+    const status = {
+      calling_options: { harness: "local.gjc" },
+      session: { phase: "finished" },
+      source_pane: "w1:p3B",
+      source_session: "s1",
+      state: "terminal",
+      task: {
+        task_id: "r1",
+        workspace: "/tmp/brgr-wt/r1",
+        evidence: { base_commit: "0123456789abcdef0123456789abcdef01234567", capture_diff: true },
+      },
+      workspace_present: true,
+    };
+    expect(parseTaskStatus(JSON.stringify(status), "r1")).toEqual({
+      workspace: "/tmp/brgr-wt/r1",
+      base: "0123456789abcdef0123456789abcdef01234567",
+    });
+  });
+
+  test("skips a leading notice line and honors workspace_present false", () => {
+    const status = {
+      state: "terminal",
+      task: {
+        task_id: "r1",
+        workspace: "/tmp/brgr-wt/r1",
+        evidence: { base_commit: "0123456789abcdef0123456789abcdef01234567" },
+      },
+      workspace_present: false,
+    };
+    const text = "brgr cleanup pending: 1 worktree\n" + JSON.stringify(status);
+    expect(parseTaskStatus(text, "r1")).toEqual({
+      workspace: null,
+      base: "0123456789abcdef0123456789abcdef01234567",
+    });
+  });
 });

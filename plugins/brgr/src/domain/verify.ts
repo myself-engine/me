@@ -91,6 +91,18 @@ export interface TaskWorktree {
 const idOf = (e: Record<string, unknown>) =>
   typeof e.task_id === "string" ? e.task_id : typeof e.taskId === "string" ? e.taskId : typeof e.id === "string" ? e.id : null;
 
+/** Keys holding the base commit, in new and old shapes. */
+const BASE_KEYS = ["base_commit", "baseCommit", "base_sha", "baseSha", "base"] as const;
+
+const pickBase = (o: Record<string, unknown> | null | undefined): string | null => {
+  if (!o || typeof o !== "object") return null;
+  for (const k of BASE_KEYS) {
+    const x = o[k];
+    if (typeof x === "string" && x) return x;
+  }
+  return null;
+};
+
 /**
  * Reads `brgr status <task> --json`: the task's own worktree (the worker's
  * result is already there) and, when the server reports it, the base commit
@@ -102,18 +114,33 @@ export function parseTaskStatus(text: string, taskId: string): TaskWorktree {
   try {
     v = JSON.parse(text);
   } catch {
-    return none;
+    // stdout may start with a non-JSON notice line; parse from the first object/array.
+    const objAt = text.indexOf("{");
+    const arrAt = text.indexOf("[");
+    const start = objAt < 0 ? arrAt : arrAt < 0 ? objAt : Math.min(objAt, arrAt);
+    if (start < 0) return none;
+    try {
+      v = JSON.parse(text.slice(start));
+    } catch {
+      return none;
+    }
   }
+  const matchesId = (e: Record<string, unknown>) => {
+    if (idOf(e) === taskId) return true;
+    const t = e.task;
+    return typeof t === "object" && t !== null && idOf(t as Record<string, unknown>) === taskId;
+  };
   const entry = (
     Array.isArray(v)
-      ? ((v.find((e) => typeof e === "object" && e !== null && idOf(e as Record<string, unknown>) === taskId) ?? v[0]) as unknown)
+      ? ((v.find((e) => typeof e === "object" && e !== null && matchesId(e as Record<string, unknown>)) ?? v[0]) as unknown)
       : v
   ) as Record<string, unknown> | null;
   if (!entry || typeof entry !== "object") return none;
-  const workspace = typeof entry.workspace === "string" && entry.workspace ? entry.workspace : null;
-  const base =
-    (["base_commit", "baseCommit", "base_sha", "baseSha", "base"].map((k) => entry[k]).find((x) => typeof x === "string" && x) as
-      | string
-      | undefined) ?? null;
+  const task = entry.task && typeof entry.task === "object" ? (entry.task as Record<string, unknown>) : null;
+  const evidence = task?.evidence && typeof task.evidence === "object" ? (task.evidence as Record<string, unknown>) : null;
+  const rawWorkspace = typeof task?.workspace === "string" && task.workspace ? task.workspace : typeof entry.workspace === "string" && entry.workspace ? entry.workspace : null;
+  const gone = entry.workspace_present === false || task?.workspace_present === false;
+  const workspace = gone ? null : rawWorkspace;
+  const base = pickBase(evidence) ?? pickBase(task) ?? pickBase(entry) ?? null;
   return { workspace, base };
 }
