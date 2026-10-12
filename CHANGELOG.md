@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v0.4.0 (2026-10-12)
+
+- config: write ${env:X} back as OpenCode's {env:X} instead of resolving it (#18) (857fc0f)
+- config: import keeps plain values and moves secrets to 0600 files (#8) (8f9be00)
+- Slack plugin, http/ACP bridges, skills/hooks config, ops actions (#13 #14 #15 #16) (0bd4f1a)
+- marketplace: CodeAgora and connect-my-world recipes (#17) (496a111)
+- web: result-first task detail, repo chips, a composer on the phone list (77e3430)
+- autostart: start me in a Herdr pane at login (#10) (e98b1a2)
+- cli: me release prints usage for --help and unknown flags (7e6d367)
+
 ## v0.3.0 (2026-10-12)
 
 - web: three tabs (대화·작업·상태), one badge, user-words titles (7f5de8c)
