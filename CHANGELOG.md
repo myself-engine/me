@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.9.2 (2026-10-12)
+
+- gjc-head: fall back to opencode-go/deepseek-v4.1-flash (9893139)
+
 ## v0.9.1 (2026-10-12)
 
 - me release: patch bump by default, --minor to opt in (b42e80b)
