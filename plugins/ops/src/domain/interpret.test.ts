@@ -53,3 +53,9 @@ describe("interpretCommand", () => {
     expect(interpretCommand(3, 3, "", "", 1).status).toBe("up");
   });
 });
+
+test("a failing command shows every output line, a passing one only the first", () => {
+  const out = "rapi-agent: 연결 가능\nmadp: 접속 불가\npve: 연결 가능\n";
+  expect(interpretCommand(1, 0, out, "", 5).detail).toBe("exit 1: rapi-agent: 연결 가능 · madp: 접속 불가 · pve: 연결 가능");
+  expect(interpretCommand(0, 0, out, "", 5).detail).toBe("exit 0: rapi-agent: 연결 가능");
+});

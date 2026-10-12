@@ -57,7 +57,18 @@ export function interpretHerdrPane(code: number, stdout: string, stderr: string,
 
 /** A command check is up when it exits with the expected code. */
 export function interpretCommand(code: number, expectExit: number, stdout: string, stderr: string, latencyMs: number): Observation {
-  const out = firstLine(stdout) || firstLine(stderr);
+  const up = code === expectExit;
+  // A healthy run needs one line; a failing one shows every line, since the cause is rarely the first
+  // (a multi-machine check prints the reachable machines first).
+  const out = up ? firstLine(stdout) || firstLine(stderr) : allLines(stdout) || allLines(stderr);
   const detail = `exit ${code}${out ? `: ${out}` : ""}`;
-  return obs(code === expectExit ? "up" : "down", detail, latencyMs);
+  return obs(up ? "up" : "down", detail, latencyMs);
 }
+
+const allLines = (text: string) =>
+  text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(" · ")
+    .slice(0, 300);
