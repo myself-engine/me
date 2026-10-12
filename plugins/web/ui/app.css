@@ -1770,6 +1770,14 @@ a.dline:hover {
 .head-chip .chip-chev {
   margin-left: 4px;
 }
+/* The model sheet footer stacks the "also default" checkbox above the buttons. */
+.head-sheet .drawer-foot {
+  flex-direction: column;
+  align-items: stretch;
+}
+.head-sheet .drawer-foot .actions-row {
+  justify-content: flex-end;
+}
 .pick {
   border: none;
   margin: 0;
@@ -2017,6 +2025,35 @@ a.dline:hover {
   flex-direction: column;
   gap: 8px;
   padding: 10px 14px;
+}
+/* Per-tool switches: tool name, dot+text status, and a labelled checkbox. */
+.share-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.share-tool {
+  font-weight: 600;
+  min-width: 4em;
+}
+.share-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  cursor: pointer;
+}
+.share-toggle input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 .server-main {
   display: flex;
@@ -2363,6 +2400,7 @@ a.dline:hover {
   .settings-tab,
   .approval-bar .actions-row button,
   .check-row,
+  .share-toggle,
   .icon-btn {
     min-height: var(--tap);
   }

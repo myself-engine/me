@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { diffTotals, parseDiffStat, splitDiff } from "./diff.ts";
 import { fenceLanguage, highlight } from "./highlight.ts";
-import { isDeep, parseRoute, taskHref } from "./routes.ts";
+import { isDeep, parseRoute, settingsCloseHref, taskHref } from "./routes.ts";
+import { GENERIC_HINT, checkHint, checkImpact, checkName } from "./ops.tsx";
 import { accessOf, activeAlerts, headChoice, initial, reducer, shortModel, taskTitle, threadApproval, threadTone, threadWait, toneOf, unlinkedApprovals, workItems, type State } from "./state.ts";
 import type { Effort, HeadSettings } from "./api.ts";
 
@@ -31,6 +32,42 @@ describe("parseRoute", () => {
     expect(isDeep(parseRoute("#/task/abc"))).toBe(true);
     expect(isDeep(parseRoute("#/settings"))).toBe(false);
     expect(isDeep(parseRoute("#/settings/harness"))).toBe(true);
+  });
+});
+
+describe("settingsCloseHref", () => {
+  test("returns to the conversation or task panel settings opened from", () => {
+    expect(settingsCloseHref("#/chat/t1")).toBe("#/chat/t1");
+    expect(settingsCloseHref("#/chat")).toBe("#/chat");
+    expect(settingsCloseHref("#/chat/new")).toBe("#/chat/new");
+    expect(settingsCloseHref("#/task/a?thread=t1")).toBe("#/task/a?thread=t1");
+  });
+  test("a direct load of settings closes to plain chat", () => {
+    expect(settingsCloseHref(null)).toBe("#/chat");
+    expect(settingsCloseHref("")).toBe("#/chat");
+    expect(settingsCloseHref("#")).toBe("#/chat");
+    expect(settingsCloseHref("#/settings")).toBe("#/chat");
+    expect(settingsCloseHref("#/settings/device")).toBe("#/chat");
+  });
+});
+
+describe("device check plain reading", () => {
+  const at = "2026-10-11T00:00:00.000Z";
+  const base = { id: "nightly", kind: "command", ok: false, status: "down" as const, detail: "exit 1", latencyMs: 3, checkedAt: at, since: at };
+  test("falls back to id, generic hint, and no chat impact", () => {
+    expect(checkName(base)).toBe("nightly");
+    expect(checkHint(base)).toBe(GENERIC_HINT);
+    expect(checkHint(base)).toBe("설정한 명령을 터미널에서 직접 실행해 보세요");
+    expect(checkImpact(base)).toBe("대화에는 영향 없어요.");
+  });
+  test("prefers the check's own name and hint", () => {
+    expect(checkName({ ...base, name: "밤샘 작업" })).toBe("밤샘 작업");
+    expect(checkHint({ ...base, hint: "작업 장치 전원을 확인하세요" })).toBe("작업 장치 전원을 확인하세요");
+  });
+  test("warns when the conversation path needs the check", () => {
+    expect(checkImpact({ ...base, affectsChat: true })).toContain("대화");
+    expect(checkImpact({ ...base, affectsChat: true })).not.toBe("대화에는 영향 없어요.");
+    expect(checkImpact({ ...base, id: "gjc-model" })).not.toBe("대화에는 영향 없어요.");
   });
 });
 

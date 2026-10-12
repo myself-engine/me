@@ -44,6 +44,17 @@ export const isDeep = (r: Route) => (r.view === "chat" && r.threadId !== null) |
 export const chatHref = (threadId?: string | null) => (threadId ? `#/chat/${encodeURIComponent(threadId)}` : "#/chat");
 export const taskHref = (taskId?: string | null, _project?: string | null) => (taskId ? `#/task/${encodeURIComponent(taskId)}` : "#/chat");
 
+/**
+ * Where closing settings lands: back to the conversation or task panel it opened
+ * from (kept verbatim so thread ids and ?thread= survive). A direct load of
+ * #/settings, or anything that is not a conversation screen, closes to plain chat.
+ */
+export function settingsCloseHref(fromHash: string | null): string {
+  if (!fromHash || fromHash === "#") return chatHref(null);
+  const r = parseRoute(fromHash);
+  if (r.view === "chat" || r.view === "task") return fromHash.startsWith("#") ? fromHash : `#${fromHash}`;
+  return chatHref(null);
+}
 /** 실행 도구 설정 lives in the settings modal; its shot fakes (fake=empty|list|diff) render canned data. */
 export const harnessHref = (fake?: string | null) => (fake ? `#/settings/harness?fake=${encodeURIComponent(fake)}` : "#/settings/harness");
 export const settingsHref = (section?: string | null) => (section ? `#/settings/${encodeURIComponent(section)}` : "#/settings");

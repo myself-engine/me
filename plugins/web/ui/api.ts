@@ -105,6 +105,12 @@ export interface OpsCheck {
   since: string;
   /** ops instance that reported it: "ops" for this Mac, "ops-<server>" for connected servers. */
   source?: string;
+  /** Human name for people; the UI falls back to id when absent. */
+  name?: string;
+  /** What to do next, in the check's own words; the UI falls back to generic help. */
+  hint?: string;
+  /** True when the conversation path needs this check; the UI then warns chat may break. */
+  affectsChat?: boolean;
 }
 
 export interface Approval {

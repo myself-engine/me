@@ -1,5 +1,6 @@
 // The head's model and effort: a chip above the composer and the sheet it opens.
-// Picking a model sets it for this conversation and as the default for new ones in one action.
+// Picking a model applies to this conversation; an unchecked-by-default checkbox
+// also saves it as the default for new conversations.
 import { useEffect, useMemo, useState } from "react";
 import type { Connection, Effort, ModelInfo, Thread } from "./api.ts";
 import { useApp } from "./context.ts";
@@ -96,17 +97,19 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
     return found.map((m) => ({ id: m.id, favorite: top.includes(m.id) }));
   }, [model, d.model, d.favorites.join(","), query, models]);
 
-  // One action: this conversation keeps the pick, and new conversations start with it.
+  // This conversation keeps the pick; the checkbox below also saves it as the default.
+  const [alsoDefault, setAlsoDefault] = useState(false);
   const choose = () =>
     act(async () => {
       if (!conn) return;
       if (!thread) {
         setDraft({ ...draft, model, effort });
-        await conn.request("head.defaults.set", { model, effort });
-        notify("새 대화의 기본 모델로 저장했어요");
       } else {
         await conn.request("head.thread.set", { threadId: thread.id, model, effort });
+      }
+      if (alsoDefault) {
         await conn.request("head.defaults.set", { model, effort });
+        notify("새 대화의 기본 모델로 저장했어요");
       }
       onClose();
     });
@@ -126,7 +129,7 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
             <h2 className="drawer-title" id="head-title">
               모델 고르기
             </h2>
-            <div className="drawer-sub">이 대화와 새 대화의 기본값에 함께 적용돼요</div>
+            <div className="drawer-sub">{thread ? "이 대화에만 적용돼요" : "새로 시작할 이 대화에 적용돼요"}</div>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="닫기">
             ✕
@@ -187,13 +190,19 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
             {dev && <p className="pick-note muted">★로 자주 쓰는 모델을 즐겨찾기에 고정해요. 설정 파일에 적힌 즐겨찾기는 여기서 뺄 수 없어요. Claude 모델은 대화 엔진에서 쓸 수 없어 목록에 없어요.</p>}
           </fieldset>
         </div>
-        <footer className="drawer-foot actions-row">
-          <button className="primary" disabled={busy || !conn} onClick={choose}>
-            선택
-          </button>
-          <button className="quiet" onClick={onClose}>
-            취소
-          </button>
+        <footer className="drawer-foot">
+          <label className="check-row">
+            <input type="checkbox" checked={alsoDefault} onChange={(e) => setAlsoDefault(e.target.checked)} />
+            <span>새 대화에도 이 모델 쓰기</span>
+          </label>
+          <div className="actions-row">
+            <button className="primary" disabled={busy || !conn} onClick={choose}>
+              선택
+            </button>
+            <button className="quiet" onClick={onClose}>
+              취소
+            </button>
+          </div>
         </footer>
       </div>
     </>

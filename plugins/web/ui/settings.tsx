@@ -88,13 +88,13 @@ function GeneralSection() {
         <input type="checkbox" checked={dev} onChange={(e) => setDev(e.target.checked)} />
         <span>
           개발자 보기
-          <span className="muted"> · 타임라인, raw diff, 실행 도구·모델 표시를 켜요</span>
+          <span className="muted"> · 타임라인, 변경 내용 원문, 실행 도구·모델 표시를 켜요</span>
         </span>
       </label>
       <div>
         <p className="section-label">기본 접근 모드</p>
         <DefaultAccess />
-        <p className="pick-note muted">새 대화가 이 모드로 시작해요. 전부 알아서는 확인 후 바로 커밋돼요.</p>
+        <p className="pick-note muted">새 대화가 이 모드로 시작해요. 전부 알아서는 확인 후 바로 적용돼요.</p>
       </div>
     </div>
   );

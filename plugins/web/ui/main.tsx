@@ -7,7 +7,7 @@ import { Connection, fetchBootstrap } from "./api.ts";
 import { ChatScreen } from "./chat.tsx";
 import { AppContext, useApp as useAppCtx, type Ctx } from "./context.ts";
 import { HarnessScreen } from "./harness.tsx";
-import { chatHref, go, isDeep, NEW_THREAD, replace, useRoute, type Route } from "./routes.ts";
+import { chatHref, go, isDeep, NEW_THREAD, replace, settingsCloseHref, useRoute, type Route } from "./routes.ts";
 import { SettingsModal } from "./settings.tsx";
 import { initial, reducer, type HeadChoice } from "./state.ts";
 import { TaskPanel } from "./tasks.tsx";
@@ -22,6 +22,12 @@ function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<{ traceId: string; messageId?: string } | null>(null);
   const route = useRoute();
+  // The conversation screen settings opened from; closing settings goes back here.
+  // Stays null on a direct load of #/settings, which closes to plain chat.
+  const [returnHash, setReturnHash] = useState<string | null>(null);
+  useEffect(() => {
+    if (route.view !== "settings") setReturnHash(location.hash || null);
+  }, [route]);
 
   useEffect(() => {
     let alive = true;
@@ -92,7 +98,7 @@ function App() {
               <p className="empty-sub">불러오는 중…</p>
             </div>
           ) : (
-            <Screen route={route} threadId={threadId} project={project} setProject={setProject} onSend={send} />
+            <Screen route={route} threadId={threadId} returnHash={returnHash} project={project} setProject={setProject} onSend={send} />
           )}
         </main>
         {drawer && <TraceDrawer key={drawer.traceId} traceId={drawer.traceId} messageId={drawer.messageId} onClose={closeTrace} />}
@@ -116,7 +122,7 @@ function skipToMain(e: MouseEvent) {
   document.getElementById("main")?.focus();
 }
 
-function Screen({ route, threadId, project, setProject, onSend }: { route: Route; threadId: string | null; project: string; setProject: (p: string) => void; onSend: (t: string, choice?: HeadChoice) => void }) {
+function Screen({ route, threadId, returnHash, project, setProject, onSend }: { route: Route; threadId: string | null; returnHash: string | null; project: string; setProject: (p: string) => void; onSend: (t: string, choice?: HeadChoice) => void }) {
   const chat = <ChatScreen threadId={threadId} project={project} setProject={setProject} onSend={onSend} />;
   switch (route.view) {
     case "task":
@@ -124,10 +130,12 @@ function Screen({ route, threadId, project, setProject, onSend }: { route: Route
     case "settings":
       // Harness shot fakes keep their standalone page so screenshots match the old layout.
       if (route.section === "harness" && route.fake) return <HarnessScreen fake={route.fake} />;
+      // Closing (button, scrim, Escape) goes back to the conversation or task panel
+      // settings opened from; a direct load of #/settings closes to plain chat.
       return (
         <>
           {chat}
-          <SettingsModal section={route.section} fake={route.fake} onClose={() => go(chatHref(threadId))} />
+          <SettingsModal section={route.section} fake={route.fake} onClose={() => go(settingsCloseHref(returnHash))} />
         </>
       );
     default:

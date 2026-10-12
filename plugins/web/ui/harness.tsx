@@ -72,10 +72,10 @@ interface ImportDry {
   counts: Record<string, { entries?: number; error?: string }>;
 }
 
-const SECTION_LABEL: Record<string, string> = { mcpServers: "MCP", instructions: "지시문", skills: "스킬", hooks: "후크" };
+const SECTION_LABEL: Record<string, string> = { mcpServers: "외부 도구", instructions: "지시문", skills: "스킬", hooks: "후크" };
 const sectionOf = (target: string) => {
   const rest = target.split(":")[1] ?? "";
-  return rest === "user" || rest === "project" ? "MCP" : (SECTION_LABEL[rest] ?? "설정");
+  return rest === "user" || rest === "project" ? "외부 도구" : (SECTION_LABEL[rest] ?? "설정");
 };
 /** claude-code:user → Claude Code, claude-code:project → Claude Code · 프로젝트, codex:hooks → Codex · 후크. */
 const targetLabel = (target: string) => {
@@ -321,7 +321,7 @@ function McpList({
 }) {
   const entries = Object.entries(source.mcpServers).sort(([a], [b]) => a.localeCompare(b));
   return (
-    <Section label="MCP 서버" count={entries.length}>
+    <Section label="외부 도구 연결(MCP)" count={entries.length}>
       {entries.length === 0 ? (
         <Empty title="아직 서버가 없어요">아래에서 추가하면 각 앱에 넣어줘요.</Empty>
       ) : (
@@ -333,10 +333,31 @@ function McpList({
       )}
       <div className="pad">
         <button disabled={busy} onClick={onAdd}>
-          + MCP 서버 추가
+          + 외부 도구 추가
         </button>
       </div>
     </Section>
+  );
+}
+
+/** Per-tool switches: a real checkbox with the visible label "이 도구에서 쓰기", plus a separate dot+text status. Reused by the server list and the add/edit sheet. */
+function ShareToggles({ share, busy, onToggle }: { share: Share; busy: boolean; onToggle: (id: string) => void }) {
+  return (
+    <div className="share-list" role="group" aria-label="어느 앱에 넣을지">
+      {HARNESS_IDS.map((h) => {
+        const on = sharedList(share).includes(h);
+        return (
+          <div key={h} className="share-row">
+            <span className="share-tool">{short(h)}</span>
+            <StatusDot tone={on ? "done" : "muted"} label={on ? "사용 중" : "사용 안 함"} />
+            <label className="share-toggle">
+              <input type="checkbox" checked={on} disabled={busy} onChange={() => onToggle(h)} aria-label={`${short(h)}: 이 도구에서 쓰기`} />
+              이 도구에서 쓰기
+            </label>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -353,7 +374,6 @@ function ServerRow({
   onToggle: (name: string, id: string, share: Share) => void;
   onEdit: () => void;
 }) {
-  const list = sharedList(srv.share);
   return (
     <li className="server-row">
       <button className="server-main" disabled={busy} onClick={onEdit} aria-label={`${name} 편집`}>
@@ -367,22 +387,7 @@ function ServerRow({
           ›
         </span>
       </button>
-      <div className="seg" role="group" aria-label={`${name} 공유`}>
-        {HARNESS_IDS.map((h) => {
-          const on = list.includes(h);
-          return (
-            <button
-              key={h}
-              className={`seg-item${on ? " on" : ""}`}
-              aria-pressed={on}
-              disabled={busy}
-              onClick={() => onToggle(name, h, srv.share)}
-            >
-              {on ? `✓ ${short(h)}` : short(h)}
-            </button>
-          );
-        })}
-      </div>
+      <ShareToggles share={srv.share} busy={busy} onToggle={(h) => onToggle(name, h, srv.share)} />
     </li>
   );
 }
@@ -418,7 +423,7 @@ function ImportCard({
       <div className="card-head">
         <strong>지금 쓰는 설정 불러오기</strong>
       </div>
-      <p className="brief">쓰던 MCP 설정을 읽어서 me가 관리하게 해요. 비밀은 따로 저장돼요.</p>
+      <p className="brief">쓰던 외부 도구 설정을 읽어서 me가 관리하게 해요. 비밀은 따로 저장돼요.</p>
       {!dry ? (
         <div className="actions-row">
           <button className="primary" disabled={busy} onClick={onLoad}>
@@ -541,7 +546,7 @@ function ServerSheet({
       <div className="drawer" role="dialog" aria-modal="true" aria-labelledby="server-title" ref={panel}>
         <header className="drawer-head">
           <h2 className="drawer-title" id="server-title">
-            {name ?? "MCP 서버 추가"}
+            {name ?? "외부 도구 추가"}
           </h2>
           <button className="icon-btn" onClick={onClose} aria-label="닫기">
             ✕
@@ -586,25 +591,15 @@ function ServerSheet({
           {rows(headerRows, setHeaderRows, "헤더", !!name)}
           {!name && <p className="result-note muted">비밀처럼 보이면 따로 저장돼요.</p>}
           <div className="kv">
-            <p className="muted">공유</p>
-            <div className="seg" role="group" aria-label="공유할 실행 도구">
-              {HARNESS_IDS.map((h) => {
-                const on = sharedList(share).includes(h);
-                return (
-                  <button
-                    key={h}
-                    className={`seg-item${on ? " on" : ""}`}
-                    aria-pressed={on}
-                    onClick={() => {
-                      const next = toggleShare(share, h);
-                      if (next) setShare(next);
-                    }}
-                  >
-                    {on ? `✓ ${short(h)}` : short(h)}
-                  </button>
-                );
-              })}
-            </div>
+            <p className="muted">어느 앱에 넣을지</p>
+            <ShareToggles
+              share={share}
+              busy={busy}
+              onToggle={(h) => {
+                const next = toggleShare(share, h);
+                if (next) setShare(next);
+              }}
+            />
           </div>
         </div>
         <footer className="drawer-foot">
@@ -712,7 +707,7 @@ function DiffSheet({ plan, busy, onClose, onApply }: { plan: PlanView; busy: boo
             <Section key={h} label={toolName(h)}>
               {targets.map((t) => (
                 <div key={t.target} className="diff-target">
-                  {!(sectionOf(t.target) === "MCP" && !t.target.endsWith(":project")) && (
+                  {!(sectionOf(t.target) === "외부 도구" && !t.target.endsWith(":project")) && (
                     <p className="muted">
                       {sectionOf(t.target)}
                       {t.target.endsWith(":project") ? " · 프로젝트" : ""}
@@ -855,7 +850,7 @@ export function HarnessLink() {
           <a className="row-link" href={harnessHref()}>
             <span className="row-main">
               <span className="row-title">실행 도구 설정</span>
-              <span className="row-sub">MCP 서버가 어느 앱에 가는지 정해요</span>
+              <span className="row-sub">외부 도구가 어느 앱에 가는지 정해요</span>
             </span>
             <span className="chev" aria-hidden="true">
               ›

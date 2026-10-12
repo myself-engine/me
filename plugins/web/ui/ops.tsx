@@ -7,6 +7,7 @@ import { HarnessLink } from "./harness.tsx";
 import { ProjectsSection } from "./projects.tsx";
 import { taskHref } from "./routes.ts";
 import { Header, Section, StatusDot, elapsed, timeAgo, useBusy, useNow } from "./shared.tsx";
+import { useDevView } from "./dev.ts";
 import { activeAlerts, activeOps, type Tone } from "./state.ts";
 
 /** What the ops plugin adds to a check record when the check declares actions (plugins/ops domain/action.ts). */
@@ -47,7 +48,15 @@ const showsCard = (c: Check, now: number) => {
   return c.status !== "up" || busyRun(r) || (!!r && now - Date.parse(r.finishedAt ?? r.requestedAt) < RECENT_RUN_MS);
 };
 
-const CHECK_LABEL: Record<OpsCheck["status"], string> = { up: "정상", down: "응답 없음", unknown: "알 수 없음" };
+const CHECK_LABEL: Record<OpsCheck["status"], string> = { up: "정상", down: "안 돼요", unknown: "알 수 없음" };
+
+/** Plain-Korean reading of a failing check: a human name (falling back to id), the chat impact, and the next step. Raw kind/detail stays in the developer view. */
+export const checkName = (c: Check) => (c.name?.trim() ? c.name : c.id);
+export const GENERIC_HINT = "설정한 명령을 터미널에서 직접 실행해 보세요";
+export const checkHint = (c: Check) => (c.hint?.trim() ? c.hint : GENERIC_HINT);
+/** The conversation path needs this check when the record says so, or its id names head/model territory. */
+export const checkCritical = (c: Check) => c.affectsChat ?? /head|gjc|model/i.test(c.id);
+export const checkImpact = (c: Check) => (checkCritical(c) ? "대화가 안 될 수 있어요. 먼저 여기를 고쳐 주세요." : "대화에는 영향 없어요.");
 const CHECK_ORDER: Record<OpsCheck["status"], number> = { down: 0, unknown: 1, up: 2 };
 const CHECK_TONE: Record<OpsCheck["status"], Tone> = { up: "done", down: "failed", unknown: "needs" };
 
@@ -237,9 +246,10 @@ function RunningNow() {
   );
 }
 
-/** One group per machine; machines with something down come first. Healthy checks are chips, problems are cards. */
+/** One group per machine; machines with something down come first. Healthy checks collapse to one line, problems are cards. */
 function Machines({ checks }: { checks: Check[] }) {
   const now = useNow(30_000);
+  const [dev] = useDevView();
   if (checks.length === 0)
     return (
       <Section label="기기">
@@ -260,19 +270,22 @@ function Machines({ checks }: { checks: Check[] }) {
           <div className="machine-label">
             {machine} · {list.filter((c) => c.status === "up").length}/{list.length} 정상
           </div>
-          {list.some((c) => !showsCard(c, now)) && (
-            <div className="up-chips" role="group" aria-label="정상">
-              {list
-                .filter((c) => !showsCard(c, now))
-                .sort((a, b) => a.id.localeCompare(b.id))
-                .map((c) => (
-                  <span key={`${c.source ?? "ops"}/${c.id}`} className="up-chip" title={`${c.kind} · ${c.latencyMs}ms · ${c.detail}`}>
-                    <StatusDot tone="done" hideLabel />
-                    {c.id}
-                  </span>
-                ))}
-            </div>
-          )}
+          {list.some((c) => !showsCard(c, now)) &&
+            (dev ? (
+              <div className="up-chips" role="group" aria-label="정상">
+                {list
+                  .filter((c) => !showsCard(c, now))
+                  .sort((a, b) => a.id.localeCompare(b.id))
+                  .map((c) => (
+                    <span key={`${c.source ?? "ops"}/${c.id}`} className="up-chip" title={`${c.kind} · ${c.latencyMs}ms · ${c.detail}`}>
+                      <StatusDot tone="done" hideLabel />
+                      {c.id}
+                    </span>
+                  ))}
+              </div>
+            ) : (
+              <p className="muted pad">나머지 {list.filter((c) => !showsCard(c, now)).length}곳 정상</p>
+            ))}
           {[...list]
             .filter((c) => showsCard(c, now))
             .sort((a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status] || a.id.localeCompare(b.id))
@@ -285,9 +298,10 @@ function Machines({ checks }: { checks: Check[] }) {
   );
 }
 
-/** A check that is not up (or has an action in flight): status, detail, its actions and the last action's result. */
+/** A check that is not up (or has an action in flight): what broke, whether chat still works, and what to do next. Raw kind/detail stays in the developer view. */
 function CheckCard({ c }: { c: Check }) {
   const { conn, notify } = useApp();
+  const [dev] = useDevView();
   const [busy, act] = useBusy(notify);
   const actions = c.actions ?? [];
   const last = c.lastAction;
@@ -302,16 +316,18 @@ function CheckCard({ c }: { c: Check }) {
     <div className={`card check check-${c.status}`}>
       <div className="card-head">
         <StatusDot tone={CHECK_TONE[c.status]} label={CHECK_LABEL[c.status]} />
-        <strong>{c.id}</strong>
-        <span className="muted">{c.kind}</span>
+        <strong>{checkName(c)}</strong>
+        {dev && <span className="muted">{c.kind}</span>}
         <span className="muted right" title={`마지막 확인 ${new Date(c.checkedAt).toLocaleString()}`}>
           {timeAgo(c.since) === "방금" ? "방금 전부터" : `${timeAgo(c.since)}부터`}
         </span>
       </div>
-      <div className="check-detail">{c.detail}</div>
+      <p className="result-note">{checkImpact(c)}</p>
+      <p className="result-note muted">{checkHint(c)}</p>
+      {dev && <div className="check-detail">{c.detail}</div>}
       {actions.length > 0 && c.status !== "up" && (
         <>
-          <div className="actions-row" role="group" aria-label={`${c.id} 조치`}>
+          <div className="actions-row" role="group" aria-label={`${checkName(c)} 조치`}>
             {actions.map((a) => (
               <button key={a.id} disabled={busy || !conn || busyRun(last)} onClick={() => run(a)}>
                 {a.label}
@@ -329,18 +345,20 @@ function CheckCard({ c }: { c: Check }) {
           </details>
         </>
       )}
-      {last && <LastAction run={last} />}
+      {last && <LastAction run={last} dev={dev} />}
     </div>
   );
 }
 
-function LastAction({ run }: { run: ActionRun }) {
+function LastAction({ run, dev }: { run: ActionRun; dev: boolean }) {
   const [tone, label] = RUN_STATUS[run.state] ?? ["none", run.state];
   const when = run.finishedAt ?? run.requestedAt;
-  const facts = [
-    run.exitCode !== undefined && !run.timedOut ? `종료 코드 ${run.exitCode}` : null,
-    run.recheck ? `다시 확인: ${CHECK_LABEL[run.recheck.status] ?? run.recheck.status}` : null,
-  ].filter(Boolean);
+  const facts = dev
+    ? [
+        run.exitCode !== undefined && !run.timedOut ? `종료 코드 ${run.exitCode}` : null,
+        run.recheck ? `다시 확인: ${CHECK_LABEL[run.recheck.status] ?? run.recheck.status}` : null,
+      ].filter(Boolean)
+    : [];
   return (
     <>
       <p className="result-note">
@@ -355,7 +373,7 @@ function LastAction({ run }: { run: ActionRun }) {
           </a>
         </p>
       )}
-      {run.output && (
+      {dev && run.output && (
         <details className="fold">
           <summary>출력</summary>
           <p className="brief check-detail">{run.output}</p>
