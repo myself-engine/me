@@ -11,13 +11,12 @@
 ## 실행
 
 ```sh
-bun install
-bun start            # = bun kernel/src/main.ts me.config.json
+bun bin/me.ts
 ```
 
-브라우저에서 http://127.0.0.1:7420 을 연다.
+그냥 실행하면 끝이다. 꺼져 있으면 Herdr pane에서 커널을 띄우고, 켜져 있으면 가만히 둔다. 처음 한 번은 로그인 에이전트를 깔고(되돌리려면 `me autostart uninstall`) `~/.local/bin/me`를 연결한다. 마지막에 로컬 주소(테일넷 serve가 켜져 있으면 폰 주소도)를 보여 주고 브라우저를 연다(`--no-open`으로 생략).
 
-**커널은 에이전트가 없는 Herdr pane에서 실행한다.** brgr는 위임할 때 워커 pane을 이 pane 옆에 연다. 에이전트가 실행 중인 pane에서 띄우면 위임이 실패한다.
+**커널은 에이전트가 없는 Herdr pane에서 실행한다.** brgr는 위임할 때 워커 pane을 이 pane 옆에 연다. 에이전트가 실행 중인 pane에서 띄우면 위임이 실패한다. `me help`를 치면 모든 명령을 한국어로 보여 준다.
 
 ### 로그인할 때 자동으로 띄우기
 

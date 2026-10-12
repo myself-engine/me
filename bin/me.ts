@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-// me CLI.
+// me CLI. Full help lives in tools/up/up.ts (helpText); `me help` prints it.
+//   me                        bring me up, print the URLs, open the browser
 //   me start [config]                      run the kernel
 //   me adapt mcp [--yes] <name> -- <command...>    attach an MCP server through the generic bridge
 //   me adapt cli [--yes] <name> <commands.json>     expose CLI commands through the generic CLI bridge
@@ -13,6 +14,8 @@
 //   me doctor [--json]                     tool versions, symlinks, plugin conformance
 //   me release [--patch] [--dry-run] [--skip-e2e]   checks, tag, restart the running me, refresh remote copies
 //   me autostart install|uninstall|run [--config me.config.json]   start me in a Herdr pane at login
+//   me install                             link ~/.local/bin/me so a bare `me` works
+//   me help (-h, --help)                   this help, grouped in plain Korean
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -20,6 +23,32 @@ const root = join(dirname(import.meta.path), "..");
 const [cmd, ...rest] = process.argv.slice(2);
 
 switch (cmd) {
+  case undefined:
+  case "up": {
+    // `me` with no arguments (or flags only, e.g. `me --no-open`): bring me up.
+    const args = cmd === undefined ? rest : [cmd, ...rest];
+    const noOpen = args.includes("--no-open");
+    const at = args.indexOf("--config");
+    const config = at >= 0 ? (args[at + 1] ?? "me.config.json") : "me.config.json";
+    const { up } = await import("../tools/up/up.ts");
+    await up({ root, config, noOpen });
+    break;
+  }
+  case "help":
+  case "-h":
+  case "--help": {
+    const { helpText } = await import("../tools/up/up.ts");
+    console.log(helpText());
+    break;
+  }
+  case "install": {
+    const { ensureBinLink } = await import("../tools/up/up.ts");
+    const r = ensureBinLink(root);
+    if (!r.changed) console.log(`이미 연결되어 있어요 (${r.display})`);
+    else if (r.onPath) console.log(`✓ me를 PATH에 연결했어요 (${r.display})`);
+    else console.log(`✓ ${r.display}를 만들었는데 ~/.local/bin이 PATH에 없어요. 셸 설정에 export PATH="$HOME/.local/bin:$PATH"를 추가하세요.`);
+    break;
+  }
   case "start":
     process.argv = [process.argv[0]!, process.argv[1]!, ...rest];
     await import("../kernel/src/main.ts");
@@ -266,6 +295,20 @@ switch (cmd) {
     process.exit(report.ok ? 0 : 1);
   }
   default:
-    console.error("usage: me start [config] | me adapt mcp [--yes] <name> -- <command...> | me adapt cli [--yes] <name> <commands.json> | me doctor [--json]");
-    process.exit(cmd ? 1 : 0);
+    if (cmd.startsWith("-")) {
+      // Flags without a command (e.g. `me --no-open`) mean "just bring me up".
+      const args = [cmd, ...rest];
+      const noOpen = args.includes("--no-open");
+      const at = args.indexOf("--config");
+      const config = at >= 0 ? (args[at + 1] ?? "me.config.json") : "me.config.json";
+      const { up } = await import("../tools/up/up.ts");
+      await up({ root, config, noOpen });
+      break;
+    }
+    {
+      const { helpText } = await import("../tools/up/up.ts");
+      console.error(`모르는 명령이에요: ${cmd}`);
+      console.error(helpText());
+    }
+    process.exit(1);
 }
