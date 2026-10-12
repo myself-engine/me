@@ -2,9 +2,10 @@
 import { useMemo, useState } from "react";
 import { useApp } from "./context.ts";
 import { ApprovalCard } from "./approvals.tsx";
+import { effortLabel } from "./head.tsx";
 import { Review, REVIEWABLE } from "./review.tsx";
 import { chatHref, go, taskHref } from "./routes.ts";
-import { Empty, Header, Markdown, Section, StatusDot, elapsed, repoName, shortPath, stateLabel, toolName, useNow } from "./shared.tsx";
+import { Empty, Header, Markdown, Section, StatusDot, elapsed, repoName, stateLabel, toolName, useNow } from "./shared.tsx";
 import { isDelegationApproval, taskTitle, toneOf, workItems, type Tone, type WorkItem } from "./state.ts";
 
 const BUCKETS: { tone: Tone; label: string }[] = [
@@ -168,28 +169,12 @@ function TaskDetail({ taskId, project }: { taskId: string; project: string | nul
       <div className="pane-scroll detail-body">
         <div className="task-head">
           <StatusDot tone={tone} label={stateLabel(task.state)} />
-          <dl className="facts">
-            <div>
-              <dt>하네스</dt>
-              <dd>{toolName(task.harness)}</dd>
-            </div>
-            <div>
-              <dt>프로젝트</dt>
-              <dd title={task.project}>{shortPath(task.project)}</dd>
-            </div>
-            <div>
-              <dt>시작</dt>
-              <dd title={new Date(task.createdAt).toLocaleString()}>
-                {new Date(task.createdAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-              </dd>
-            </div>
-            <div>
-              <dt>걸린 시간</dt>
-              <dd>{elapsed(task.createdAt, RUNNING.has(task.state) ? null : task.updatedAt, now)}</dd>
-            </div>
-          </dl>
+          <span className="muted">
+            {[toolName(task.harness), task.model, task.effort && effortLabel(task.effort)].filter(Boolean).join(" · ")} ·{" "}
+            {elapsed(task.createdAt, RUNNING.has(task.state) ? null : task.updatedAt, now)}
+          </span>
           {message && (
-            <a className="link" href={chatHref(message.threadId)}>
+            <a className="link right" href={chatHref(message.threadId)}>
               대화 보기 ›
             </a>
           )}
@@ -197,15 +182,36 @@ function TaskDetail({ taskId, project }: { taskId: string; project: string | nul
 
         {task.error && <div className="card error">⚠️ {task.error}</div>}
 
-        <details className="fold">
-          <summary>지시 내용{criterion ? " · 완료 기준" : ""}</summary>
-          <p className="brief">{task.objective}</p>
-          {criterion && <p className="brief">완료 기준: {criterion}</p>}
-        </details>
-
-        {task.resultText ? <WorkerReport text={task.resultText} /> : RUNNING.has(task.state) && <p className="muted">워커가 아직 보고하지 않았어요.</p>}
+        {/* Result first: what the tool reported, then the changes and the decision; the request and facts are folded below. */}
+        {task.resultText ? <WorkerReport text={task.resultText} /> : RUNNING.has(task.state) && <p className="muted">실행 도구가 아직 결과를 보내지 않았어요.</p>}
 
         {REVIEWABLE.has(task.state) && <Review task={task} />}
+
+        <details className="fold">
+          <summary>요청 내용{criterion ? " · 완료 조건" : ""} · 정보</summary>
+          <p className="brief">{task.objective}</p>
+          {criterion && <p className="brief">완료 조건: {criterion}</p>}
+          <dl className="facts">
+            <div>
+              <dt>실행 도구</dt>
+              <dd>{toolName(task.harness)}</dd>
+            </div>
+            {task.model && (
+              <div>
+                <dt>모델</dt>
+                <dd>{task.model}</dd>
+              </div>
+            )}
+            <div>
+              <dt>프로젝트</dt>
+              <dd className="path">{task.project}</dd>
+            </div>
+            <div>
+              <dt>시작</dt>
+              <dd>{new Date(task.createdAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</dd>
+            </div>
+          </dl>
+        </details>
       </div>
     </div>
   );
@@ -219,7 +225,7 @@ function WorkerReport({ text }: { text: string }) {
   const [open, setOpen] = useState(!long);
   return (
     <section className="report">
-      <h2 className="section-label">워커 보고</h2>
+      <h2 className="section-label">작업 결과</h2>
       <div className={open ? "" : "clamp"}>
         <Markdown text={prose} />
       </div>

@@ -5,16 +5,31 @@ import { ApprovalCard } from "./approvals.tsx";
 import { useApp } from "./context.ts";
 import { diffTotals, parseDiffStat } from "./diff.ts";
 import { chatHref, NEW_THREAD, taskHref } from "./routes.ts";
-import { Empty, Header, Markdown, StatusDot, elapsed, repoName, shortPath, stateLabel, timeAgo, toolName, useBusy, useNow } from "./shared.tsx";
+import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, timeAgo, toolName, useBusy, useNow } from "./shared.tsx";
 import { effortLabel, HeadChip } from "./head.tsx";
 import { TONE_LABEL, taskTitle, threadTone, toneOf, turnOp, type HeadChoice, type Live } from "./state.ts";
 
 export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
+  const { s, conn } = useApp();
   const open = props.threadId !== null;
   return (
     <div className={`split${open ? " has-detail" : ""}`}>
       <div className="list-pane">
         <ThreadList activeId={props.threadId} />
+        {/* Phones show only the list here; this composer starts a new conversation without a "+ 새 대화" tap first. Hidden on wider screens. */}
+        {!open && (
+          <div className="list-composer">
+            <Composer
+              thread={null}
+              onSend={props.onSend}
+              disabled={!conn}
+              project={props.project}
+              projects={[...new Set([props.project, ...s.config.projects].filter(Boolean))]}
+              lockProject={false}
+              setProject={props.setProject}
+            />
+          </div>
+        )}
       </div>
       <div className="detail-pane">
         <Conversation {...props} threadId={props.threadId === NEW_THREAD ? null : props.threadId} />
@@ -389,15 +404,14 @@ function Composer(props: {
   return (
     <div className="composer">
       <div className="composer-top">
+        {/* No registered project: nothing to choose, the head uses its default project. */}
         {props.lockProject ? (
-          <span className="project" title={props.project}>
-            📁 {shortPath(props.project)}
-          </span>
-        ) : (
+          props.project && <span className="project">📁 {repoName(props.project)}</span>
+        ) : props.projects.length === 0 ? null : (
           <select value={props.project} onChange={(e) => props.setProject(e.target.value)} aria-label="프로젝트">
             {props.projects.map((p) => (
               <option key={p} value={p}>
-                📁 {shortPath(p)}
+                📁 {repoName(p)}
               </option>
             ))}
           </select>

@@ -45,6 +45,9 @@ export interface SendParams extends Choice {
 }
 
 const now = () => new Date().toISOString();
+const TOOL_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", omp: "OMP", gjc: "GJC", opencode: "OpenCode" };
+/** The tool's product name for people: local.claude-code → Claude Code. */
+const toolName = (harness: string) => TOOL_NAMES[harness.replace(/^local\./, "")] ?? harness.replace(/^local\./, "");
 const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 export function createHead(ports: HeadPorts, config: HeadConfig) {
@@ -209,7 +212,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
 
     turn.phase?.("awaiting-approval", "승인 대기");
     const decisionPromise = approvals.request({
-      summary: `${s.harness}에 위임: ${s.summaryEn}`,
+      summary: `${toolName(s.harness)}에 맡기기: ${s.summaryEn}`,
       risk: s.needsCodeChange ? "medium" : "low",
       payload: {
         harness: s.harness,
@@ -230,7 +233,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     if (decision.decision !== "approve") {
       reply.delegation.state = "rejected";
       reply.delegation.note = decision.note;
-      reply.text = decision.note === "expired" ? "승인 대기 시간이 지나서 위임하지 않았어요." : "위임하지 않았어요.";
+      reply.text = decision.note === "expired" ? "승인 대기 시간이 지나서 맡기지 않았어요." : "맡기지 않았어요.";
       turn.update({ kind: "delegation", state: "rejected", note: decision.note ?? null });
       return;
     }
@@ -254,7 +257,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     });
     reply.taskId = task.taskId;
     reply.delegation.state = "delegated";
-    reply.text = `${harness}에 맡겼어요. 결과가 나오면 여기서 확인할 수 있어요.`;
+    reply.text = `${toolName(harness)}에 맡겼어요. 결과가 나오면 여기서 확인할 수 있어요.`;
     turn.update({ kind: "delegation", state: "delegated", taskId: task.taskId, harness, ...(amended ? { suggestedHarness: s.harness } : {}) });
   }
 

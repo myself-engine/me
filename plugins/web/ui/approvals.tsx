@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Approval } from "./api.ts";
 import { useApp } from "./context.ts";
 import { chatHref } from "./routes.ts";
-import { StatusDot, repoName, shortPath, toolName, useBusy } from "./shared.tsx";
+import { StatusDot, repoName, toolName, useBusy } from "./shared.tsx";
 import { effortLabel } from "./head.tsx";
 import { isDelegationApproval } from "./state.ts";
 
@@ -53,7 +53,7 @@ export function ApprovalCard({ a, inline = false }: { a: Approval; inline?: bool
           <summary>요청 내용{p.criterion ? " · 완료 조건" : ""}</summary>
           {p.brief && <p className="brief">{p.brief}</p>}
           {p.criterion && <p className="brief">완료 조건: {p.criterion}</p>}
-          {p.project && <p className="brief muted">{shortPath(p.project)}</p>}
+          {p.project && <p className="brief muted path">{p.project}</p>}
         </details>
       )}
       {harnesses.length > 0 && harness && (

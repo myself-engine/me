@@ -1073,9 +1073,9 @@ a.dline:hover {
 
 .task-head {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
   padding: 16px 0 12px;
 }
 .facts {
@@ -1896,4 +1896,25 @@ a.dline:hover {
 }
 .fold.advanced > summary {
   margin-bottom: 8px;
+}
+.review-note {
+  font-size: 12px;
+}
+.facts .path {
+  overflow-wrap: anywhere;
+}
+.brief.path { overflow-wrap: anywhere; }
+
+/* Phone conversation list: a composer at the bottom starts a new conversation (only where the list is the whole screen). */
+.list-composer {
+  display: none;
+}
+@media (max-width: 760px) {
+  .split:not(.has-detail) .list-pane {
+    display: flex;
+    flex-direction: column;
+  }
+  .split:not(.has-detail) .list-composer {
+    display: block;
+  }
 }

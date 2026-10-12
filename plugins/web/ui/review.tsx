@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Task } from "./api.ts";
 import { useApp } from "./context.ts";
 import { parseDiffStat, splitDiff, type DiffStat, type FileDiff } from "./diff.ts";
-import { Markdown, shortPath, useBusy } from "./shared.tsx";
+import { Markdown, repoName, useBusy } from "./shared.tsx";
 
 /** States where the worker produced a diff worth looking at. */
 export const REVIEWABLE = new Set(["sealed", "accepted", "applied", "apply-failed"]);
@@ -38,10 +38,10 @@ export function Review({ task }: { task: Task }) {
 
   return (
     <section className="review">
-      <h2 className="section-label">리뷰</h2>
+      <h2 className="section-label">변경사항</h2>
       {task.commitSha && (
-        <div className="outcome" title={task.project}>
-          ✓ 커밋 <code>{task.commitSha.slice(0, 8)}</code> · {shortPath(task.project)}
+        <div className="outcome">
+          ✓ 커밋 <code>{task.commitSha.slice(0, 8)}</code> · 📁 {repoName(task.project)}
         </div>
       )}
       {loadError && <div className="card error">⚠️ {loadError}</div>}
@@ -87,20 +87,30 @@ export function Review({ task }: { task: Task }) {
           {task.state === "sealed" ? (
             <>
               <button className="primary" disabled={busy} onClick={() => act(() => conn.request("task.accept", { taskId: task.taskId }))}>
-                수락 (적용+커밋)
+                변경사항 적용
               </button>
               <button className="quiet" disabled={busy} onClick={() => act(() => conn.request("task.reject", { taskId: task.taskId }))}>
                 거절
               </button>
+              <span className="muted review-note">적용하면 프로젝트에 넣고 커밋해요</span>
             </>
           ) : (
             <span className="muted">
-              {task.commitSha ? `커밋 ${task.commitSha.slice(0, 8)}에 적용됐어요` : task.state === "apply-failed" ? "적용하지 못했어요 · 위 오류를 확인하세요" : "이미 결정된 작업이에요"}
+              {task.commitSha
+                ? `커밋 ${task.commitSha.slice(0, 8)}에 적용했어요`
+                : task.state === "accepted"
+                  ? "변경사항을 적용하고 커밋하는 중이에요"
+                  : task.state === "apply-failed"
+                    ? "적용하지 못했어요 · 위 오류를 확인하세요"
+                    : "이미 결정된 작업이에요"}
             </span>
           )}
-          <button className="quiet right" disabled={busy} onClick={() => act(load)}>
-            diff 새로고침
-          </button>
+          {/* Only while the diff can still change or be retried; an applied diff is final. */}
+          {task.state !== "applied" && (
+            <button className="quiet right" disabled={busy} onClick={() => act(load)}>
+              다시 불러오기
+            </button>
+          )}
         </div>
       )}
     </section>
