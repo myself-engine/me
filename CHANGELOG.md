@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## v0.3.0 (2026-10-12)
+
+- web: three tabs (대화·작업·상태), one badge, user-words titles (7f5de8c)
+- web: check the head picker in shots and a11y; fix dialog role (65bba7f)
+- chat: pick the head's model and effort, and the worker's at approval (9ffca01)
+- web: finish delegations inside the thread (exemplar) (5f97e2d)
+
 ## v0.2.0 (2026-10-10)
 
 - ui: highlight.js core, contrast tokens, keyboard and focus, tablet and touch layout (#5, #6, #7) (1614992)
