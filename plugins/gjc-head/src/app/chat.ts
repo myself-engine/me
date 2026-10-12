@@ -3,7 +3,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { chooseHarness, decideRoute, fastPathJudgement, isFastPath } from "../domain/routing.ts";
-import { brainChoice, checkHeadChoice, checkWorkerChoice, EFFORTS, WORKER_EFFORTS } from "../domain/settings.ts";
+import { brainChoice, checkHeadChoice, checkWorkerChoice, EFFORTS, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
 import type { DelegationState, Effort, HeadSettings, Message, Thread } from "../domain/types.ts";
 import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, ModelCatalog, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
 
@@ -56,11 +56,15 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   /** Stored settings, with the config's favourites and worker choices always current. */
   async function settings(): Promise<HeadSettings> {
     const saved = await store.getSettings();
+    const userFavorites = [...new Set(saved?.userFavorites ?? [])];
+    const configFavorites = [...new Set(config.favoriteModels)];
     return {
       id: "default",
       model: saved?.model ?? config.model,
       effort: saved?.effort ?? config.effort,
-      favorites: [...new Set([...config.favoriteModels, config.model])],
+      favorites: [...new Set([...configFavorites, ...userFavorites, config.model])],
+      userFavorites,
+      configFavorites,
       efforts: EFFORTS,
       workers: { models: config.workerModels, efforts: WORKER_EFFORTS },
     };
@@ -72,6 +76,21 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     const s = await settings();
     if (p.model) s.model = p.model.trim();
     if (p.effort) s.effort = p.effort;
+    await store.saveSettings(s);
+    return s;
+  }
+
+  /** Stars or unstars a model in the picker's favourites. Config favourites stay: un starring one is a no-op. */
+  async function setFavorite(p: { model?: unknown; on?: unknown }) {
+    if (typeof p.model !== "string" || !p.model.trim()) throw new Error("모델 이름이 비어 있어요");
+    const model = p.model.trim();
+    if (isAnthropic(model)) throw new Error(`${model}은 대화 엔진(GJC)에서 쓸 수 없어요. Claude 모델은 Claude Code에서만 써요`);
+    const s = await settings();
+    const next = new Set(s.userFavorites);
+    if (p.on === false) next.delete(model);
+    else next.add(model);
+    s.userFavorites = [...next];
+    s.favorites = [...new Set([...s.configFavorites, ...s.userFavorites, config.model])];
     await store.saveSettings(s);
     return s;
   }
@@ -281,6 +300,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     onTaskEvent,
     settings,
     setDefaults,
+    setFavorite,
     setThread,
     models: () => models.list(),
   };

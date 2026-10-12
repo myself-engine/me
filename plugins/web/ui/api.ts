@@ -23,6 +23,10 @@ export interface HeadSettings {
   model: string;
   effort: Effort;
   favorites: string[];
+  /** Models the user starred in the picker. Absent on settings stored before favourites existed. */
+  userFavorites?: string[];
+  /** Favourites from config; the picker never removes them. Absent on old stored settings. */
+  configFavorites?: string[];
   efforts: Effort[];
   workers: { models: Record<string, string[]>; efforts: string[] };
 }

@@ -28,14 +28,27 @@ export function HeadChip({ thread, draft, setDraft }: { thread: Thread | null; d
   if (!cur) return null;
   return (
     <>
-      <button className="head-chip" onClick={() => setOpen(true)} aria-haspopup="dialog">
-        <span className="sr">대화 엔진: </span>
-        {shortModel(cur.model)} · {effortLabel(cur.effort)}
-        {cur.isDefault && <span className="muted"> (기본값)</span>}
-        <span className="chip-chev" aria-hidden="true">
-          ▾
-        </span>
-      </button>
+      {cur.isDefault ? (
+        <button
+          className="head-chip default"
+          onClick={() => setOpen(true)}
+          aria-haspopup="dialog"
+          aria-label={`대화 엔진: ${cur.model}, ${effortLabel(cur.effort)} (기본값)`}
+        >
+          <span aria-hidden="true">⚙ 기본</span>
+          <span className="chip-chev" aria-hidden="true">
+            ▾
+          </span>
+        </button>
+      ) : (
+        <button className="head-chip" onClick={() => setOpen(true)} aria-haspopup="dialog">
+          <span className="sr">대화 엔진: </span>
+          {shortModel(cur.model)} · {effortLabel(cur.effort)}
+          <span className="chip-chev" aria-hidden="true">
+            ▾
+          </span>
+        </button>
+      )}
       {open && <HeadSheet thread={thread} draft={draft} setDraft={setDraft} onClose={() => setOpen(false)} />}
     </>
   );
@@ -99,6 +112,12 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
       else await conn!.request("head.thread.set", { threadId: thread.id, model: null, effort: null });
       onClose();
     });
+  const favSet = useMemo(() => new Set(d.favorites), [d.favorites.join(",")]);
+  const configFavSet = useMemo(() => new Set(d.configFavorites ?? []), [(d.configFavorites ?? []).join(",")]);
+  const toggleFav = (id: string, on: boolean) =>
+    act(async () => {
+      await conn!.request("head.favorites.set", { model: id, on });
+    });
 
   return (
     <>
@@ -135,20 +154,35 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
             {listError && <p className="muted">모델 목록을 못 불러왔어요: {listError}</p>}
             {query && models && shown.length === 0 && <p className="muted">"{query}"에 맞는 모델이 없어요.</p>}
             <ul className="pick-list">
-              {shown.map((m) => (
-                <li key={m.id}>
-                  <label className={`pick-row${m.id === model ? " on" : ""}`}>
-                    <input type="radio" name="model" value={m.id} checked={m.id === model} onChange={() => setModel(m.id)} />
-                    <span className="pick-name">{shortModel(m.id)}</span>
-                    <span className="pick-sub muted">
-                      {m.id.slice(0, m.id.lastIndexOf("/"))}
-                      {m.id === d.model ? " · 기본값" : ""}
-                    </span>
-                  </label>
-                </li>
-              ))}
+              {shown.map((m) => {
+                const fav = favSet.has(m.id);
+                const locked = fav && configFavSet.has(m.id);
+                return (
+                  <li key={m.id} className={`pick-row${m.id === model ? " on" : ""}`}>
+                    <label className="pick-label">
+                      <input type="radio" name="model" value={m.id} checked={m.id === model} onChange={() => setModel(m.id)} />
+                      <span className="pick-name">{shortModel(m.id)}</span>
+                      <span className="pick-sub muted">
+                        {m.id.slice(0, m.id.lastIndexOf("/"))}
+                        {m.id === d.model ? " · 기본값" : ""}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      className={`fav${fav ? " on" : ""}`}
+                      aria-pressed={fav}
+                      aria-label={locked ? `설정 파일 즐겨찾기라 뺄 수 없어요: ${m.id}` : fav ? `즐겨찾기에서 빼기: ${m.id}` : `즐겨찾기에 넣기: ${m.id}`}
+                      title={locked ? "설정 파일에 적힌 즐겨찾기라 여기서 뺄 수 없어요" : undefined}
+                      disabled={busy || !conn || locked}
+                      onClick={() => toggleFav(m.id, !fav)}
+                    >
+                      <span aria-hidden="true">{fav ? "★" : "☆"}</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
-            <p className="pick-note muted">Claude 모델은 대화 엔진에서 쓸 수 없어 목록에 없어요.</p>
+            <p className="pick-note muted">★로 자주 쓰는 모델을 즐겨찾기에 고정해요. 설정 파일에 적힌 즐겨찾기는 여기서 뺄 수 없어요. Claude 모델은 대화 엔진에서 쓸 수 없어 목록에 없어요.</p>
           </fieldset>
         </div>
         <footer className="drawer-foot actions-row">

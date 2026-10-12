@@ -56,7 +56,7 @@ export function ApprovalCard({ a, inline = false }: { a: Approval; inline?: bool
           {p.project && <p className="brief muted path">{p.project}</p>}
         </details>
       )}
-      {harnesses.length > 0 && harness && (
+      {!delegation && harnesses.length > 0 && harness && (
         <label className="field">
           <span>실행 도구</span>
           <select
@@ -78,41 +78,65 @@ export function ApprovalCard({ a, inline = false }: { a: Approval; inline?: bool
         </label>
       )}
       {delegation && harness && (
-        <div className="field-row">
-          <label className="field">
-            <span>모델</span>
-            {typing ? (
-              <input className="field-input" value={model} disabled={busy} placeholder="모델 이름" aria-label="모델 이름" onChange={(e) => setModel(e.target.value)} />
-            ) : (
-              <select
-                value={model}
-                disabled={busy}
-                onChange={(e) => (e.target.value === "\u0000" ? (setTyping(true), setModel("")) : setModel(e.target.value))}
-              >
-                <option value="">기본값</option>
-                {favorites.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-                <option value={"\u0000"}>직접 입력…</option>
-              </select>
-            )}
-          </label>
-          {workers.efforts.length > 0 && (
+        <details className="fold">
+          <summary>다르게 맡기기</summary>
+          {harnesses.length > 0 && (
             <label className="field">
-              <span>effort</span>
-              <select value={effort} disabled={busy} onChange={(e) => setEffort(e.target.value)}>
-                <option value="">기본값</option>
-                {workers.efforts.map((e) => (
-                  <option key={e} value={e}>
-                    {effortLabel(e)}
+              <span>실행 도구</span>
+              <select
+                value={harness}
+                disabled={busy}
+                onChange={(e) => {
+                  setPicked(e.target.value);
+                  setModel("");
+                  setTyping(false);
+                }}
+              >
+                {(harnesses.includes(harness) ? harnesses : [harness, ...harnesses]).map((h) => (
+                  <option key={h} value={h}>
+                    {toolName(h)}
+                    {h === suggested ? " (추천)" : ""}
                   </option>
                 ))}
               </select>
             </label>
           )}
-        </div>
+          <div className="field-row">
+            <label className="field">
+              <span>모델</span>
+              {typing ? (
+                <input className="field-input" value={model} disabled={busy} placeholder="모델 이름" aria-label="모델 이름" onChange={(e) => setModel(e.target.value)} />
+              ) : (
+                <select
+                  value={model}
+                  disabled={busy}
+                  onChange={(e) => (e.target.value === "\u0000" ? (setTyping(true), setModel("")) : setModel(e.target.value))}
+                >
+                  <option value="">기본값</option>
+                  {favorites.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                  <option value={"\u0000"}>직접 입력…</option>
+                </select>
+              )}
+            </label>
+            {workers.efforts.length > 0 && (
+              <label className="field">
+                <span>effort</span>
+                <select value={effort} disabled={busy} onChange={(e) => setEffort(e.target.value)}>
+                  <option value="">기본값</option>
+                  {workers.efforts.map((e) => (
+                    <option key={e} value={e}>
+                      {effortLabel(e)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        </details>
       )}
       {delegation && harness && <p className="result-note muted">승인하면 이 프로젝트에서 {toolName(harness)} 작업이 시작돼요.</p>}
       <div className="actions-row">

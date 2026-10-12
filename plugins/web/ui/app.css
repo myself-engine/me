@@ -1821,6 +1821,37 @@ a.dline:hover {
   padding: 8px 12px;
   min-width: 0;
 }
+.pick-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+}
+/* Favourite star: the glyph (★/☆) carries the state, not the colour. Always 44px. */
+.fav {
+  flex: none;
+  width: var(--tap);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fav.on {
+  color: var(--muted);
+}
+.fav:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
 .pick-name {
   font-size: 14px;
   overflow-wrap: anywhere;

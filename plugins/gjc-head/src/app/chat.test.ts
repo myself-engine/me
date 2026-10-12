@@ -199,7 +199,28 @@ describe("model and effort", () => {
       model: "openai-codex/gpt-5.6-luna",
       effort: "off",
       favorites: ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-5.6-luna"],
+      userFavorites: [],
+      configFavorites: ["openai-codex/gpt-6.1-sol"],
       workers: { models: { "local.codex": ["gpt-6.1-sol"] } },
     });
+  });
+
+  test("starring a model persists it into favourites and un starring removes it", async () => {
+    const { head } = setup();
+    await head.setFavorite({ model: "workbuddy/kimi-k3", on: true });
+    expect((await head.settings()).favorites).toEqual(["openai-codex/gpt-6.1-sol", "workbuddy/kimi-k3", "openai-codex/gpt-5.6-luna"]);
+    await head.setFavorite({ model: "workbuddy/kimi-k3", on: false });
+    expect(await head.settings()).toMatchObject({
+      favorites: ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-5.6-luna"],
+      userFavorites: [],
+    });
+  });
+
+  test("un starring a config favourite keeps it, and Anthropic models are refused", async () => {
+    const { head } = setup();
+    await head.setFavorite({ model: "openai-codex/gpt-6.1-sol", on: false });
+    expect((await head.settings()).favorites).toContain("openai-codex/gpt-6.1-sol");
+    await expect(head.setFavorite({ model: "anthropic/claude-opus-5-5", on: true })).rejects.toThrow("Claude Code에서만");
+    await expect(head.setFavorite({ model: "  ", on: true })).rejects.toThrow("비어");
   });
 });

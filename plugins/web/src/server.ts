@@ -156,6 +156,8 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       return plugin.invoke("gjc-head", "chat.settings.set", { model: m.model, effort: m.effort });
     case "head.thread.set":
       return plugin.invoke("gjc-head", "chat.thread.set", { threadId: m.threadId, model: m.model, effort: m.effort });
+    case "head.favorites.set":
+      return plugin.invoke("gjc-head", "chat.favorites.set", { model: m.model, on: m.on });
     case "approval.decide":
       return plugin.approval.decide(m.approvalId, { decision: m.decision, note: m.note, ...(m.amend ? { amend: m.amend } : {}) });
     case "task.diff":

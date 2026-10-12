@@ -28,8 +28,12 @@ export interface HeadSettings {
   /** Defaults for new threads and threads without their own choice. */
   model: string;
   effort: Effort;
-  /** Models shown first in pickers (config). */
+  /** Models shown first in pickers: config favourites plus the user's own, plus the default model. */
   favorites: string[];
+  /** Models the user starred in the picker; persisted here. */
+  userFavorites: string[];
+  /** Favourites from config; the picker offers them but never removes them. */
+  configFavorites: string[];
   efforts: Effort[];
   /** Choices offered when approving a delegation (config): favourite models per harness and effort levels. */
   workers: { models: Record<string, string[]>; efforts: string[] };

@@ -40,6 +40,7 @@ const plugin = definePlugin({
     "chat.send": (p, ctx) => head.send(p, { update: ctx.update, phase: ctx.phase, signal: ctx.signal, traceId: ctx.traceId }),
     "chat.settings": () => head.settings(),
     "chat.settings.set": (p) => head.setDefaults(p),
+    "chat.favorites.set": (p) => head.setFavorite(p),
     "chat.thread.set": (p) => head.setThread(p),
     "chat.models": () => head.models(),
   },
