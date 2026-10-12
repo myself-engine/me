@@ -7,6 +7,9 @@ export type { TraceNode, TraceResult };
 
 export type Effort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
+/** Access mode per the head contract: read / project-write / full. The backend lands separately; the UI codes against the contract. */
+export type Access = "read" | "project" | "full";
+
 export interface Thread {
   id: string;
   title: string;
@@ -14,6 +17,8 @@ export interface Thread {
   /** The head's model and effort for this thread; unset follows HeadSettings. */
   model?: string | null;
   effort?: Effort | null;
+  /** Access mode for this thread; unset follows HeadSettings. */
+  access?: Access | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -22,6 +27,8 @@ export interface Thread {
 export interface HeadSettings {
   model: string;
   effort: Effort;
+  /** Default access mode for new threads. Absent on settings stored before access modes existed. */
+  access?: Access;
   favorites: string[];
   /** Models the user starred in the picker. Absent on settings stored before favourites existed. */
   userFavorites?: string[];

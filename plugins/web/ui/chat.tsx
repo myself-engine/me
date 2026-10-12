@@ -1,80 +1,163 @@
-// 대화: thread list, the conversation itself, and the composer.
+// 대화: sidebar (conversation list) + the conversation itself + the composer.
+// Phones show one screen at a time (<=760px CSS); desktop shows the split.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Message, Task, Thread } from "./api.ts";
-import { ApprovalCard } from "./approvals.tsx";
+import { AccessControl } from "./access.tsx";
+import { ApprovalBar, ApprovalCard } from "./approvals.tsx";
 import { useApp } from "./context.ts";
+import { useDevView } from "./dev.ts";
 import { diffTotals, parseDiffStat } from "./diff.ts";
-import { chatHref, NEW_THREAD, taskHref } from "./routes.ts";
-import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, timeAgo, toolName, useBusy, useNow } from "./shared.tsx";
+import { chatHref, settingsHref, taskHref } from "./routes.ts";
+import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, timeAgo, toolName, useBusy, useFocusTrap, useNow } from "./shared.tsx";
 import { effortLabel, HeadChip } from "./head.tsx";
 import { ProjectButton } from "./picker.tsx";
-import { TONE_LABEL, activeAlerts, taskTitle, threadTone, toneOf, turnOp, type HeadChoice, type Live } from "./state.ts";
+import { TONE_LABEL, activeAlerts, taskTitle, threadApproval, threadTone, threadWait, toneOf, turnOp, unlinkedApprovals, type HeadChoice, type Live } from "./state.ts";
 
 export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
-  const { s, conn } = useApp();
+  const { s } = useApp();
   const open = props.threadId !== null;
+  const inbox = unlinkedApprovals(s);
+  const [inboxOpen, setInboxOpen] = useState(false);
   return (
-    <div className={`split${open ? " has-detail" : ""}`}>
+    <div className={`split convo${open ? " has-detail" : ""}`}>
       <div className="list-pane">
-        <ThreadList activeId={props.threadId} />
-        {/* Phones show only the list here; this composer starts a new conversation without a "+ 새 대화" tap first. Hidden on wider screens. */}
-        {!open && (
-          <div className="list-composer">
-            <Composer
-              thread={null}
-              onSend={props.onSend}
-              disabled={!conn}
-              project={props.project}
-              projects={[...new Set([props.project, ...s.config.projects].filter(Boolean))]}
-              lockProject={false}
-              setProject={props.setProject}
-            />
-          </div>
-        )}
+        <Sidebar activeId={props.threadId} inboxCount={inbox.length} onInbox={() => setInboxOpen(true)} />
       </div>
       <div className="detail-pane">
-        <Conversation {...props} threadId={props.threadId === NEW_THREAD ? null : props.threadId} />
+        <Conversation {...props} threadId={props.threadId} />
       </div>
+      {inboxOpen && <InboxSheet onClose={() => setInboxOpen(false)} />}
     </div>
   );
 }
 
-function ThreadList({ activeId }: { activeId: string | null }) {
+/** Left sidebar: new conversation button, conversation list (grouped by project when more than one), then the system status. */
+function Sidebar({ activeId, inboxCount, onInbox }: { activeId: string | null; inboxCount: number; onInbox: () => void }) {
   const { s } = useApp();
   const threads = useMemo(() => Object.values(s.threads).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [s.threads]);
+  const projects = useMemo(() => [...new Set(threads.map((t) => t.project).filter(Boolean))], [threads]);
+  const grouped = projects.length > 1;
   return (
     <>
-      <Header title="대화">
-        <a className="btn quiet" href={chatHref(NEW_THREAD)}>
+      <div className="side-top">
+        <h1 className="side-title">대화</h1>
+        <a className="btn primary new-chat" href={chatHref(null)}>
           + 새 대화
         </a>
-      </Header>
+      </div>
       <div className="pane-scroll">
+        {inboxCount > 0 && (
+          <button type="button" className="inbox-row" onClick={onInbox} aria-haspopup="dialog">
+            <StatusDot tone="needs" label={`확인할 일 ${inboxCount}`} />
+            <span className="chev" aria-hidden="true">
+              ›
+            </span>
+          </button>
+        )}
         {threads.length === 0 ? (
           <Empty title="아직 대화가 없어요">새 대화를 시작하면 여기에 쌓여요.</Empty>
+        ) : grouped ? (
+          projects.map((p) => (
+            <section key={p} aria-label={repoName(p)}>
+              <h2 className="section-label side-group">📁 {repoName(p)}</h2>
+              <ul className="rows">
+                {threads
+                  .filter((t) => t.project === p)
+                  .map((t) => (
+                    <ThreadRow key={t.id} t={t} active={t.id === activeId} />
+                  ))}
+              </ul>
+            </section>
+          ))
         ) : (
           <ul className="rows">
-            {threads.map((t) => {
-              const tone = threadTone(s, t.id);
-              return (
-                <li key={t.id}>
-                  <a className={`row-link${t.id === activeId ? " on" : ""}`} href={chatHref(t.id)}>
-                    <StatusDot tone={tone} hideLabel />
-                    <span className="row-main">
-                      <span className="row-title">{t.title || "(제목 없음)"}</span>
-                      <span className="row-sub">
-                        {tone !== "none" && <span className={`tone-text tone-${tone}`}>{TONE_LABEL[tone]} · </span>}
-                        {repoName(t.project)} · {timeAgo(t.updatedAt)}
-                      </span>
-                    </span>
-                  </a>
-                </li>
-              );
-            })}
+            {threads.map((t) => (
+              <ThreadRow key={t.id} t={t} active={t.id === activeId} />
+            ))}
           </ul>
         )}
       </div>
+      <SystemStatus />
     </>
+  );
+}
+
+function ThreadRow({ t, active }: { t: Thread; active: boolean }) {
+  const { s } = useApp();
+  const tone = threadTone(s, t.id);
+  const wait = threadWait(s, t.id);
+  return (
+    <li>
+      <a className={`row-link${active ? " on" : ""}`} href={chatHref(t.id)}>
+        <StatusDot tone={tone} hideLabel />
+        <span className="row-main">
+          <span className="row-title">{t.title || "(제목 없음)"}</span>
+          <span className="row-sub">
+            {/* Waiting work takes the time's place; the project shows in the group header or the conversation bar. */}
+            {wait ? (
+              <span className={`tone-text tone-${wait === "실패" ? "failed" : wait === "답변" ? "running" : "needs"}`}>{wait}</span>
+            ) : (
+              <>
+                {tone !== "none" && <span className={`tone-text tone-${tone}`}>{TONE_LABEL[tone]} · </span>}
+                {timeAgo(t.updatedAt)}
+              </>
+            )}
+          </span>
+        </span>
+      </a>
+    </li>
+  );
+}
+
+/** Approvals not tied to a conversation, as one sheet listing their existing cards. */
+function InboxSheet({ onClose }: { onClose: () => void }) {
+  const { s } = useApp();
+  const items = unlinkedApprovals(s);
+  const panel = useFocusTrap(onClose);
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="drawer inbox-sheet" role="dialog" aria-modal="true" aria-labelledby="inbox-title" ref={panel}>
+        <header className="drawer-head">
+          <div>
+            <h2 className="drawer-title" id="inbox-title">
+              확인할 일 {items.length}
+            </h2>
+            <div className="drawer-sub">대화에 묶이지 않은 요청이에요</div>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="닫기">
+            ✕
+          </button>
+        </header>
+        <div className="drawer-body stack">
+          {items.map((a) => (
+            <ApprovalCard key={a.approvalId} a={a} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** One line at the sidebar bottom: "모두 정상" or the first problem, opening settings. */
+function SystemStatus() {
+  const { s } = useApp();
+  const alerts = activeAlerts(s);
+  const down = Object.values(s.checks).filter((c) => c.status === "down").length + Object.values(s.plugins).filter((p) => p.state === "stopped" || p.state === "quarantined").length;
+  const problem = alerts[0]?.title ?? (down > 0 ? `점검이 필요해요 · ${down}곳` : null);
+  return (
+    <a className="sys-status" href={settingsHref()} aria-label={problem ? `시스템 상태: ${problem}. 설정에서 보기` : "시스템 상태: 모두 정상. 설정에서 보기"}>
+      {problem ? (
+        <>
+          <StatusDot tone="failed" label={problem} />
+        </>
+      ) : (
+        <StatusDot tone="done" label="모두 정상" />
+      )}
+      <span className="chev" aria-hidden="true">
+        ›
+      </span>
+    </a>
   );
 }
 
@@ -87,7 +170,7 @@ function AlertBanner() {
   return (
     <div className="conn-banner alert-banner" role="status">
       <StatusDot tone="needs" label="막힘" /> {first.title} · {first.fix}
-      {alerts.length > 1 && ` (+${alerts.length - 1})`} <a className="link" href="#/ops">상태에서 보기 ›</a>
+      {alerts.length > 1 && ` (+${alerts.length - 1})`} <a className="link" href={settingsHref()}>설정에서 보기 ›</a>
     </div>
   );
 }
@@ -95,22 +178,25 @@ function AlertBanner() {
 function Conversation(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
   const { s, conn } = useApp();
   const { threadId } = props;
+  const realId = threadId === "new" ? null : threadId;
   const messages = useMemo(
-    () => Object.values(s.messages).filter((m) => m.threadId === threadId).sort((a, b) => a.ts.localeCompare(b.ts) || (a.role === b.role ? 0 : a.role === "user" ? -1 : 1)),
-    [s.messages, threadId],
+    () => Object.values(s.messages).filter((m) => m.threadId === realId).sort((a, b) => a.ts.localeCompare(b.ts) || (a.role === b.role ? 0 : a.role === "user" ? -1 : 1)),
+    [s.messages, realId],
   );
   const endRef = useRef<HTMLDivElement>(null);
   const last = messages.at(-1);
   const lastLen = messages.length + (last ? (s.live[last.traceId]?.text.length ?? 0) + last.text.length : 0);
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [lastLen, threadId]);
-  const thread = threadId ? s.threads[threadId] : null;
+  }, [lastLen, realId]);
+  const thread = realId ? s.threads[realId] : null;
   const projects = [...new Set([props.project, ...s.config.projects].filter(Boolean))];
+  const pending = threadApproval(s, realId);
+  const empty = messages.length === 0;
 
   return (
     <div className="chat">
-      <Header title={thread?.title || "새 대화"} back={chatHref()}>
+      <Header title={thread?.title || "새 대화"} back={realId ? chatHref() : undefined}>
         {thread && (
           <span className="bar-meta" title={thread.project}>
             {repoName(thread.project)}
@@ -118,11 +204,10 @@ function Conversation(props: { threadId: string | null; project: string; setProj
         )}
       </Header>
       <AlertBanner />
-      <div className="scroll">
-        {messages.length === 0 && (
+      <div className="scroll" tabIndex={0} aria-label="대화 내용">
+        {empty && (
           <div className="hello">
-            <h2>무엇을 할까요?</h2>
-            <p>간단한 건 바로 답하고, 작업이 필요하면 맞는 실행 도구에 맡길게요.</p>
+            <h2>무엇을 도와드릴까요?</h2>
           </div>
         )}
         {messages.map((m) =>
@@ -136,23 +221,28 @@ function Conversation(props: { threadId: string | null; project: string; setProj
         )}
         <div ref={endRef} />
       </div>
-      <TurnAnnouncer key={threadId ?? NEW_THREAD} m={messages.filter((x) => x.role === "assistant").at(-1)} />
-      <Composer
-        key={threadId ?? NEW_THREAD}
-        thread={thread}
-        onSend={props.onSend}
-        disabled={!conn}
-        project={thread?.project ?? props.project}
-        projects={projects}
-        lockProject={!!thread}
-        setProject={props.setProject}
-      />
+      <TurnAnnouncer key={realId ?? "new"} m={messages.filter((x) => x.role === "assistant").at(-1)} />
+      {pending ? (
+        <ApprovalBar a={pending} />
+      ) : (
+        <Composer
+          key={realId ?? "new"}
+          thread={thread}
+          onSend={props.onSend}
+          disabled={!conn}
+          project={thread?.project ?? props.project}
+          projects={projects}
+          lockProject={!!thread || messages.length > 0}
+          setProject={props.setProject}
+        />
+      )}
     </div>
   );
 }
 
 function AssistantMessage({ m }: { m: Message }) {
   const { s, openTrace } = useApp();
+  const [dev] = useDevView();
   const live = s.live[m.traceId];
   const text = m.text || live?.text || "";
   const working = m.status === "pending" || m.status === "streaming";
@@ -169,20 +259,24 @@ function AssistantMessage({ m }: { m: Message }) {
   return (
     <div className="msg assistant">
       <div className="meta-row">
-        {/* While the turn is still working without a verdict, the phase line below opens the timeline instead. */}
-        {(m.judgement || !working) && (
-          <button className={`chip route ${m.route ?? ""}`} onClick={() => openTrace(m.traceId, m.id)} title={routeTitle}>
-            {routeLabel}
-            {m.judgement?.source === "fallback" && (
-              <>
-                <span className="warn-dot" aria-hidden="true" />
-                <span className="sr">대체 판정</span>
-              </>
-            )}
-            <span className="chip-chev" aria-hidden="true">
-              ›
-            </span>
-          </button>
+        {/* Developer view only: the timeline behind a turn. */}
+        {dev ? (
+          (m.judgement || !working) && (
+            <button className={`chip route ${m.route ?? ""}`} onClick={() => openTrace(m.traceId, m.id)} title={routeTitle}>
+              {routeLabel}
+              {m.judgement?.source === "fallback" && (
+                <>
+                  <span className="warn-dot" aria-hidden="true" />
+                  <span className="sr">대체 판정</span>
+                </>
+              )}
+              <span className="chip-chev" aria-hidden="true">
+                ›
+              </span>
+            </button>
+          )
+        ) : (
+          m.judgement && <span className="chip route plain">{routeLabel}</span>
         )}
         {m.understood && m.understood.replaced.length > 0 && (
           <span className="chip soft" title={m.understood.replaced.map((r) => `${r.from}→${r.to}`).join(", ")}>
@@ -191,14 +285,14 @@ function AssistantMessage({ m }: { m: Message }) {
         )}
       </div>
 
-      {live?.thoughts && (
+      {dev && live?.thoughts && (
         <button className="link" onClick={() => setShowThoughts((v) => !v)}>
           {showThoughts ? "생각 접기" : "생각 보기"}
         </button>
       )}
-      {showThoughts && live?.thoughts && <pre className="thoughts">{live.thoughts}</pre>}
+      {dev && showThoughts && live?.thoughts && <pre className="thoughts">{live.thoughts}</pre>}
 
-      {live && live.tools.length > 0 && (
+      {dev && live && live.tools.length > 0 && (
         <ul className="tools">
           {live.tools.map((t) => (
             <li key={t.id} className={`tool${t.ok === false ? " bad" : ""}`}>
@@ -264,10 +358,18 @@ function TurnAnnouncer({ m }: { m?: Message }) {
 /** What the turn is doing right now (kernel phase label), never a blank wait. */
 function PhaseLine({ m, live }: { m: Message; live?: Live }) {
   const { s, openTrace } = useApp();
+  const [dev] = useDevView();
   const now = useNow();
   const op = turnOp(s, m.traceId);
   const label = phaseLabel(s, m, live);
   const since = new Date(op?.startedAt ?? m.ts).getTime();
+  if (!dev)
+    return (
+      <p className="phase plain">
+        <span>{label}</span>
+        {now - since > 3000 && <span className="phase-time">{elapsed(op?.startedAt ?? m.ts, null, now)}</span>}
+      </p>
+    );
   return (
     <button className="phase" onClick={() => openTrace(m.traceId, m.id)} title="타임라인 보기">
       <span className="dots" aria-hidden="true">
@@ -283,9 +385,10 @@ function PhaseLine({ m, live }: { m: Message; live?: Live }) {
 
 const SETTLED = new Set(["sealed", "applied", "accepted", "apply-failed", "failed", "rejected", "cancelled"]);
 
-/** A delegation as one line: [status][harness][goal][state][elapsed] → task detail. */
+/** A delegation as one line: [status][goal][state][wait] → task panel. Worker tool labels show in 개발자 보기 only. */
 function DelegationLine({ m }: { m: Message }) {
   const { s } = useApp();
+  const [dev] = useDevView();
   const now = useNow(5000);
   const d = m.delegation!;
   const task = m.taskId ? s.tasks[m.taskId] : undefined;
@@ -296,13 +399,20 @@ function DelegationLine({ m }: { m: Message }) {
   const body = (
     <>
       <StatusDot tone={tone} hideLabel />
-      <span className="dl-harness">{workerLabel(task ?? d)}</span>
+      {dev && <span className="dl-harness">{workerLabel(task ?? d)}</span>}
       <span className="dl-goal">{taskTitle(s, { messageId: m.id, objective: task?.objective ?? d.brief })}</span>
       <span className={`dl-state tone-text tone-${tone}`}>{stateLabel(state)}</span>
       <span className="dl-time">{time}</span>
     </>
   );
-  if (approval && !task) return <ApprovalCard a={approval} inline />;
+  // The open conversation decides in the composer bar below; the line stays as context.
+  if (approval && !task)
+    return (
+      <div className="dline">
+        {body}
+        <span className="muted"> · 아래에서 시작해 주세요</span>
+      </div>
+    );
   if (task && RESULT_STATES.has(task.state)) return <ResultCard task={task} time={time} />;
   if (task)
     return (
@@ -313,19 +423,10 @@ function DelegationLine({ m }: { m: Message }) {
         </span>
       </a>
     );
-  return (
-    <div className="dline">
-      {body}
-      {approval && (
-        <a className="btn primary small" href="#/approvals">
-          승인하기
-        </a>
-      )}
-    </div>
-  );
+  return <div className="dline">{body}</div>;
 }
 
-/** "Codex · gpt-6.1-sol · 높음": the tool, plus the model and effort when they were picked at approval. */
+/** "Codex · gpt-6.1-sol · 높음": the tool, plus the model and effort when they were picked at approval. Developer view only. */
 const workerLabel = (w: { harness: string; model?: string; effort?: string }) =>
   [toolName(w.harness), w.model, w.effort && effortLabel(w.effort)].filter(Boolean).join(" · ");
 
@@ -342,6 +443,7 @@ const firstLine = (text: string | null) => {
 /** A delegation whose result arrived: what changed, and apply or reject without leaving the thread. */
 function ResultCard({ task, time }: { task: Task; time: string }) {
   const { conn, notify } = useApp();
+  const [dev] = useDevView();
   const [busy, act] = useBusy(notify);
   const [totals, setTotals] = useState<ReturnType<typeof diffTotals> | null>(null);
   useEffect(() => {
@@ -361,7 +463,7 @@ function ResultCard({ task, time }: { task: Task; time: string }) {
     <article className="card result inline" aria-label="작업 결과">
       <div className="card-head">
         <StatusDot tone={tone} label={stateLabel(task.state)} />
-        <span className="muted">{workerLabel(task)}</span>
+        {dev && <span className="muted">{workerLabel(task)}</span>}
         <span className="muted right">{time}</span>
       </div>
       {summary && <p className="approval-summary">{summary}</p>}
@@ -373,9 +475,11 @@ function ResultCard({ task, time }: { task: Task; time: string }) {
         ) : (
           <span className="muted">변경 내용을 불러오는 중…</span>
         )}
-        <a className="link right" href={taskHref(task.taskId)}>
-          전체 diff ›
-        </a>
+        {dev && (
+          <a className="link right" href={taskHref(task.taskId)}>
+            전체 diff ›
+          </a>
+        )}
       </p>
       {task.state === "sealed" && (
         <>
@@ -391,9 +495,7 @@ function ResultCard({ task, time }: { task: Task; time: string }) {
         </>
       )}
       {task.state === "accepted" && <p className="result-note muted">변경사항을 적용하고 커밋하는 중이에요.</p>}
-      {task.state === "applied" && (
-        <p className="result-note">{task.commitSha ? <>커밋 <code>{task.commitSha.slice(0, 8)}</code>에 적용했어요.</> : "적용했어요."}</p>
-      )}
+      {task.state === "applied" && <p className="result-note">{task.commitSha ? <>커밋 <code>{task.commitSha.slice(0, 8)}</code>에 적용했어요.</> : "적용했어요."}</p>}
       {task.state === "apply-failed" && <div className="card error">⚠️ {task.error ?? "적용하지 못했어요. 전체 diff에서 확인해 주세요."}</div>}
     </article>
   );
@@ -409,7 +511,7 @@ function Composer(props: {
   setProject: (p: string) => void;
 }) {
   const [text, setText] = useState("");
-  // A new thread's model and effort, sent with its first message; an existing thread stores its own.
+  // A new thread's model, effort and access, sent with its first message; an existing thread stores its own.
   const [draft, setDraft] = useState<HeadChoice>({});
   const submit = () => {
     const t = text.trim();
@@ -426,11 +528,12 @@ function Composer(props: {
           <ProjectButton project={props.project} projects={props.projects} setProject={props.setProject} />
         )}
         <HeadChip thread={props.thread} draft={draft} setDraft={setDraft} />
+        <AccessControl thread={props.thread} draft={draft} setDraft={setDraft} />
       </div>
       <div className="composer-box">
         <textarea
           value={text}
-          placeholder="메시지 (Enter 전송, Shift+Enter 줄바꿈)"
+          placeholder="무엇을 할까요?"
           aria-label="메시지"
           rows={1}
           onChange={(e) => setText(e.target.value)}

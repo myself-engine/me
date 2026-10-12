@@ -1,7 +1,9 @@
 // The head's model and effort: a chip above the composer and the sheet it opens.
+// Picking a model sets it for this conversation and as the default for new ones in one action.
 import { useEffect, useMemo, useState } from "react";
 import type { Connection, Effort, ModelInfo, Thread } from "./api.ts";
 import { useApp } from "./context.ts";
+import { useDevView } from "./dev.ts";
 import { useBusy, useFocusTrap } from "./shared.tsx";
 import { headChoice, shortModel, type HeadChoice } from "./state.ts";
 
@@ -33,16 +35,17 @@ export function HeadChip({ thread, draft, setDraft }: { thread: Thread | null; d
           className="head-chip default"
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
-          aria-label={`대화 엔진: ${cur.model}, ${effortLabel(cur.effort)} (기본값)`}
+          aria-label={`모델: ${cur.model}, ${effortLabel(cur.effort)} (기본값)`}
         >
-          <span aria-hidden="true">⚙ 기본</span>
+          <span aria-hidden="true">⚙ 모델</span>
           <span className="chip-chev" aria-hidden="true">
             ▾
           </span>
         </button>
       ) : (
-        <button className="head-chip" onClick={() => setOpen(true)} aria-haspopup="dialog">
-          <span className="sr">대화 엔진: </span>
+        <button className="head-chip" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label="모델 바꾸기">
+          <span className="sr">모델: </span>
+          <span aria-hidden="true">⚙ </span>
           {shortModel(cur.model)} · {effortLabel(cur.effort)}
           <span className="chip-chev" aria-hidden="true">
             ▾
@@ -56,6 +59,7 @@ export function HeadChip({ thread, draft, setDraft }: { thread: Thread | null; d
 
 function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null; draft: HeadChoice; setDraft: (c: HeadChoice) => void; onClose: () => void }) {
   const { s, conn, notify } = useApp();
+  const [dev] = useDevView();
   const d = s.headSettings!;
   const cur = headChoice(thread ?? draft, d)!;
   const [model, setModel] = useState(cur.model);
@@ -92,24 +96,18 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
     return found.map((m) => ({ id: m.id, favorite: top.includes(m.id) }));
   }, [model, d.model, d.favorites.join(","), query, models]);
 
-  const applyHere = () =>
+  // One action: this conversation keeps the pick, and new conversations start with it.
+  const choose = () =>
     act(async () => {
-      if (!thread) setDraft({ model, effort });
-      else await conn!.request("head.thread.set", { threadId: thread.id, model, effort });
-      onClose();
-    });
-  const saveDefault = () =>
-    act(async () => {
-      await conn!.request("head.defaults.set", { model, effort });
-      // This thread now follows the defaults instead of keeping its own copy.
-      if (!thread) setDraft({});
-      else if (thread.model || thread.effort) await conn!.request("head.thread.set", { threadId: thread.id, model: null, effort: null });
-      onClose();
-    });
-  const followDefault = () =>
-    act(async () => {
-      if (!thread) setDraft({});
-      else await conn!.request("head.thread.set", { threadId: thread.id, model: null, effort: null });
+      if (!conn) return;
+      if (!thread) {
+        setDraft({ ...draft, model, effort });
+        await conn.request("head.defaults.set", { model, effort });
+        notify("새 대화의 기본 모델로 저장했어요");
+      } else {
+        await conn.request("head.thread.set", { threadId: thread.id, model, effort });
+        await conn.request("head.defaults.set", { model, effort });
+      }
       onClose();
     });
   const favSet = useMemo(() => new Set(d.favorites), [d.favorites.join(",")]);
@@ -126,27 +124,29 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
         <header className="drawer-head">
           <div>
             <h2 className="drawer-title" id="head-title">
-              대화 엔진
+              모델 고르기
             </h2>
-            <div className="drawer-sub">{thread ? "이 대화의 답변에 쓸 모델과 생각 정도" : "새 대화에 쓸 모델과 생각 정도"}</div>
+            <div className="drawer-sub">이 대화와 새 대화의 기본값에 함께 적용돼요</div>
           </div>
           <button className="icon-btn" onClick={onClose} aria-label="닫기">
             ✕
           </button>
         </header>
         <div className="drawer-body stack">
-          <fieldset className="pick">
-            <legend>생각 정도 (effort)</legend>
-            <div className="seg">
-              {efforts.map((e) => (
-                <label key={e} className={`seg-item${e === effort ? " on" : ""}`}>
-                  <input type="radio" name="effort" value={e} checked={e === effort} onChange={() => setEffort(e)} />
-                  {effortLabel(e)}
-                </label>
-              ))}
-            </div>
-            <p className="pick-note muted">높을수록 답이 깊어지지만 느려져요. 짧은 대화는 "생각 안 함"이 빨라요.</p>
-          </fieldset>
+          {dev && (
+            <fieldset className="pick">
+              <legend>생각 정도 (effort)</legend>
+              <div className="seg">
+                {efforts.map((e) => (
+                  <label key={e} className={`seg-item${e === effort ? " on" : ""}`}>
+                    <input type="radio" name="effort" value={e} checked={e === effort} onChange={() => setEffort(e)} />
+                    {effortLabel(e)}
+                  </label>
+                ))}
+              </div>
+              <p className="pick-note muted">높을수록 답이 깊어지지만 느려져요. 짧은 대화는 "생각 안 함"이 빨라요.</p>
+            </fieldset>
+          )}
           <fieldset className="pick">
             <legend>모델</legend>
             <input type="search" className="pick-search" placeholder="모델 검색 (예: sol, kimi, gemini)" aria-label="모델 검색" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -167,36 +167,33 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
                         {m.id === d.model ? " · 기본값" : ""}
                       </span>
                     </label>
-                    <button
-                      type="button"
-                      className={`fav${fav ? " on" : ""}`}
-                      aria-pressed={fav}
-                      aria-label={locked ? `설정 파일 즐겨찾기라 뺄 수 없어요: ${m.id}` : fav ? `즐겨찾기에서 빼기: ${m.id}` : `즐겨찾기에 넣기: ${m.id}`}
-                      title={locked ? "설정 파일에 적힌 즐겨찾기라 여기서 뺄 수 없어요" : undefined}
-                      disabled={busy || !conn || locked}
-                      onClick={() => toggleFav(m.id, !fav)}
-                    >
-                      <span aria-hidden="true">{fav ? "★" : "☆"}</span>
-                    </button>
+                    {dev && (
+                      <button
+                        type="button"
+                        className={`fav${fav ? " on" : ""}`}
+                        aria-pressed={fav}
+                        aria-label={locked ? `설정 파일 즐겨찾기라 뺄 수 없어요: ${m.id}` : fav ? `즐겨찾기에서 빼기: ${m.id}` : `즐겨찾기에 넣기: ${m.id}`}
+                        title={locked ? "설정 파일에 적힌 즐겨찾기라 여기서 뺄 수 없어요" : undefined}
+                        disabled={busy || !conn || locked}
+                        onClick={() => toggleFav(m.id, !fav)}
+                      >
+                        <span aria-hidden="true">{fav ? "★" : "☆"}</span>
+                      </button>
+                    )}
                   </li>
                 );
               })}
             </ul>
-            <p className="pick-note muted">★로 자주 쓰는 모델을 즐겨찾기에 고정해요. 설정 파일에 적힌 즐겨찾기는 여기서 뺄 수 없어요. Claude 모델은 대화 엔진에서 쓸 수 없어 목록에 없어요.</p>
+            {dev && <p className="pick-note muted">★로 자주 쓰는 모델을 즐겨찾기에 고정해요. 설정 파일에 적힌 즐겨찾기는 여기서 뺄 수 없어요. Claude 모델은 대화 엔진에서 쓸 수 없어 목록에 없어요.</p>}
           </fieldset>
         </div>
         <footer className="drawer-foot actions-row">
-          <button className="primary" disabled={busy || !conn} onClick={applyHere}>
-            {thread ? "이 대화에 적용" : "새 대화에 적용"}
+          <button className="primary" disabled={busy || !conn} onClick={choose}>
+            선택
           </button>
-          <button className="quiet" disabled={busy || !conn} onClick={saveDefault}>
-            기본값으로 저장
+          <button className="quiet" onClick={onClose}>
+            취소
           </button>
-          {!cur.isDefault && (
-            <button className="link" disabled={busy || !conn} onClick={followDefault}>
-              기본값 따르기
-            </button>
-          )}
         </footer>
       </div>
     </>

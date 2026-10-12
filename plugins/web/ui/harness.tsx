@@ -174,7 +174,7 @@ function LiveHarness() {
   if (loadError)
     return (
       <div className="page">
-        <Header title="실행 도구 설정" back="#/ops" />
+        <Header title="실행 도구 설정" back="#/settings" />
         <div className="pane-scroll page-body">
           <div className="card error">⚠️ {loadError}</div>
         </div>
@@ -183,7 +183,7 @@ function LiveHarness() {
   if (!source || !files)
     return (
       <div className="page">
-        <Header title="실행 도구 설정" back="#/ops" />
+        <Header title="실행 도구 설정" back="#/settings" />
         <div className="pane-scroll page-body">
           <p className="muted">불러오는 중…</p>
         </div>
@@ -193,7 +193,7 @@ function LiveHarness() {
   const showImport = !source.exists && !skipImport;
   return (
     <div className="page">
-      <Header title="실행 도구 설정" back="#/ops" />
+      <Header title="실행 도구 설정" back="#/settings" />
       <div className="pane-scroll page-body">
         {showImport && (
           <ImportCard
@@ -770,7 +770,7 @@ const size = (d: DiffView) => d.added.length + d.changed.length + d.removed.leng
 const keys = (o: Record<string, unknown>) => Object.keys(o);
 
 // ---------------------------------------------------------------------------
-// Shot fakes: canned data, no backend calls. Reached at #/ops/harness?fake=….
+// Shot fakes: canned data, no backend calls. Reached at #/settings/harness?fake=….
 // ---------------------------------------------------------------------------
 
 const FAKE_SOURCE: SourceView = {
@@ -807,7 +807,7 @@ function FakeHarness({ kind }: { kind: string }) {
   if (kind === "diff")
     return (
       <div className="page">
-        <Header title="실행 도구 설정" back="#/ops" />
+        <Header title="실행 도구 설정" back="#/settings" />
         <div className="pane-scroll page-body">
           <HarnessCards files={FAKE_FILES} />
           <McpList source={FAKE_SOURCE} busy={false} onToggle={noop} onEdit={noop} onAdd={noop} />
@@ -819,7 +819,7 @@ function FakeHarness({ kind }: { kind: string }) {
   if (kind === "list")
     return (
       <div className="page">
-        <Header title="실행 도구 설정" back="#/ops" />
+        <Header title="실행 도구 설정" back="#/settings" />
         <div className="pane-scroll page-body">
           <HarnessCards files={FAKE_FILES} />
           <McpList source={FAKE_SOURCE} busy={false} onToggle={noop} onEdit={noop} onAdd={noop} />
@@ -833,7 +833,7 @@ function FakeHarness({ kind }: { kind: string }) {
     );
   return (
     <div className="page">
-      <Header title="실행 도구 설정" back="#/ops" />
+      <Header title="실행 도구 설정" back="#/settings" />
       <div className="pane-scroll page-body">
         <ImportCard dry={FAKE_DRY} resolutions={{ pencil: "claude-code:user" }} busy={false} onPick={noop} onLoad={noop} onSkip={noop} onAdopt={noop} />
         <HarnessCards files={HARNESS_IDS.map((h) => ({ target: `${h}:user`, path: `/fake/${h}`, exists: h === "claude-code", managed: [], unmanaged: [] }))} />

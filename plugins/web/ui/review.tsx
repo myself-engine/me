@@ -1,7 +1,9 @@
 // Review of a delegated task's result: per-file summary, per-file diff, and the accept/reject bar.
+// 개발자 보기가 꺼져 있으면 raw diff는 숨기고 +N −N 요약과 적용 버튼만 둔다.
 import { useCallback, useEffect, useState } from "react";
 import type { Task } from "./api.ts";
 import { useApp } from "./context.ts";
+import { useDevView } from "./dev.ts";
 import { parseDiffStat, splitDiff, type DiffStat, type FileDiff } from "./diff.ts";
 import { Markdown, repoName, useBusy } from "./shared.tsx";
 
@@ -10,6 +12,7 @@ export const REVIEWABLE = new Set(["sealed", "accepted", "applied", "apply-faile
 
 export function Review({ task }: { task: Task }) {
   const { conn, notify } = useApp();
+  const [dev] = useDevView();
   const [stat, setStat] = useState<DiffStat | null>(null);
   const [files, setFiles] = useState<FileDiff[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -51,11 +54,15 @@ export function Review({ task }: { task: Task }) {
         <div className="stat">
           <div className="stat-summary">{stat?.summary ?? `${statFiles.length}개 파일 변경`}</div>
           <ul className="stat-files">
-            {statFiles.map((f) => (
+{statFiles.map((f) => (
               <li key={f.path}>
-                <button className="link file-link" onClick={() => document.getElementById(fileAnchor(f.path))?.scrollIntoView({ block: "start" })}>
-                  {f.path}
-                </button>
+                {dev ? (
+                  <button className="link file-link" onClick={() => document.getElementById(fileAnchor(f.path))?.scrollIntoView({ block: "start" })}>
+                    {f.path}
+                  </button>
+                ) : (
+                  <span className="file-path">{f.path}</span>
+                )}
                 <span className="stat-num">
                   {f.changes === null ? (
                     "바이너리"
@@ -70,17 +77,18 @@ export function Review({ task }: { task: Task }) {
           </ul>
         </div>
       )}
-      {files?.map((f) => (
-        <details key={f.path || "diff"} className="file-diff" id={fileAnchor(f.path)} open={files.length <= 6}>
-          <summary>
-            <span className="file-path">{f.path || "diff"}</span>
-            <span className="stat-num">
-              <span className="plus">+{f.added}</span> <span className="minus">−{f.removed}</span>
-            </span>
-          </summary>
-          <Markdown text={"```diff\n" + f.text + "\n```"} />
-        </details>
-      ))}
+{dev &&
+        files?.map((f) => (
+          <details key={f.path || "diff"} className="file-diff" id={fileAnchor(f.path)} open={files.length <= 6}>
+            <summary>
+              <span className="file-path">{f.path || "diff"}</span>
+              <span className="stat-num">
+                <span className="plus">+{f.added}</span> <span className="minus">−{f.removed}</span>
+              </span>
+            </summary>
+            <Markdown text={"```diff\n" + f.text + "\n```"} />
+          </details>
+        ))}
 
       {conn && (
         <div className="review-bar">

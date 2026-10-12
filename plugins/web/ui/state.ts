@@ -1,5 +1,5 @@
 // Client state: one reducer fed by the bootstrap snapshot and the server's WebSocket pushes.
-import type { Approval, Bootstrap, Effort, HeadAlert, HeadSettings, Message, Op, OpsCheck, PluginInfo, ServerMsg, Task, Thread } from "./api.ts";
+import type { Access, Approval, Bootstrap, Effort, HeadAlert, HeadSettings, Message, Op, OpsCheck, PluginInfo, ServerMsg, Task, Thread } from "./api.ts";
 
 /** What has streamed in for one request (by traceId) before the message entity catches up. */
 export interface Live {
@@ -130,7 +130,13 @@ export const activeAlerts = (s: State): HeadAlert[] =>
 export interface HeadChoice {
   model?: string | null;
   effort?: Effort | null;
+  access?: Access | null;
 }
+
+/** The default access mode for new threads; older settings predate access modes. */
+export const DEFAULT_ACCESS: Access = "project";
+export const accessOf = (t: Thread | HeadChoice | null | undefined, d: HeadSettings | null): Access =>
+  (t?.access as Access | null | undefined) || d?.access || DEFAULT_ACCESS;
 
 /** The model and effort a thread (or a draft) will reply with, and whether that is the default. */
 export function headChoice(own: HeadChoice | null | undefined, d: HeadSettings | null): { model: string; effort: Effort; isDefault: boolean } | null {
@@ -271,6 +277,41 @@ export function threadTone(s: State, threadId: string): Tone {
 /** The op serving a chat turn, while it is still running: its phase label is what the user is waiting on. */
 export function turnOp(s: State, traceId: string): Op | undefined {
   return Object.values(s.ops).find((o) => o.traceId === traceId && o.callee === "gjc-head" && (o.state === "running" || o.state === "waiting"));
+}
+
+/** Sidebar waiting word for a thread: 승인 (approval) · 검토 (result to review) · 답변 (head answering) · 실패. Null when idle. */
+export function threadWait(s: State, threadId: string): "승인" | "검토" | "답변" | "실패" | null {
+  let review = false;
+  let answering = false;
+  let failed = false;
+  for (const m of Object.values(s.messages)) {
+    if (m.threadId !== threadId || m.role !== "assistant") continue;
+    if (Object.values(s.approvals).some((a) => a.payload?.messageId === m.id)) return "승인";
+    const task = m.taskId ? s.tasks[m.taskId] : undefined;
+    if (task && (task.state === "sealed" || task.state === "accepted" || task.state === "apply-failed")) review = true;
+    else if (task && task.state === "failed") failed = true;
+    else if (!task && (m.status === "pending" || m.status === "streaming")) answering = true;
+    else if (task && (task.state === "running" || task.state === "delegated")) answering = true;
+  }
+  if (review) return "검토";
+  if (answering) return "답변";
+  if (failed) return "실패";
+  if (threadTone(s, threadId) === "failed") return "실패";
+  return null;
+}
+
+/** Approvals not tied to a conversation (harness settings apply, ops actions): one sidebar entry opens them as a sheet. */
+export const unlinkedApprovals = (s: State): Approval[] =>
+  Object.values(s.approvals)
+    .filter((a) => !isDelegationApproval(a))
+    .sort((a, b) => String(a.approvalId).localeCompare(String(b.approvalId)));
+
+/** The pending delegation approval for one thread, oldest first. */
+export function threadApproval(s: State, threadId: string | null): Approval | undefined {
+  if (!threadId) return undefined;
+  return Object.values(s.approvals)
+    .filter((a) => isDelegationApproval(a) && s.messages[a.payload?.messageId]?.threadId === threadId)
+    .sort((a, b) => String(a.approvalId).localeCompare(String(b.approvalId)))[0];
 }
 
 export const activeOps = (s: State) =>

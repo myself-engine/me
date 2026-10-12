@@ -125,12 +125,16 @@ export type Screen = { name: string; hash: string; open?: string };
 export async function show(page: Page, url: string, s: Screen) {
   await page.open(url + s.hash, READY);
   if (!s.open) return;
+  // A fold opens in place: leave any open modal alone and click without dismissing first.
+  if (s.open.includes("summary")) {
+    await page.eval(`document.querySelector(${JSON.stringify(s.open)}).click()`);
+    return;
+  }
   // Same-hash navigation does not reload, so a dialog left open by the previous screen stays mounted.
   await page.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
   await page.until("!(document.querySelector('[role=dialog]')?.getBoundingClientRect().height > 0)");
   await page.eval(`document.querySelector(${JSON.stringify(s.open)}).click()`);
   // Visible, not merely in the DOM: a dialog inside a hidden pane would pass a presence check.
-  if (s.open.includes("summary")) return; // a fold opens in place
   await page.until("(document.querySelector('[role=dialog]')?.getBoundingClientRect().height ?? 0) > 0");
   await Bun.sleep(300); // the model list arrives over the socket
 }
@@ -141,15 +145,15 @@ export function screens(s: Seeded): Screen[] {
     { name: "chat-new", hash: "#/chat" },
     { name: "head-picker", hash: "#/chat/new", open: ".head-chip" },
     { name: "project-picker", hash: "#/chat/new", open: ".project-button" },
+    { name: "access-full", hash: "#/chat/new", open: ".access .access-btn:last-child" },
     ...(s.threadId ? [{ name: "chat-thread", hash: `#/chat/${encodeURIComponent(s.threadId)}` }] : []),
     ...(s.resultThreadId ? [{ name: "chat-result", hash: `#/chat/${encodeURIComponent(s.resultThreadId)}` }] : []),
-    { name: "tasks", hash: "#/tasks" },
-    ...(s.taskId ? [{ name: "task-detail", hash: `#/tasks/${encodeURIComponent(s.taskId)}` }] : []),
-    { name: "status", hash: "#/ops" },
-    { name: "status-advanced", hash: "#/ops", open: ".fold.advanced > summary" },
-    { name: "harness-empty", hash: "#/ops/harness?fake=empty" },
-    { name: "harness-list", hash: "#/ops/harness?fake=list" },
-    { name: "harness-diff", hash: "#/ops/harness?fake=diff" },
+    ...(s.taskId ? [{ name: "task-panel", hash: `#/task/${encodeURIComponent(s.taskId)}` }] : []),
+    { name: "settings", hash: "#/settings" },
+    { name: "settings-advanced", hash: "#/settings", open: ".fold.advanced > summary" },
+    { name: "harness-empty", hash: "#/settings/harness?fake=empty" },
+    { name: "harness-list", hash: "#/settings/harness?fake=list" },
+    { name: "harness-diff", hash: "#/settings/harness?fake=diff" },
   ];
 }
 

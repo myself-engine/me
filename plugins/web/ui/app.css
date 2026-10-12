@@ -2113,3 +2113,291 @@ a.dline:hover {
 .project-pick-row .pick-sub {
   flex: 1 1 0;
 }
+
+/* ------------------------------------------------- sidebar layout (no tabs) */
+
+/* The sidebar lives inside the split; the shell itself is one column. */
+.app.side {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.side-top {
+  flex: none;
+  padding: 12px 12px 8px;
+}
+
+.new-chat {
+  width: 100%;
+  min-height: var(--tap);
+}
+
+.inbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: calc(100% - 24px);
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--warn) 12%, var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.side-group {
+  margin: 12px 14px 4px;
+}
+
+.sys-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  min-height: var(--tap);
+}
+.sys-status .status {
+  min-width: 0;
+}
+.sys-status .slabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------- approval bar (replaces composer) */
+
+.approval-bar {
+  flex: none;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  padding: 12px max(20px, calc((100% - 760px) / 2)) calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.approval-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.approval-title {
+  font-size: 15px;
+}
+
+.fold-amend {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+/* ------------------------------------------------------- access control */
+
+.access {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  flex: 0 1 auto;
+}
+
+.access-btn {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.access-btn + .access-btn {
+  border-left: 1px solid var(--line);
+}
+
+.access-btn.on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.composer-top .access {
+  flex: 0 1 auto;
+}
+
+.confirm-sheet {
+  max-width: 420px;
+}
+
+.confirm-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  margin: 12px 0;
+  cursor: pointer;
+}
+
+.confirm-check input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+/* ------------------------------------------------------- task panel */
+
+.task-scrim {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.task-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 46%);
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.task-panel .detail {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------- settings modal */
+
+.settings-modal {
+  width: min(880px, calc(100% - 48px));
+  max-height: calc(100% - 48px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  top: 24px;
+  bottom: 24px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  z-index: 30;
+}
+
+.settings-nav {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-tab {
+  background: none;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.settings-tab.on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.check-row input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.proj-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 8px 4px 0;
+}
+
+/* Plain (non-developer) variants: information without the timeline behind it. */
+.chip.route.plain {
+  cursor: default;
+}
+
+.phase.plain {
+  color: var(--muted);
+  font-size: 13px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+}
+
+/* Touch: every new control clears 44px. */
+@media (pointer: coarse) {
+  .inbox-row,
+  .sys-status,
+  .access-btn,
+  .settings-tab,
+  .approval-bar .actions-row button,
+  .check-row,
+  .icon-btn {
+    min-height: var(--tap);
+  }
+  .icon-btn {
+    width: var(--tap);
+    height: var(--tap);
+  }
+  .access-btn {
+    padding: 8px 12px;
+  }
+}
+
+/* Phones: the task panel and the settings modal go full screen. */
+@media (max-width: 760px) {
+  .app.side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .task-panel {
+    width: 100%;
+    border-left: none;
+  }
+  .settings-modal {
+    width: 100%;
+    max-height: none;
+    left: 0;
+    transform: none;
+    top: 0;
+    bottom: 0;
+    border: none;
+    border-radius: 0;
+  }
+}
+
+.side-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}

@@ -78,13 +78,31 @@ function ProjectAddButton({ paths }: { paths: string[] }) {
   );
 }
 
-/** Removes a repository added here; config-file projects have no button. */
+/** Removes a repository added here; config-file projects have no button. Confirming says what is kept. */
 function ProjectRemove({ path }: { path: string }) {
   const { conn, notify } = useApp();
   const [busy, act] = useBusy(notify);
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming)
+    return (
+      <button type="button" className="quiet proj-remove" aria-label={`${repoName(path)} 삭제`} disabled={busy || !conn} onClick={() => setConfirming(true)}>
+        삭제
+      </button>
+    );
   return (
-    <button type="button" className="quiet proj-remove" aria-label={`${repoName(path)} 삭제`} disabled={busy || !conn} onClick={() => act(() => conn!.request("projects.remove", { path }))}>
-      삭제
-    </button>
+    <span className="proj-confirm" role="group" aria-label={`${repoName(path)} 삭제 확인`}>
+      <span className="muted">목록에서만 빠져요. 저장소와 대화는 그대로 남아요.</span>
+      <button
+        type="button"
+        className="quiet proj-remove"
+        disabled={busy || !conn}
+        onClick={() => act(() => conn!.request("projects.remove", { path }).then(() => setConfirming(false)))}
+      >
+        빼기
+      </button>
+      <button type="button" className="quiet" onClick={() => setConfirming(false)}>
+        취소
+      </button>
+    </span>
   );
 }

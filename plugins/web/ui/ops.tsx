@@ -57,6 +57,35 @@ const machineOf = (source?: string) => (!source || source === "ops" ? "이 Mac" 
 export function downCount(checks: OpsCheck[], plugins: PluginInfo[]) {
   return checks.filter((c) => c.status === "down").length + plugins.filter((p) => p.state === "stopped" || p.state === "quarantined").length;
 }
+/** Device-check content for the settings modal (기기 점검): summary, checks, parts, advanced diagnostics folded. Reuses the same components. */
+export function DeviceSection() {
+  const { s } = useApp();
+  const checks = Object.values(s.checks) as Check[];
+  const plugins = Object.values(s.plugins).sort((a, b) => a.id.localeCompare(b.id));
+  return (
+    <>
+      <AlertsCard />
+      <Summary checks={checks} plugins={plugins} />
+      <Machines checks={checks} />
+      <Parts plugins={plugins} />
+      <details className="fold advanced">
+        <summary>고급 진단</summary>
+        <RunningNow />
+        <Section label="플러그인" count={plugins.length}>
+          {plugins.length === 0 ? (
+            <p className="muted pad">플러그인 정보가 아직 없어요.</p>
+          ) : (
+            <ul className="rows boxed">
+              {plugins.map((p) => (
+                <PluginRow key={p.id} p={p} />
+              ))}
+            </ul>
+          )}
+        </Section>
+      </details>
+    </>
+  );
+}
 
 export function OpsScreen() {
   const { s } = useApp();
@@ -267,7 +296,7 @@ function CheckCard({ c }: { c: Check }) {
       if (!conn) return;
       // Only ids go to the server; the ops instance looks up the argv in its own config.
       await conn.request("ops.action.run", { source: c.source ?? "ops", checkId: c.id, actionId: a.id });
-      notify(`'${a.label}' 승인을 요청했어요. 작업 탭에서 승인하면 실행돼요.`);
+      notify(`'${a.label}' 승인을 요청했어요. 사이드바의 확인할 일에서 승인하면 실행돼요.`);
     });
   return (
     <div className={`card check check-${c.status}`}>
@@ -322,7 +351,7 @@ function LastAction({ run }: { run: ActionRun }) {
       {run.state === "waiting" && (
         <p className="result-note">
           <a className="link" href={taskHref()}>
-            작업 탭에서 승인하기 ›
+            사이드바의 확인할 일에서 승인하기 ›
           </a>
         </p>
       )}

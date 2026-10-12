@@ -2,29 +2,35 @@ import { describe, expect, test } from "bun:test";
 import { diffTotals, parseDiffStat, splitDiff } from "./diff.ts";
 import { fenceLanguage, highlight } from "./highlight.ts";
 import { isDeep, parseRoute, taskHref } from "./routes.ts";
-import { activeAlerts, headChoice, initial, reducer, shortModel, taskTitle, threadTone, toneOf, workItems, type State } from "./state.ts";
+import { accessOf, activeAlerts, headChoice, initial, reducer, shortModel, taskTitle, threadApproval, threadTone, threadWait, toneOf, unlinkedApprovals, workItems, type State } from "./state.ts";
+import type { Effort, HeadSettings } from "./api.ts";
 
+const headDefaults = (): HeadSettings => ({ model: "openai-codex/gpt-5.6-luna", effort: "off" as Effort, favorites: [], efforts: [], workers: { models: {}, efforts: [] } });
 describe("parseRoute", () => {
   test("defaults to chat", () => {
-    expect(parseRoute("")).toEqual({ tab: "chat", threadId: null });
-    expect(parseRoute("#/nope")).toEqual({ tab: "chat", threadId: null });
+    expect(parseRoute("")).toEqual({ view: "chat", threadId: null });
+    expect(parseRoute("#/nope")).toEqual({ view: "chat", threadId: null });
   });
-  test("reads ids and the project filter", () => {
-    expect(parseRoute("#/chat/t1")).toEqual({ tab: "chat", threadId: "t1" });
-    expect(parseRoute("#/tasks/a%2Fb?project=%2Fx%2Fy")).toEqual({ tab: "tasks", taskId: "a/b", project: "/x/y" });
-    expect(parseRoute(taskHref(null, "/Users/me/dev/me"))).toEqual({ tab: "tasks", taskId: null, project: "/Users/me/dev/me" });
-    expect(parseRoute("#/ops")).toEqual({ tab: "ops", view: null, fake: null });
-    // Old tabs: approvals moved into 작업 (and the thread), projects into 상태.
-    expect(parseRoute("#/approvals")).toEqual({ tab: "tasks", taskId: null, project: null });
-    expect(parseRoute("#/projects")).toEqual({ tab: "ops", view: null, fake: null });
-    expect(parseRoute("#/ops/harness")).toEqual({ tab: "ops", view: "harness", fake: null });
-    expect(parseRoute("#/ops/harness?fake=list")).toEqual({ tab: "ops", view: "harness", fake: "list" });
+  test("reads ids and redirects old routes", () => {
+    expect(parseRoute("#/chat/t1")).toEqual({ view: "chat", threadId: "t1" });
+    expect(parseRoute("#/task/a%2Fb")).toEqual({ view: "task", taskId: "a/b", threadId: null });
+    expect(parseRoute(taskHref(null))).toEqual({ view: "chat", threadId: null });
+    expect(parseRoute("#/settings")).toEqual({ view: "settings", section: null, fake: null });
+    // Old routes redirect: tasks → chat / task panel, approvals → chat, ops/projects → settings.
+    expect(parseRoute("#/tasks")).toEqual({ view: "chat", threadId: null });
+    expect(parseRoute("#/tasks/a%2Fb")).toEqual({ view: "task", taskId: "a/b", threadId: null });
+    expect(parseRoute("#/approvals")).toEqual({ view: "chat", threadId: null });
+    expect(parseRoute("#/projects")).toEqual({ view: "settings", section: "projects", fake: null });
+    expect(parseRoute("#/ops")).toEqual({ view: "settings", section: null, fake: null });
+    expect(parseRoute("#/ops/harness")).toEqual({ view: "settings", section: "harness", fake: null });
+    expect(parseRoute("#/ops/harness?fake=list")).toEqual({ view: "settings", section: "harness", fake: "list" });
   });
   test("detail screens are deep", () => {
     expect(isDeep(parseRoute("#/chat/t1"))).toBe(true);
-    expect(isDeep(parseRoute("#/tasks"))).toBe(false);
-    expect(isDeep(parseRoute("#/ops"))).toBe(false);
-    expect(isDeep(parseRoute("#/ops/harness"))).toBe(true);
+    expect(isDeep(parseRoute("#/chat"))).toBe(false);
+    expect(isDeep(parseRoute("#/task/abc"))).toBe(true);
+    expect(isDeep(parseRoute("#/settings"))).toBe(false);
+    expect(isDeep(parseRoute("#/settings/harness"))).toBe(true);
   });
 });
 
@@ -136,6 +142,39 @@ describe("status tones", () => {
     expect(s.config.addedProjects).toEqual(["/added"]);
     s = reducer(s, { type: "server", msg: { type: "entity", kind: "web.settings", id: "default", data: { id: "default", projects: [] } } });
     expect(s.config.projects).toEqual(["/base"]);
+  });
+
+  test("sidebar waiting words: approval beats review beats answering beats failure", () => {
+    const s = state();
+    // a1 waits on m2 → 승인.
+    expect(threadWait(s, "th")).toBe("승인");
+    const noApproval: State = { ...s, approvals: {} };
+    // m2 streams with no task → 답변.
+    expect(threadWait(noApproval, "th")).toBe("답변");
+    const sealed: State = { ...noApproval, tasks: { k1: { ...noApproval.tasks.k1!, state: "sealed" } } };
+    expect(threadWait(sealed, "th")).toBe("검토");
+    const failed: State = { ...noApproval, tasks: { k1: { ...noApproval.tasks.k1!, state: "failed" } }, messages: { m1: noApproval.messages.m1! } };
+    expect(threadWait(failed, "th")).toBe("실패");
+    expect(threadWait(failed, "missing")).toBeNull();
+  });
+
+  test("unlinked approvals exclude delegations; threadApproval finds the thread's pending ask", () => {
+    const s = state();
+    expect(unlinkedApprovals(s)).toEqual([]);
+    const withOps: State = {
+      ...s,
+      approvals: { ...s.approvals, ops1: { approvalId: "ops1", requester: "harness-config", summary: "적용", risk: "medium", payload: {} } },
+    };
+    expect(unlinkedApprovals(withOps).map((a) => a.approvalId)).toEqual(["ops1"]);
+    expect(threadApproval(withOps, "th")?.approvalId).toBe("a1");
+    expect(threadApproval(withOps, null)).toBeUndefined();
+    expect(threadApproval(withOps, "missing")).toBeUndefined();
+  });
+
+  test("access mode falls back to project-write until the backend stores it", () => {
+    expect(accessOf(null, null)).toBe("project");
+    expect(accessOf(null, { ...headDefaults(), access: "read" })).toBe("read");
+    expect(accessOf({ access: "full" }, { ...headDefaults(), access: "read" })).toBe("full");
   });
 });
 
