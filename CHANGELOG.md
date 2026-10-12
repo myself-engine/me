@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v0.7.0 (2026-10-12)
+
+- web: one sidebar and the conversation; settings in one modal; approvals in the composer slot; developer view (ef35436)
+- access modes per conversation: read-only, project write (no approval to start), full (auto-apply) (8f92ba8)
+- docs: DeepSeek Harness UX and structure reference (dddb228)
+
 ## v0.6.0 (2026-10-12)
 
 - web: keep typed secrets out of the call journal; fix a CSS block that swallowed later rules (1cef5fa)
