@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v0.9.3 (2026-10-12)
+
+- config: run the head, summarize, and jev on OMP; fall back to GJC deepseek-v4.1-flash (249a247)
+- head runner: choose GJC or OMP for the conversation head, summarize, and jev; harness-aware fallbacks (95af84e)
+
 ## v0.9.2 (2026-10-12)
 
 - gjc-head: fall back to opencode-go/deepseek-v4.1-flash (9893139)
