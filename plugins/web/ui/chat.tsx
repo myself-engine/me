@@ -7,7 +7,7 @@ import { diffTotals, parseDiffStat } from "./diff.ts";
 import { chatHref, NEW_THREAD, taskHref } from "./routes.ts";
 import { Empty, Header, Markdown, StatusDot, elapsed, repoName, shortPath, stateLabel, timeAgo, toolName, useBusy, useNow } from "./shared.tsx";
 import { effortLabel, HeadChip } from "./head.tsx";
-import { TONE_LABEL, threadTone, toneOf, turnOp, type HeadChoice, type Live } from "./state.ts";
+import { TONE_LABEL, taskTitle, threadTone, toneOf, turnOp, type HeadChoice, type Live } from "./state.ts";
 
 export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
   const open = props.threadId !== null;
@@ -266,7 +266,7 @@ function DelegationLine({ m }: { m: Message }) {
     <>
       <StatusDot tone={tone} hideLabel />
       <span className="dl-harness">{workerLabel(task ?? d)}</span>
-      <span className="dl-goal">{task?.objective ?? d.brief}</span>
+      <span className="dl-goal">{taskTitle(s, { messageId: m.id, objective: task?.objective ?? d.brief })}</span>
       <span className={`dl-state tone-text tone-${tone}`}>{stateLabel(state)}</span>
       <span className="dl-time">{time}</span>
     </>

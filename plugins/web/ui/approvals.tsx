@@ -1,34 +1,14 @@
-// 승인: pending approvals with risk, requester, harness choice (amend.harness) and approve/reject.
+// One pending approval as a card: in the thread for delegations, in 작업 for other requests.
+// Risk, requester, tool/model/effort choice (amend) and approve/reject.
 import { useState } from "react";
 import type { Approval } from "./api.ts";
 import { useApp } from "./context.ts";
 import { chatHref } from "./routes.ts";
-import { Empty, Header, StatusDot, repoName, shortPath, toolName, useBusy } from "./shared.tsx";
+import { StatusDot, repoName, shortPath, toolName, useBusy } from "./shared.tsx";
 import { effortLabel } from "./head.tsx";
 import { isDelegationApproval } from "./state.ts";
 
 const RISK_LABEL: Record<Approval["risk"], string> = { low: "위험 낮음", medium: "위험 보통", high: "위험 높음" };
-
-export function ApprovalsScreen() {
-  const { s } = useApp();
-  const approvals = Object.values(s.approvals);
-  return (
-    <div className="page">
-      <Header title="승인" />
-      <div className="pane-scroll page-body">
-        {approvals.length === 0 ? (
-          <Empty title="기다리는 승인이 없어요">위임이나 위험한 작업이 승인을 요청하면 여기에 떠요.</Empty>
-        ) : (
-          <div className="stack">
-            {approvals.map((a) => (
-              <ApprovalCard key={a.approvalId} a={a} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /** One pending approval. `inline` is the in-thread variant: the user's request is right above it, so it asks instead of restating. */
 export function ApprovalCard({ a, inline = false }: { a: Approval; inline?: boolean }) {

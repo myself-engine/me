@@ -169,6 +169,8 @@ export interface WorkItem {
   id: string;
   state: string;
   harness: string;
+  /** The user's own words that started it, else the first line of the English brief. */
+  title: string;
   objective: string;
   project: string;
   startedAt: string;
@@ -180,11 +182,33 @@ export interface WorkItem {
 /** Delegation approvals carry the asking message id; other approvals are not work items. */
 export const isDelegationApproval = (a: Approval) => typeof a.payload?.messageId === "string";
 
+/**
+ * The user's request behind an assistant message: the latest user message before it in the same thread.
+ * Briefs are written in English for workers; people recognise their own words.
+ */
+export function requestText(s: State, messageId: string | undefined): string | null {
+  const m = messageId ? s.messages[messageId] : undefined;
+  if (!m) return null;
+  let best: Message | null = null;
+  for (const x of Object.values(s.messages))
+    if (x.threadId === m.threadId && x.role === "user" && x.ts <= m.ts && (!best || x.ts > best.ts)) best = x;
+  return best?.text.trim() || null;
+}
+
+/** A work title for lists and headers: the user's words (one line, 40 characters), else the brief's first line. */
+export function taskTitle(s: State, p: { taskId?: string; messageId?: string; objective: string }): string {
+  const messageId = p.messageId ?? Object.values(s.messages).find((m) => p.taskId && m.taskId === p.taskId)?.id;
+  const text = requestText(s, messageId) ?? p.objective;
+  const line = text.split("\n")[0]!.trim();
+  return line.length > 40 ? `${line.slice(0, 40)}…` : line;
+}
+
 export function workItems(s: State): WorkItem[] {
   const items: WorkItem[] = Object.values(s.tasks).map((t) => ({
     id: t.taskId,
     state: t.state,
     harness: t.harness,
+    title: taskTitle(s, { taskId: t.taskId, objective: t.objective }),
     objective: t.objective,
     project: t.project,
     startedAt: t.createdAt,
@@ -199,6 +223,7 @@ export function workItems(s: State): WorkItem[] {
       id: `approval:${a.approvalId}`,
       state: "awaiting-approval",
       harness: a.payload.harness ?? "",
+      title: taskTitle(s, { messageId: a.payload.messageId, objective: a.payload.brief ?? a.summary }),
       objective: a.payload.brief ?? a.summary,
       project: a.payload.project ?? "",
       startedAt: at,

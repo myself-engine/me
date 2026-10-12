@@ -287,8 +287,16 @@ select {
   line-height: 18px;
   text-align: center;
 }
-.badge.bad {
+/* 상태 tab: a dot, not a count; the nav link's label says "문제 있음". */
+.badge-dot {
+  position: absolute;
+  top: -2px;
+  left: 17px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
   background: var(--bad);
+  box-shadow: 0 0 0 2px var(--panel);
 }
 .nav-viewer {
   margin-top: auto;
@@ -1860,4 +1868,32 @@ a.dline:hover {
 }
 .composer-top .head-chip {
   flex: 0 1 auto;
+}
+
+/* ---------------------------------------------------------- 상태 tab */
+
+.summary {
+  margin-bottom: 16px;
+}
+.summary .dot-label,
+.summary > :first-child {
+  font-size: 15px;
+  font-weight: 600;
+}
+.summary-sub {
+  margin: 0;
+  font-size: 12px;
+}
+.part-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+}
+.fold.advanced {
+  margin-top: 8px;
+}
+.fold.advanced > summary {
+  margin-bottom: 8px;
 }

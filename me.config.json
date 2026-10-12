@@ -14,6 +14,12 @@
   "pluginConfig": {
     "gjc-head": {
       "model": "openai-codex/gpt-5.6-luna",
+      "favoriteModels": ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-6-luna"],
+      "workerModels": {
+        "local.claude-code": ["opus", "sonnet"],
+        "local.codex": ["gpt-6.1-sol", "gpt-6-luna"],
+        "local.gjc": ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-6-luna"]
+      },
       "harnesses": [
         "local.claude-code",
         "local.codex",

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { diffTotals, parseDiffStat, splitDiff } from "./diff.ts";
 import { fenceLanguage, highlight } from "./highlight.ts";
 import { isDeep, parseRoute, taskHref } from "./routes.ts";
-import { headChoice, initial, reducer, shortModel, threadTone, toneOf, workItems, type State } from "./state.ts";
+import { headChoice, initial, reducer, shortModel, taskTitle, threadTone, toneOf, workItems, type State } from "./state.ts";
 
 describe("parseRoute", () => {
   test("defaults to chat", () => {
@@ -14,6 +14,9 @@ describe("parseRoute", () => {
     expect(parseRoute("#/tasks/a%2Fb?project=%2Fx%2Fy")).toEqual({ tab: "tasks", taskId: "a/b", project: "/x/y" });
     expect(parseRoute(taskHref(null, "/Users/me/dev/me"))).toEqual({ tab: "tasks", taskId: null, project: "/Users/me/dev/me" });
     expect(parseRoute("#/ops")).toEqual({ tab: "ops" });
+    // Old tabs: approvals moved into 작업 (and the thread), projects into 상태.
+    expect(parseRoute("#/approvals")).toEqual({ tab: "tasks", taskId: null, project: null });
+    expect(parseRoute("#/projects")).toEqual({ tab: "ops" });
   });
   test("detail screens are deep", () => {
     expect(isDeep(parseRoute("#/chat/t1"))).toBe(true);
@@ -92,6 +95,15 @@ describe("status tones", () => {
     const settled: State = { ...s, messages: { m1: s.messages.m1! } };
     expect(threadTone(settled, "th")).toBe("failed");
     expect(threadTone({ ...settled, tasks: { k1: { ...base.tasks.k1!, state: "rejected" } } }, "th")).toBe("none");
+  });
+
+  test("work titles use the user's own words, falling back to the brief", () => {
+    const base = state();
+    const user = { id: "u1", threadId: "th", role: "user" as const, text: "README에 설치 방법 섹션을 추가하고 커밋해 줘", ts: "2026-01-01T00:00:00.000Z", traceId: "tr1", status: "done" as const };
+    const s: State = { ...base, messages: { ...base.messages, u1: user } };
+    expect(taskTitle(s, { taskId: "k1", objective: "Add an install section" })).toBe("README에 설치 방법 섹션을 추가하고 커밋해 줘");
+    expect(taskTitle(s, { taskId: "nope", objective: "Add an install section\nmore" })).toBe("Add an install section");
+    expect(workItems(s).find((w) => w.id === "approval:a1")?.title).toBe("README에 설치 방법 섹션을 추가하고 커밋해 줘");
   });
 
   test("kernel.op entities land in state", () => {

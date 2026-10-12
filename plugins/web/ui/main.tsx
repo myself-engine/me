@@ -2,13 +2,11 @@
 import { StrictMode, useCallback, useEffect, useMemo, useReducer, useState, type MouseEvent, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Connection, fetchBootstrap } from "./api.ts";
-import { ApprovalsScreen } from "./approvals.tsx";
 import { ChatScreen } from "./chat.tsx";
 import { AppContext, type Ctx } from "./context.ts";
 import { downCount, OpsScreen } from "./ops.tsx";
-import { ProjectsScreen } from "./projects.tsx";
 import { chatHref, isDeep, NEW_THREAD, replace, useRoute, type Route, type Tab } from "./routes.ts";
-import { initial, reducer, toneOf, workItems, type HeadChoice } from "./state.ts";
+import { initial, isDelegationApproval, reducer, toneOf, workItems, type HeadChoice } from "./state.ts";
 import { TasksScreen } from "./tasks.tsx";
 import { TraceDrawer } from "./timeline.tsx";
 
@@ -20,25 +18,13 @@ const ICONS: Record<Tab, ReactNode> = {
       <path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17" />
     </>
   ),
-  approvals: (
-    <>
-      <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z" />
-      <path d="M8.8 12l2.2 2.2 4.2-4.4" />
-    </>
-  ),
   ops: <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />,
-  projects: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
 };
-
-/** What a tab's count badge means, for screen readers (the badge itself is a bare number). */
-const BADGE_LABEL: Record<Tab, string> = { chat: "", tasks: "확인 필요", approvals: "승인 대기", ops: "문제", projects: "" };
 
 const TABS: { tab: Tab; label: string; href: string }[] = [
   { tab: "chat", label: "대화", href: "#/chat" },
   { tab: "tasks", label: "작업", href: "#/tasks" },
-  { tab: "approvals", label: "승인", href: "#/approvals" },
-  { tab: "ops", label: "운영", href: "#/ops" },
-  { tab: "projects", label: "프로젝트", href: "#/projects" },
+  { tab: "ops", label: "상태", href: "#/ops" },
 ];
 
 function App() {
@@ -101,16 +87,25 @@ function App() {
     }
   };
 
-  const badges: Record<Tab, number> = useMemo(
-    () => ({
-      chat: 0,
-      tasks: workItems(s).filter((w) => toneOf(w.state) === "needs").length,
-      approvals: Object.keys(s.approvals).length,
-      ops: downCount(Object.values(s.checks), Object.values(s.plugins)),
-      projects: 0,
-    }),
-    [s.tasks, s.approvals, s.messages, s.checks, s.plugins],
+  // One number, on 작업: delegations needing you plus other approval requests. 상태 only gets a dot when something is down.
+  const needs = useMemo(
+    () => workItems(s).filter((w) => toneOf(w.state) === "needs").length + Object.values(s.approvals).filter((a) => !isDelegationApproval(a)).length,
+    [s.tasks, s.approvals, s.messages],
   );
+  const down = useMemo(() => downCount(Object.values(s.checks), Object.values(s.plugins)), [s.checks, s.plugins]);
+  const mark = (tab: Tab): { label: string; badge: ReactNode } | null => {
+    if (tab === "tasks" && needs > 0)
+      return {
+        label: `확인 필요 ${needs}`,
+        badge: (
+          <span className="badge" aria-hidden="true">
+            {needs}
+          </span>
+        ),
+      };
+    if (tab === "ops" && down > 0) return { label: "문제 있음", badge: <span className="badge-dot" aria-hidden="true" /> };
+    return null;
+  };
 
   return (
     <AppContext.Provider value={ctx}>
@@ -125,27 +120,26 @@ function App() {
             </span>
             <span className="brand-name">me</span>
           </div>
-          {TABS.map((t) => (
-            <a
-              key={t.tab}
-              className={`nav-item${route.tab === t.tab ? " on" : ""}`}
-              href={t.href}
-              aria-current={route.tab === t.tab ? "page" : undefined}
-              aria-label={badges[t.tab] > 0 ? `${t.label}, ${BADGE_LABEL[t.tab]} ${badges[t.tab]}` : undefined}
-            >
-              <span className="nav-icon">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  {ICONS[t.tab]}
-                </svg>
-                {badges[t.tab] > 0 && (
-                  <span className={`badge${t.tab === "ops" ? " bad" : ""}`} aria-hidden="true">
-                    {badges[t.tab]}
-                  </span>
-                )}
-              </span>
-              <span className="nav-label">{t.label}</span>
-            </a>
-          ))}
+          {TABS.map((t) => {
+            const m = mark(t.tab);
+            return (
+              <a
+                key={t.tab}
+                className={`nav-item${route.tab === t.tab ? " on" : ""}`}
+                href={t.href}
+                aria-current={route.tab === t.tab ? "page" : undefined}
+                aria-label={m ? `${t.label}, ${m.label}` : undefined}
+              >
+                <span className="nav-icon">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    {ICONS[t.tab]}
+                  </svg>
+                  {m?.badge}
+                </span>
+                <span className="nav-label">{t.label}</span>
+              </a>
+            );
+          })}
           {s.viewer && <div className="nav-viewer">{s.viewer.name}</div>}
         </nav>
         <main className="screen" id="main" tabIndex={-1}>
@@ -185,12 +179,8 @@ function Screen({ route, ...chat }: { route: Route; project: string; setProject:
       return <ChatScreen threadId={route.threadId} {...chat} />;
     case "tasks":
       return <TasksScreen taskId={route.taskId} project={route.project} />;
-    case "approvals":
-      return <ApprovalsScreen />;
     case "ops":
       return <OpsScreen />;
-    case "projects":
-      return <ProjectsScreen />;
   }
 }
 

@@ -1,10 +1,11 @@
 // 작업: delegated work by status bucket, and one task's detail with its review.
 import { useMemo, useState } from "react";
 import { useApp } from "./context.ts";
+import { ApprovalCard } from "./approvals.tsx";
 import { Review, REVIEWABLE } from "./review.tsx";
 import { chatHref, go, taskHref } from "./routes.ts";
-import { Empty, Header, Markdown, Section, StatusDot, elapsed, repoName, shortHarness, shortPath, stateLabel, useNow } from "./shared.tsx";
-import { toneOf, workItems, type Tone, type WorkItem } from "./state.ts";
+import { Empty, Header, Markdown, Section, StatusDot, elapsed, repoName, shortPath, stateLabel, toolName, useNow } from "./shared.tsx";
+import { isDelegationApproval, taskTitle, toneOf, workItems, type Tone, type WorkItem } from "./state.ts";
 
 const BUCKETS: { tone: Tone; label: string }[] = [
   { tone: "needs", label: "확인 필요" },
@@ -18,25 +19,25 @@ const RUNNING = new Set(["running", "delegated", "awaiting-input", "awaiting-app
 /** The 12px line under a row: what happened last, in words. */
 function describe(w: WorkItem): string {
   const t = w.task;
-  if (!t) return "위임하려면 승인이 필요해요";
+  if (!t) return "승인해 주세요 · 대화에서 바로 승인할 수 있어요";
   if (t.error) return t.error;
   switch (t.state) {
     case "running":
-      return "워커가 작업 중이에요";
+      return "실행 도구가 작업 중이에요";
     case "awaiting-input":
-      return "워커가 입력을 기다려요";
+      return "실행 도구가 입력을 기다려요";
     case "sealed":
-      return "결과가 도착했어요 · 리뷰하고 수락하세요";
+      return "변경사항을 검토해 주세요";
     case "applied":
       return t.commitSha ? `커밋 ${t.commitSha.slice(0, 8)}에 적용됐어요` : "적용됐어요";
     case "accepted":
-      return "수락했어요 · 적용 중";
+      return "변경사항을 적용하고 커밋하는 중이에요";
     case "rejected":
       return t.decisionReason ? `거절함 · ${t.decisionReason}` : "거절했어요";
     case "cancelled":
       return "취소됐어요";
     case "failed":
-      return "워커가 실패했어요";
+      return "실행 도구가 실패했어요";
     default:
       return stateLabel(t.state);
   }
@@ -63,6 +64,8 @@ function TaskList({ activeId, project }: { activeId: string | null; project: str
   const projects = useMemo(() => [...new Set(all.map((w) => w.project).filter(Boolean))].sort(), [all]);
   const items = project ? all.filter((w) => w.project === project) : all;
   const hidden = items.filter((w) => toneOf(w.state) === "muted");
+  // Approval requests that are not delegations (e.g. a rule asking before a command) have no thread card; they live here.
+  const requests = Object.values(s.approvals).filter((a) => !isDelegationApproval(a));
 
   return (
     <>
@@ -79,7 +82,16 @@ function TaskList({ activeId, project }: { activeId: string | null; project: str
         ) : null}
       </Header>
       <div className="pane-scroll">
-        {items.length === 0 && <Empty title="아직 위임한 작업이 없어요">대화에서 일을 맡기면 여기에서 상태를 볼 수 있어요.</Empty>}
+        {requests.length > 0 && (
+          <Section label="승인 요청" count={requests.length} tone="needs">
+            <div className="stack pad">
+              {requests.map((a) => (
+                <ApprovalCard key={a.approvalId} a={a} />
+              ))}
+            </div>
+          </Section>
+        )}
+        {items.length === 0 && requests.length === 0 && <Empty title="지금 확인할 일이 없어요">대화에서 일을 맡기면 여기에서 상태를 볼 수 있어요.</Empty>}
         {BUCKETS.map(({ tone, label }) => {
           const list = items.filter((w) => toneOf(w.state) === tone);
           if (list.length === 0) return null;
@@ -113,16 +125,19 @@ function TaskList({ activeId, project }: { activeId: string | null; project: str
 }
 
 function WorkRow({ w, on, project, now }: { w: WorkItem; on: boolean; project: string | null; now: number }) {
+  const { s } = useApp();
   const tone = toneOf(w.state);
-  const href = w.task ? taskHref(w.id, project) : "#/approvals";
+  // A delegation waiting for approval is decided on its card in the conversation.
+  const thread = w.approval ? s.messages[w.approval.payload?.messageId]?.threadId : undefined;
+  const href = w.task ? taskHref(w.id, project) : thread ? chatHref(thread) : taskHref(null, project);
   return (
     <li>
       <a className={`row-link${on ? " on" : ""}`} href={href}>
         <StatusDot tone={tone} hideLabel />
         <span className="row-main">
-          <span className="row-title">{w.objective}</span>
+          <span className="row-title">{w.title}</span>
           <span className="row-sub">
-            <span className={`tone-text tone-${tone}`}>{stateLabel(w.state)}</span> · {shortHarness(w.harness)} · {repoName(w.project)} ·{" "}
+            <span className={`tone-text tone-${tone}`}>{stateLabel(w.state)}</span> · {toolName(w.harness)} · {repoName(w.project)} ·{" "}
             {elapsed(w.startedAt, RUNNING.has(w.state) ? null : w.updatedAt, now)}
           </span>
           <span className={`row-note${w.task?.error ? " bad" : ""}`}>{describe(w)}</span>
@@ -149,14 +164,14 @@ function TaskDetail({ taskId, project }: { taskId: string; project: string | nul
   const criterion = task.criterion || message?.delegation?.criterion;
   return (
     <div className="detail">
-      <Header title={task.objective.split("\n")[0]} back={back} />
+      <Header title={taskTitle(s, { taskId: task.taskId, objective: task.objective })} back={back} />
       <div className="pane-scroll detail-body">
         <div className="task-head">
           <StatusDot tone={tone} label={stateLabel(task.state)} />
           <dl className="facts">
             <div>
               <dt>하네스</dt>
-              <dd>{shortHarness(task.harness)}</dd>
+              <dd>{toolName(task.harness)}</dd>
             </div>
             <div>
               <dt>프로젝트</dt>

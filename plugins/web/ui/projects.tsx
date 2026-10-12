@@ -1,13 +1,13 @@
-// 프로젝트: configured repositories plus every project a task ran in, with task counts by status.
+// 상태 › 프로젝트: configured repositories plus every project a task ran in, with task counts by status.
 import { useMemo } from "react";
 import { useApp } from "./context.ts";
 import { taskHref } from "./routes.ts";
-import { Empty, Header, StatusDot, repoName, shortPath } from "./shared.tsx";
+import { Section, StatusDot, repoName, shortPath } from "./shared.tsx";
 import { TONE_LABEL, toneOf, workItems, type Tone } from "./state.ts";
 
 const SHOWN: Tone[] = ["needs", "running", "done", "failed"];
 
-export function ProjectsScreen() {
+export function ProjectsSection() {
   const { s } = useApp();
   const repos = useMemo(() => {
     const items = workItems(s);
@@ -22,11 +22,9 @@ export function ProjectsScreen() {
   }, [s.config.projects, s.tasks, s.approvals, s.messages]);
 
   return (
-    <div className="page">
-      <Header title="프로젝트" />
-      <div className="pane-scroll page-body">
+    <Section label="프로젝트" count={repos.length || undefined}>
         {repos.length === 0 ? (
-          <Empty title="등록된 저장소가 없어요">웹 플러그인 설정의 projects에 저장소를 넣거나 작업을 위임하면 여기에 생겨요.</Empty>
+          <p className="muted pad">등록된 저장소가 없어요. 웹 플러그인 설정의 projects에 넣거나 작업을 맡기면 생겨요.</p>
         ) : (
           <ul className="rows boxed">
             {repos.map((r) => (
@@ -57,7 +55,6 @@ export function ProjectsScreen() {
             ))}
           </ul>
         )}
-      </div>
-    </div>
+    </Section>
   );
 }

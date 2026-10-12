@@ -1,7 +1,8 @@
-// 운영: what is running right now, per-machine checks, and plugin health.
+// 상태: is everything fine, per-machine checks, what each part of me does, projects; raw diagnostics folded.
 import { useState } from "react";
 import type { OpsCheck, PluginInfo } from "./api.ts";
 import { useApp } from "./context.ts";
+import { ProjectsSection } from "./projects.tsx";
 import { Header, Section, StatusDot, elapsed, timeAgo, useNow } from "./shared.tsx";
 import { activeOps, type Tone } from "./state.ts";
 
@@ -22,7 +23,7 @@ export function OpsScreen() {
   const plugins = Object.values(s.plugins).sort((a, b) => a.id.localeCompare(b.id));
   return (
     <div className="page">
-      <Header title="운영">
+      <Header title="상태">
         {s.viewer && (
           <span className="bar-meta" title={`Tailscale로 접속: ${s.viewer.login}`}>
             {s.viewer.name}
@@ -30,21 +31,79 @@ export function OpsScreen() {
         )}
       </Header>
       <div className="pane-scroll page-body">
-        <RunningNow />
+        <Summary checks={checks} plugins={plugins} />
         <Machines checks={checks} />
-        <Section label="플러그인" count={plugins.length}>
-          {plugins.length === 0 ? (
-            <p className="muted pad">플러그인 정보가 아직 없어요.</p>
-          ) : (
-            <ul className="rows boxed">
-              {plugins.map((p) => (
-                <PluginRow key={p.id} p={p} />
-              ))}
-            </ul>
-          )}
-        </Section>
+        <Parts plugins={plugins} />
+        <ProjectsSection />
+        <details className="fold advanced">
+          <summary>고급 진단</summary>
+          <RunningNow />
+          <Section label="플러그인" count={plugins.length}>
+            {plugins.length === 0 ? (
+              <p className="muted pad">플러그인 정보가 아직 없어요.</p>
+            ) : (
+              <ul className="rows boxed">
+                {plugins.map((p) => (
+                  <PluginRow key={p.id} p={p} />
+                ))}
+              </ul>
+            )}
+          </Section>
+        </details>
       </div>
     </div>
+  );
+}
+
+/** The one line that answers "is me OK?", with when that was last checked. */
+function Summary({ checks, plugins }: { checks: OpsCheck[]; plugins: PluginInfo[] }) {
+  const problems = downCount(checks, plugins);
+  const last = checks.map((c) => c.checkedAt).sort().at(-1);
+  // No check has run yet: say so rather than claim everything is fine.
+  const [tone, label]: [Tone, string] = problems ? ["failed", `점검이 필요해요 · ${problems}곳`] : last ? ["done", "모든 시스템 정상"] : ["none", "점검 기록이 아직 없어요"];
+  return (
+    <div className="card summary">
+      <StatusDot tone={tone} label={label} />
+      <p className="muted summary-sub">
+        {last ? `마지막 확인 ${timeAgo(last)} · ` : "기기 점검(ops 플러그인)이 결과를 보내면 여기에 떠요 · "}이 화면은 웹 연결이 살아 있을 때만 새로 고쳐져요
+      </p>
+    </div>
+  );
+}
+
+/** What each plugin does for the user, in words; ids stay in 고급 진단. */
+const ROLE: Record<string, string> = {
+  "gjc-head": "대화 엔진",
+  jev: "응답 판단",
+  slang: "말 풀이",
+  summarize: "지시서 작성",
+  brgr: "워커 실행기",
+  "approval-policy": "자동 승인 규칙",
+  web: "웹 화면",
+  ops: "기기 점검",
+  "harness-config": "실행 도구 설정",
+};
+
+function Parts({ plugins }: { plugins: PluginInfo[] }) {
+  if (plugins.length === 0) return null;
+  const rows = plugins.map((p) => ({ p, role: ROLE[p.id] ?? (p.id.startsWith("ops-") ? `기기 점검 (${p.id.slice(4)})` : p.id) }));
+  const bad = plugins.filter((p) => p.state === "stopped" || p.state === "quarantined").length;
+  return (
+    <Section label="구성 요소" count={bad || undefined} tone={bad ? "failed" : undefined}>
+      <ul className="rows boxed">
+        {rows
+          .sort((a, b) => a.role.localeCompare(b.role, "ko"))
+          .map(({ p, role }) => {
+            const [tone, label] = PLUGIN_STATUS[p.state] ?? ["none", p.state];
+            return (
+              <li key={p.id} className="part-row">
+                <span className="row-title">{role}</span>
+                <StatusDot tone={tone} label={label} />
+              </li>
+            );
+          })}
+      </ul>
+    </Section>
   );
 }
 

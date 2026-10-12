@@ -127,6 +127,7 @@ export async function show(page: Page, url: string, s: Screen) {
   if (!s.open) return;
   await page.eval(`document.querySelector(${JSON.stringify(s.open)}).click()`);
   // Visible, not merely in the DOM: a dialog inside a hidden pane would pass a presence check.
+  if (s.open.includes("summary")) return; // a fold opens in place
   await page.until("(document.querySelector('[role=dialog]')?.getBoundingClientRect().height ?? 0) > 0");
   await Bun.sleep(300); // the model list arrives over the socket
 }
@@ -140,9 +141,8 @@ export function screens(s: Seeded): Screen[] {
     ...(s.resultThreadId ? [{ name: "chat-result", hash: `#/chat/${encodeURIComponent(s.resultThreadId)}` }] : []),
     { name: "tasks", hash: "#/tasks" },
     ...(s.taskId ? [{ name: "task-detail", hash: `#/tasks/${encodeURIComponent(s.taskId)}` }] : []),
-    { name: "approvals", hash: "#/approvals" },
-    { name: "ops", hash: "#/ops" },
-    { name: "projects", hash: "#/projects" },
+    { name: "status", hash: "#/ops" },
+    { name: "status-advanced", hash: "#/ops", open: ".fold.advanced > summary" },
   ];
 }
 

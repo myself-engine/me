@@ -1,15 +1,11 @@
-// Hash routing: #/chat, #/chat/:threadId, #/tasks, #/tasks/:taskId?project=, #/approvals, #/ops, #/projects.
+// Hash routing: #/chat, #/chat/:threadId, #/tasks, #/tasks/:taskId?project=, #/ops (상태).
+// Old links still work: #/approvals opens 작업 (approvals live there and in the thread), #/projects opens 상태.
 // Every screen change is a hash change, so the browser's back button walks the screen stack.
 import { useMemo, useSyncExternalStore } from "react";
 
-export type Tab = "chat" | "tasks" | "approvals" | "ops" | "projects";
+export type Tab = "chat" | "tasks" | "ops";
 
-export type Route =
-  | { tab: "chat"; threadId: string | null }
-  | { tab: "tasks"; taskId: string | null; project: string | null }
-  | { tab: "approvals" }
-  | { tab: "ops" }
-  | { tab: "projects" };
+export type Route = { tab: "chat"; threadId: string | null } | { tab: "tasks"; taskId: string | null; project: string | null } | { tab: "ops" };
 
 /** Thread id used for the phone's "new conversation" screen (desktop shows it at #/chat). */
 export const NEW_THREAD = "new";
@@ -23,11 +19,10 @@ export function parseRoute(hash: string): Route {
     case "tasks":
       return { tab: "tasks", taskId: parts[1] ?? null, project: q.get("project") || null };
     case "approvals":
-      return { tab: "approvals" };
+      return { tab: "tasks", taskId: null, project: null };
     case "ops":
-      return { tab: "ops" };
     case "projects":
-      return { tab: "projects" };
+      return { tab: "ops" };
     default:
       return { tab: "chat", threadId: parts[0] === "chat" ? (parts[1] ?? null) : null };
   }
