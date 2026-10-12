@@ -32,6 +32,8 @@ const plugin = definePlugin({
         simpleThreshold: (c.simpleThreshold as number) ?? 0.8,
         approvalExpiresSec: (c.approvalExpiresSec as number) ?? 1800,
         defaultProject: (c.defaultProject as string) ?? "",
+        fallbackModels: (c.fallbackModels as string[]) ?? [],
+        cooldownSec: (c.cooldownSec as number) ?? 600,
       },
     );
     await head.init();

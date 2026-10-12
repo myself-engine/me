@@ -4,7 +4,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { chooseHarness, decideRoute, fastPathJudgement, isFastPath } from "../domain/routing.ts";
 import { describeFailure, friendlyError, type AlertCause } from "../domain/alerts.ts";
-import { accessOf, brainChoice, checkAccess, checkHeadChoice, checkWorkerChoice, DEFAULT_ACCESS, EFFORTS, isAccessMode, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
+import { fallbackReason } from "../domain/fallback.ts";
+import { withModelFallback } from "@me/gjc";
+import { accessOf, brainChoice, checkAccess, checkCooldownSec, checkFallbackModels, checkHeadChoice, checkWorkerChoice, DEFAULT_ACCESS, DEFAULT_COOLDOWN_SEC, EFFORTS, isAccessMode, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
 import type { AccessMode, DelegationState, Effort, HeadSettings, Message, Thread } from "../domain/types.ts";
 import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, ModelCatalog, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
 
@@ -19,6 +21,12 @@ export interface HeadConfig {
   simpleThreshold: number;
   approvalExpiresSec: number;
   defaultProject: string;
+  /** Ordered fallback models for direct replies; empty means fail as today. */
+  fallbackModels?: string[];
+  /** Seconds a failed model stays out; default 600. */
+  cooldownSec?: number;
+  /** Clock for cooldowns; defaults to Date.now. Tests inject a manual clock. */
+  clock?: () => number;
 }
 
 export interface HeadPorts {
@@ -40,6 +48,10 @@ export interface Choice {
   /** Access mode change; "full" needs `confirm: true`. Null clears a thread back to the default. */
   access?: AccessMode | null;
   confirm?: boolean;
+  /** Fallback models for direct replies; null resets to the config default. Thread choices ignore it. */
+  fallbackModels?: string[] | null;
+  /** Fallback cooldown in seconds; null resets to the config default. Thread choices ignore it. */
+  cooldownSec?: number | null;
 }
 
 export interface SendParams extends Choice {
@@ -58,6 +70,9 @@ const READ_ONLY_REPLY = "이 대화는 읽기 전용이라 위임하지 않았�
 
 export function createHead(ports: HeadPorts, config: HeadConfig) {
   const { brain, normalizer, summarizer, judge, approvals, delegator, store, events, models } = ports;
+  /** Models that failed eligibly stay out until this time (ms); shared by every turn. */
+  const cooldowns = new Map<string, number>();
+  const clock = config.clock ?? Date.now;
 
   /** Records the blocking cause as gjc-head.alert (one doc per cause) so it survives reloads. */
   async function recordAlert(err: unknown, threadId: string, messageId: string) {
@@ -92,6 +107,8 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       model: saved?.model ?? config.model,
       effort: saved?.effort ?? config.effort,
       access: isAccessMode(saved?.access) ? saved.access : DEFAULT_ACCESS,
+      fallbackModels: saved?.fallbackModels ?? config.fallbackModels ?? [],
+      cooldownSec: saved?.cooldownSec ?? config.cooldownSec ?? DEFAULT_COOLDOWN_SEC,
       favorites: [...new Set([...configFavorites, ...userFavorites, config.model])],
       userFavorites,
       configFavorites,
@@ -104,10 +121,14 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   async function setDefaults(p: Choice) {
     checkHeadChoice(p);
     const access = checkAccess(p);
+    const fb = checkFallbackModels(p);
+    const cd = checkCooldownSec(p);
     const s = await settings();
     if (p.model) s.model = p.model.trim();
     if (p.effort) s.effort = p.effort;
     if (access.access) s.access = access.access;
+    if (p.fallbackModels !== undefined) s.fallbackModels = fb.fallbackModels ?? config.fallbackModels ?? [];
+    if (p.cooldownSec !== undefined) s.cooldownSec = cd.cooldownSec ?? config.cooldownSec ?? DEFAULT_COOLDOWN_SEC;
     await store.saveSettings(s);
     return s;
   }
@@ -178,6 +199,9 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     checkAccess(p);
     const threshold = config.simpleThreshold;
     const defaults = await settings();
+    // Refuse a bad fallback config before anything runs, like other head choices.
+    const fbModels = checkFallbackModels({ fallbackModels: defaults.fallbackModels }).fallbackModels ?? [];
+    const fbCooldownSec = checkCooldownSec({ cooldownSec: defaults.cooldownSec }).cooldownSec ?? DEFAULT_COOLDOWN_SEC;
 
     const { thread, created } = await ensureThread(p, defaults.access);
     // A thread keeps its mode: chat.send's access only applies to a new thread.
@@ -233,7 +257,8 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         turn.phase?.("answering", "답변 작성 중");
         const w = warm;
         warm = null;
-        await answerDirectly(thread, reply, p.text, turn, w, choice);
+        const usedFallback = await answerDirectly(thread, reply, p.text, turn, w, choice, { models: fbModels, cooldownSec: fbCooldownSec });
+        if (!usedFallback) await clearAlerts(["gjc-login", "model-refused", "model-unavailable"]);
       }
       else if (!readOnly) {
         // Delegated: the warm brain will never get a prompt.
@@ -244,7 +269,10 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       turn.phase?.("done", "완료", 1);
 
       reply.status = "done";
-      if (reply.route === "direct") await clearAlerts(["gjc-login", "model-refused"]);
+      if (reply.route === "direct" && !readOnly) {
+        // Direct-without-fallback already cleared above; a fallback keeps the
+        // primary's alert so the user still fixes it.
+      } else if (reply.route === "direct") await clearAlerts(["gjc-login", "model-refused", "model-unavailable"]);
       else if (reply.delegation?.state === "delegated") await clearAlerts(["herdr-pane", "dirty-repo", "model-refused"]);
     } catch (err: any) {
       warm?.cancel();
@@ -260,22 +288,66 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     return { threadId: thread.id, messageId: reply.id, route: reply.route ?? null, status: reply.status };
   }
 
-  async function answerDirectly(thread: Thread, reply: Message, text: string, turn: Turn, warm: WarmBrain | null, choice: { model: string; effort: Effort }) {
+  /**
+   * Answers with the thread's model, falling back to each configured fallback
+   * model in order when the failure is eligible (quota, expired auth, model
+   * gone, provider 5xx/network). Returns true when a fallback answered.
+   * The summarize/judge calls keep today's behavior: jev owns its own
+   * OpenRouter→GJC chain and summarize's model belongs to that plugin.
+   */
+  async function answerDirectly(
+    thread: Thread,
+    reply: Message,
+    text: string,
+    turn: Turn,
+    warm: WarmBrain | null,
+    choice: { model: string; effort: Effort },
+    fb: { models: string[]; cooldownSec: number },
+  ): Promise<boolean> {
     reply.status = "streaming";
     await saveMessage(reply);
     const onUpdate = (u: BrainUpdate) => {
       if (u.kind === "text_delta") reply.text += u.delta;
       turn.update(u);
     };
-    const res = warm
-      ? await warm.reply({ prompt: text, signal: turn.signal, onUpdate })
-      : await brain.reply({ prompt: text, sessionId: thread.sessionId, signal: turn.signal, onUpdate, ...choice });
-    if (res.violation) {
-      await events.guardViolation({ messageId: reply.id, toolName: res.violation.toolName });
-      throw new Error(`head tried to use tool ${res.violation.toolName}; run aborted`);
+    let warmUsed = false;
+    try {
+      const res = await withModelFallback({
+        primary: choice.model,
+        fallbackModels: fb.models,
+        cooldownSec: fb.cooldownSec,
+        cooldowns,
+        now: clock,
+        isEligible: fallbackReason,
+        run: async (model) => {
+          if (model === choice.model && warm) {
+            warmUsed = true;
+            const w = warm;
+            warm = null;
+            return w.reply({ prompt: text, signal: turn.signal, onUpdate });
+          }
+          // Drop partial deltas from the failed attempt; the winner's full text replaces them below.
+          reply.text = "";
+          return brain.reply({ prompt: text, sessionId: thread.sessionId, signal: turn.signal, onUpdate, model, effort: choice.effort });
+        },
+        onFallback: (f) => turn.update({ kind: "fallback", ...f }),
+      });
+      if (res.value.violation) {
+        await events.guardViolation({ messageId: reply.id, toolName: res.value.violation.toolName });
+        throw new Error(`head tried to use tool ${res.value.violation.toolName}; run aborted`);
+      }
+      reply.text = res.value.text || reply.text;
+      if (res.value.sessionId) thread.sessionId = res.value.sessionId;
+      if (res.fallback) {
+        reply.fallback = res.fallback;
+        // The primary is still broken: keep its alert so the user fixes it.
+        await recordAlert(res.primaryError, thread.id, reply.id);
+        return true;
+      }
+      return false;
+    } finally {
+      if (!warmUsed) warm?.cancel();
     }
-    reply.text = res.text || reply.text;
-    if (res.sessionId) thread.sessionId = res.sessionId;
   }
 
   async function delegate(thread: Thread, reply: Message, turn: Turn, access: AccessMode) {

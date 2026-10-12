@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { accessOf, brainChoice, checkAccess, checkWorkerChoice, DEFAULT_ACCESS, parseModelList } from "./settings.ts";
+import { accessOf, brainChoice, checkAccess, checkCooldownSec, checkFallbackModels, checkWorkerChoice, DEFAULT_ACCESS, DEFAULT_COOLDOWN_SEC, parseModelList } from "./settings.ts";
 
 const LIST = `Canonical models
 canonical            selected                       variants  context  max-out
@@ -57,5 +57,29 @@ describe("access", () => {
     expect(accessOf({}, { access: "project" })).toBe("project");
     expect(accessOf({ access: null }, { access: "full" })).toBe("full");
     expect(accessOf({ access: "read" }, { access: "project" })).toBe("read");
+  });
+});
+
+describe("fallback", () => {
+  test("fallback models are trimmed and deduped, empty means no fallback", () => {
+    expect(DEFAULT_COOLDOWN_SEC).toBe(600);
+    expect(checkFallbackModels({})).toEqual({});
+    expect(checkFallbackModels({ fallbackModels: null })).toEqual({});
+    expect(checkFallbackModels({ fallbackModels: [] })).toEqual({ fallbackModels: [] });
+    expect(checkFallbackModels({ fallbackModels: [" a/m ", "a/m", "b/n"] })).toEqual({ fallbackModels: ["a/m", "b/n"] });
+    expect(() => checkFallbackModels({ fallbackModels: "a/m" })).toThrow("배열");
+    expect(() => checkFallbackModels({ fallbackModels: ["  "] })).toThrow("비어");
+  });
+  test("Anthropic models are refused as fallbacks", () => {
+    expect(() => checkFallbackModels({ fallbackModels: ["anthropic/claude-opus-5-5"] })).toThrow("Claude Code에서만");
+    expect(() => checkFallbackModels({ fallbackModels: ["openai/claude-sonnet-5"] })).toThrow("Claude Code에서만");
+  });
+  test("cooldownSec must be a finite number at or above zero", () => {
+    expect(checkCooldownSec({})).toEqual({});
+    expect(checkCooldownSec({ cooldownSec: 0 })).toEqual({ cooldownSec: 0 });
+    expect(checkCooldownSec({ cooldownSec: 30 })).toEqual({ cooldownSec: 30 });
+    expect(() => checkCooldownSec({ cooldownSec: -1 })).toThrow("cooldownSec");
+    expect(() => checkCooldownSec({ cooldownSec: Number.NaN })).toThrow("cooldownSec");
+    expect(() => checkCooldownSec({ cooldownSec: "60" })).toThrow("cooldownSec");
   });
 });

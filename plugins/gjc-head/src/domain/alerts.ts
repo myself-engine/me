@@ -1,7 +1,8 @@
 // Known ways a reply or delegation can stay blocked, and what the user can do.
 // Pure: string in, Korean cause and fix out. The head records one alert entity
 // per cause (gjc-head.alert) and shows the same text on the failed message.
-export type AlertCause = "gjc-login" | "herdr-pane" | "dirty-repo" | "model-refused";
+import { fallbackReason } from "./fallback.ts";
+export type AlertCause = "gjc-login" | "herdr-pane" | "dirty-repo" | "model-refused" | "model-unavailable";
 
 export interface FailureAlert {
   cause: AlertCause;
@@ -52,6 +53,15 @@ export function describeFailure(err: unknown): FailureAlert | null {
       cause: "gjc-login",
       title: "GJC의 OpenAI 로그인이 만료됐어요",
       fix: "터미널에서 gjc 실행 후 /login",
+    };
+  }
+  // Quota, expired auth outside the login gate, model gone, provider 5xx/network:
+  // another model may work, so the head falls back and keeps this alert until the primary answers again.
+  if (fallbackReason(err)) {
+    return {
+      cause: "model-unavailable",
+      title: "기본 모델을 쓸 수 없어요",
+      fix: "잠시 뒤 다시 보내 보세요. 계속되면 대화 설정에서 모델을 바꾸세요",
     };
   }
   return null;

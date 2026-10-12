@@ -8,6 +8,32 @@ export const WORKER_EFFORTS = ["low", "medium", "high", "xhigh"];
 const ANTHROPIC_RE = /(anthropic|claude|opus|sonnet|haiku|fable)/i;
 /** Claude may only run inside Claude Code (ToS), never inside GJC or another harness. */
 export const isAnthropic = (model: string) => ANTHROPIC_RE.test(model);
+/** Cooldown for a failed model before the primary is tried first again, in seconds. */
+export const DEFAULT_COOLDOWN_SEC = 600;
+
+/**
+ * Validates the ordered fallback models. Empty means no fallback: fail as
+ * today. Anthropic models are refused like every other head choice (ToS).
+ */
+export function checkFallbackModels(p: { fallbackModels?: unknown }): { fallbackModels?: string[] } {
+  if (p.fallbackModels === undefined || p.fallbackModels === null) return {};
+  if (!Array.isArray(p.fallbackModels)) throw new Error("fallbackModels는 문자열 배열이에요");
+  const out: string[] = [];
+  for (const m of p.fallbackModels) {
+    if (typeof m !== "string" || !m.trim()) throw new Error("모델 이름이 비어 있어요");
+    const model = m.trim();
+    if (isAnthropic(model)) throw new Error(`${model}은 대화 엔진(GJC)에서 쓸 수 없어요. Claude 모델은 Claude Code에서만 써요`);
+    if (!out.includes(model)) out.push(model);
+  }
+  return { fallbackModels: out };
+}
+
+/** Validates the cooldown: seconds a failed model stays out, 0 disables the wait. */
+export function checkCooldownSec(p: { cooldownSec?: unknown }): { cooldownSec?: number } {
+  if (p.cooldownSec === undefined || p.cooldownSec === null) return {};
+  if (typeof p.cooldownSec !== "number" || !Number.isFinite(p.cooldownSec) || p.cooldownSec < 0) throw new Error("cooldownSec는 0 이상의 숫자예요");
+  return { cooldownSec: p.cooldownSec };
+}
 export const isEffort = (e: unknown): e is Effort => EFFORTS.includes(e as Effort);
 
 /** Access modes: "read" never delegates, "project" delegates at once and waits for review, "full" also auto-applies. */

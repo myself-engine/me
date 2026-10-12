@@ -34,6 +34,16 @@ describe("describeFailure", () => {
     expect(describeFailure(new Error("model foo is not allowed inside GJC (Claude runs only in Claude Code)"))?.cause).toBe("model-refused");
     expect(describeFailure(new Error("effort는 off, low 중 하나예요"))?.cause).toBe("model-refused");
   });
+  test("fallback-eligible failures map to the primary-model alert", () => {
+    expect(describeFailure(new Error("gjc error: 429 rate limit exceeded"))?.cause).toBe("model-unavailable");
+    expect(describeFailure(new Error("model_not_supported"))?.cause).toBe("model-unavailable");
+    expect(describeFailure(new Error("gjc error: provider 503 service unavailable"))?.cause).toBe("model-unavailable");
+    expect(friendlyError(new Error("429 too many requests"))).toContain("기본 모델을 쓸 수 없어요");
+  });
+  test("specific causes win over the fallback alert", () => {
+    expect(describeFailure(new Error("gjc error: provider login expired (openai)"))?.cause).toBe("gjc-login");
+    expect(describeFailure(new Error("model foo is not allowed inside GJC (Claude runs only in Claude Code)"))?.cause).toBe("model-refused");
+  });
   test("unknown errors stay raw", () => {
     expect(describeFailure(new Error("something completely new"))).toBeNull();
     expect(friendlyError(new Error("something completely new"))).toBe("something completely new");

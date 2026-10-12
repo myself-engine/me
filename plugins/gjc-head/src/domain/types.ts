@@ -35,6 +35,10 @@ export interface HeadSettings {
   effort: Effort;
   /** Default access mode for new threads; "project" means delegate at once, apply after review. */
   access: AccessMode;
+  /** Ordered fallback models for direct replies; empty means fail as today. */
+  fallbackModels: string[];
+  /** How long a failed model stays out of rotation, in seconds. */
+  cooldownSec: number;
   /** Models shown first in pickers: config favourites plus the user's own, plus the default model. */
   favorites: string[];
   /** Models the user starred in the picker; persisted here. */
@@ -106,6 +110,8 @@ export interface Message {
   /** Top-level so entity.list can find the message by task. */
   taskId?: string | null;
   delegation?: Delegation;
+  /** Set when a fallback model wrote the reply: the failed primary, the model that answered, and why. */
+  fallback?: { from: string; to: string; reason: string };
   error?: string;
   status: "pending" | "streaming" | "done" | "error";
 }

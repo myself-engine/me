@@ -49,6 +49,64 @@ export class GjcError extends Error {
 export function assertAllowedModel(model: string) {
   if (ANTHROPIC_RE.test(model)) throw new GjcError(`model ${model} is not allowed inside GJC (Claude runs only in Claude Code)`);
 }
+/** One successful model switch: the configured primary failed with an eligible error. */
+export interface ModelFallback {
+  from: string;
+  to: string;
+  reason: string;
+}
+
+/**
+ * Runs `run` against the primary model, falling back to each fallback model in
+ * order when the failure looks transient or model-specific (the caller's
+ * `isEligible` decides; it returns a short reason or null). Models still inside
+ * their cooldown are skipped, and every model that fails eligibly is put in
+ * cooldown for `cooldownSec`. Non-eligible failures abort at once. Throws the
+ * last error when every attempted model fails. Domain-free: failure meanings
+ * stay with the caller.
+ */
+export async function withModelFallback<T>(args: {
+  primary: string;
+  fallbackModels: string[];
+  cooldownSec: number;
+  cooldowns: Map<string, number>;
+  now?: () => number;
+  isEligible: (err: unknown) => string | null;
+  run: (model: string) => Promise<T>;
+  onFallback?: (f: ModelFallback) => void;
+}): Promise<{ value: T; fallback: ModelFallback | null; primaryError: unknown | null }> {
+  const nowMs = args.now ?? Date.now;
+  const at = nowMs();
+  for (const m of [...args.cooldowns.keys()]) {
+    if ((args.cooldowns.get(m) ?? 0) <= at) args.cooldowns.delete(m);
+  }
+  const candidates = [args.primary, ...args.fallbackModels.filter((m) => m !== args.primary)];
+  for (const m of candidates) assertAllowedModel(m);
+  const cooling = (m: string) => (args.cooldowns.get(m) ?? 0) > at;
+  const order = candidates.filter((m) => !cooling(m));
+  // Always attempt something, even when everything is still cooling.
+  if (!order.length) order.push(args.primary);
+  let firstReason: string | null = null;
+  let firstError: unknown | null = null;
+  let lastError: unknown = null;
+  for (const model of order) {
+    try {
+      const value = await args.run(model);
+      if (model === args.primary && firstReason === null) return { value, fallback: null, primaryError: null };
+      const fallback = { from: args.primary, to: model, reason: firstReason ?? "cooldown" };
+      args.onFallback?.(fallback);
+      return { value, fallback, primaryError: firstError };
+    } catch (err) {
+      lastError = err;
+      const reason = args.isEligible(err);
+      if (reason === null) throw err;
+      firstReason ??= reason;
+      firstError ??= err;
+      args.cooldowns.set(model, at + args.cooldownSec * 1000);
+    }
+  }
+  throw lastError;
+}
 
 export async function runGjc(opts: GjcRunOptions): Promise<GjcRunResult> {
   const retries = opts.retries ?? 2;
