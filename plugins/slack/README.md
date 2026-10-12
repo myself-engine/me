@@ -98,6 +98,7 @@ chmod 600 ~/.config/me/secrets/slack-app-token ~/.config/me/secrets/slack-bot-to
 | `dm` | `"owner-only"` | 누구의 말을 받을지 정한다. `owner-only`, `allowlist`(주인과 `allowlist`), `open`(누구나) 중 하나다. 채널에도 같은 기준을 쓴다. |
 | `allowlist` | `[]` | `dm: "allowlist"`일 때 허용할 멤버 ID 목록. |
 | `openGroups` | `[]` | 멘션 없이도 모든 메시지에 답할 채널. 채널 ID(`C…`, `G…`)나 `slack/group/<채널ID>` 형식으로 적는다. |
+| `notifyChannel` | (없음) | `notify` 메서드가 보낼 기본 채널. 예약 실행(schedule) 전달이 이 채널로 간다. 없으면 `notify`가 거절한다. |
 | `approvalsToOwnerDm` | `false` | `true`면 Slack이 아닌 곳(예: 웹)에서 생긴 승인 요청도 주인 DM으로 보낸다. |
 | `drainIntervalMs` | `5000` | 원장에 남은 답장을 다시 보내 보는 주기. |
 | `chatTimeoutMs` | `2000000` | `chat.send` 한 번을 기다리는 최대 시간. 위임은 승인을 기다리므로 승인 만료 시간보다 길게 둔다. |
@@ -131,6 +132,7 @@ chmod 600 ~/.config/me/secrets/slack-app-token ~/.config/me/secrets/slack-bot-to
 - **승인**: 대화에서 시작된 위임 승인 요청은 그 대화에 카드로 올라온다. 카드에는 **승인/거절** 버튼과 하네스 선택 메뉴가 있다. 다른 하네스를 고르고 승인하면 `amend.harness`로 전달된다. 결정이 나면 카드에서 버튼을 지우고 결과를 적는다.
 - **위임 결과**: 작업이 봉인(sealed)되면 결과 요약을 **수락/거절/diff** 버튼과 함께 올린다. 수락은 brgr `task.accept`, 거절은 `task.reject`를 부른다.
 - **diff**: 카드가 있는 대화(DM 또는 그 스레드)에 파일로 올린다. Slack에서는 파일을 나에게만 보이게 올릴 수 없다. 그래서 채널 스레드에서는 그 채널 사람들도 볼 수 있다.
+- **알림(`notify`)**: 예약 실행(schedule)이 `{text}`를 보내면 `notifyChannel`에 하나로 올려요. 답장과 같은 원장을 써서 비밀이 가려지고, 글은 길이 제한에 맞게 나눠서 보내요.
 - **버튼 권한**: 버튼은 주인만 누를 수 있다. 버튼에 대한 응답은 누른 사람에게만 보인다(`chat.postEphemeral`). 다른 사람이 누르면 거절 메시지가 그 사람에게만 간다.
 
 ## 6. 권한 (plugin.json)

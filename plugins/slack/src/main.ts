@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Ledger } from "@me/messenger";
-import { definePlugin } from "@me/sdk";
+import { RpcError, definePlugin } from "@me/sdk";
 import { kernelPort } from "./adapters/kernel.ts";
 import { slackSdkGateway, type SlackSdkGateway } from "./adapters/slack.ts";
 import { sqliteCards } from "./adapters/sqlite-cards.ts";
@@ -25,6 +25,15 @@ const plugin = definePlugin({
   onShutdown() {
     app?.stop();
     void gateway?.disconnect().catch(() => {});
+  },
+  methods: {
+    // One message to the configured default channel, for schedule delivery.
+    notify: (p) => {
+      if (!app) throw new RpcError(-32603, "slack이 시작되지 않았어요 (appTokenFile, botTokenFile, ownerId 설정을 확인하세요)");
+      const text = (p as { text?: unknown } | null)?.text;
+      if (typeof text !== "string" || !text.trim()) throw new RpcError(-32602, "slack.notify에는 {text}가 있어야 해요");
+      return app.notify(text);
+    },
   },
 });
 

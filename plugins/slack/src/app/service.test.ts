@@ -453,3 +453,20 @@ test("/new starts a new epoch and a new head thread for that conversation only",
   expect(kernel.chats.find((c) => c.text === "second")!.threadId).toBe(newThread);
   expect(kernel.chats.find((c) => c.text === "again")!.threadId).toBe(teamThread);
 });
+
+test("notify posts to the default channel through the ledger", async () => {
+  const napp = makeApp({ notifyChannel: "C123" });
+  const r = await napp.notify("⏱ 아침 브리핑\nhello");
+  expect(r).toEqual({ channel: "C123" });
+  expect(gateway.sent).toHaveLength(1);
+  expect(gateway.sent[0]).toMatchObject({ origin: { platform: "slack", kind: "group", conversationId: "C123" } });
+  napp.stop();
+});
+
+test("notify without a channel or text refuses", async () => {
+  await expect(app.notify("hi")).rejects.toThrow("notifyChannel");
+  const napp = makeApp({ notifyChannel: "C123" });
+  await expect(napp.notify("  ")).rejects.toThrow("text");
+  napp.stop();
+  expect(() => parseConfig({ appTokenFile: "/u", botTokenFile: "/u", ownerId: "UOWNER", notifyChannel: "no!" })).toThrow();
+});

@@ -312,6 +312,18 @@ export function createDiscordApp(deps: AppDeps) {
       timer = null;
     },
     onKernelEvent,
+    /**
+     * Posts one message to the configured default channel (schedule delivery).
+     * Goes through the same ledger as replies, so secrets are masked and a crash
+     * reissues an uncertain send with the duplicate label.
+     */
+    async notify(text: string) {
+      const channel = config.notifyChannel;
+      if (!channel) throw new Error("discord: notifyChannel이 없어서 알림을 보낼 수 없어요");
+      if (!text?.trim()) throw new Error("discord: text가 비었어요");
+      await reply({ platform: "discord", kind: "group", conversationId: channel }, text.trim(), null);
+      return { channel };
+    },
     drain: drainNow,
     /** Resolves when every message and event in flight has been handled. */
     async idle() {

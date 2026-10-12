@@ -8,6 +8,8 @@ export interface DiscordConfig {
   approvalsToOwnerDm: boolean;
   drainIntervalMs: number;
   chatTimeoutMs: number;
+  /** Default channel for notify (schedule delivery). Unset means notify refuses. */
+  notifyChannel?: string;
 }
 
 const strings = (v: unknown, name: string): string[] => {
@@ -25,11 +27,16 @@ export function parseConfig(raw: Record<string, unknown>): DiscordConfig {
   if (dm !== "owner-only" && dm !== "allowlist" && dm !== "open") throw new Error(`discord: dm must be owner-only, allowlist or open`);
   // openGroups take channel ids or full origin keys (discord/group/<channelId>).
   const openGroups = strings(raw.openGroups, "openGroups").map((g) => (g.includes("/") ? g : `${PLATFORM}/group/${g}`));
+  const notifyChannel = raw.notifyChannel;
+  if (notifyChannel !== undefined && (typeof notifyChannel !== "string" || !/^\d+$/.test(notifyChannel))) {
+    throw new Error("discord: notifyChannel must be a channel id");
+  }
   return {
     tokenFile,
     policy: { dm, ownerId, allowlist: strings(raw.allowlist, "allowlist"), openGroups },
     approvalsToOwnerDm: raw.approvalsToOwnerDm === true,
     drainIntervalMs: typeof raw.drainIntervalMs === "number" ? raw.drainIntervalMs : 5_000,
     chatTimeoutMs: typeof raw.chatTimeoutMs === "number" ? raw.chatTimeoutMs : 2_000_000,
+    ...(typeof raw.notifyChannel === "string" && raw.notifyChannel ? { notifyChannel: raw.notifyChannel } : {}),
   };
 }

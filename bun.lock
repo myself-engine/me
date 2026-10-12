@@ -153,6 +153,14 @@
         "@me/sdk": "workspace:*",
       },
     },
+    "plugins/schedule": {
+      "name": "@me/plugin-schedule",
+      "dependencies": {
+        "@me/protocol": "workspace:*",
+        "@me/redact": "workspace:*",
+        "@me/sdk": "workspace:*",
+      },
+    },
     "plugins/slack": {
       "name": "@me/plugin-slack",
       "dependencies": {
@@ -254,6 +262,8 @@
     "@me/plugin-jev": ["@me/plugin-jev@workspace:plugins/jev"],
 
     "@me/plugin-ops": ["@me/plugin-ops@workspace:plugins/ops"],
+
+    "@me/plugin-schedule": ["@me/plugin-schedule@workspace:plugins/schedule"],
 
     "@me/plugin-slack": ["@me/plugin-slack@workspace:plugins/slack"],
 

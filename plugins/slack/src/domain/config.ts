@@ -13,6 +13,8 @@ export interface SlackConfig {
   chatTimeoutMs: number;
   /** Minimum gap between edits of a streaming reply (Slack rate-limits chat.update). */
   streamIntervalMs: number;
+  /** Default channel for notify (schedule delivery). Unset means notify refuses. */
+  notifyChannel?: string;
 }
 
 const SLACK_ID = /^[A-Z0-9]{2,}$/;
@@ -45,6 +47,10 @@ export function parseConfig(raw: Record<string, unknown>): SlackConfig {
     if (!key.startsWith(`${PLATFORM}/group/`) || !SLACK_ID.test(key.slice(`${PLATFORM}/group/`.length))) throw new Error(`slack: openGroups entry ${g} is not a channel id`);
     return key;
   });
+  const notifyChannel = raw.notifyChannel;
+  if (notifyChannel !== undefined && (typeof notifyChannel !== "string" || !SLACK_ID.test(notifyChannel))) {
+    throw new Error("slack: notifyChannel must be a channel id");
+  }
   const ms = (v: unknown, fallback: number) => (typeof v === "number" && v >= 0 ? v : fallback);
   return {
     appTokenFile,
@@ -54,5 +60,6 @@ export function parseConfig(raw: Record<string, unknown>): SlackConfig {
     drainIntervalMs: ms(raw.drainIntervalMs, 5_000),
     chatTimeoutMs: ms(raw.chatTimeoutMs, 2_000_000),
     streamIntervalMs: ms(raw.streamIntervalMs, 1_500),
+    ...(typeof notifyChannel === "string" ? { notifyChannel } : {}),
   };
 }

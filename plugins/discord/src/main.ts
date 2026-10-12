@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Ledger } from "@me/messenger";
-import { definePlugin } from "@me/sdk";
+import { RpcError, definePlugin } from "@me/sdk";
 import { discordJsGateway } from "./adapters/discord-js.ts";
 import { kernelPort } from "./adapters/kernel.ts";
 import { sqliteCards } from "./adapters/sqlite-cards.ts";
@@ -23,6 +23,15 @@ const plugin = definePlugin({
   },
   onShutdown() {
     app?.stop();
+  },
+  methods: {
+    // One message to the configured default channel, for schedule delivery.
+    notify: (p) => {
+      if (!app) throw new RpcError(-32603, "discord가 시작되지 않았어요 (tokenFile, ownerId 설정을 확인하세요)");
+      const text = (p as { text?: unknown } | null)?.text;
+      if (typeof text !== "string" || !text.trim()) throw new RpcError(-32602, "discord.notify에는 {text}가 있어야 해요");
+      return app.notify(text);
+    },
   },
 });
 

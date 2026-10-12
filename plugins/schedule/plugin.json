@@ -1,0 +1,13 @@
+{
+  "id": "schedule",
+  "version": "0.1.0",
+  "protocol": { "min": 1, "max": 1 },
+  "run": { "command": ["bun", "src/main.ts"] },
+  "permissions": ["read-state", "subscribe", "call:gjc-head", "call:discord", "call:slack", "approve.request"],
+  "provides": {
+    "methods": ["schedule.add", "schedule.update", "schedule.remove", "schedule.list", "schedule.runNow"],
+    "kinds": ["job", "run", "state"]
+  },
+  "subscribes": ["gjc-head.message.changed"],
+  "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }
+}
