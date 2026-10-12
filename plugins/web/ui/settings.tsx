@@ -10,7 +10,7 @@ import { HarnessScreen } from "./harness.tsx";
 import { HeadChip } from "./head.tsx";
 import { ProjectsSection } from "./projects.tsx";
 import { DeviceSection } from "./ops.tsx";
-import { useFocusTrap } from "./shared.tsx";
+import { useBusy, useFocusTrap } from "./shared.tsx";
 
 const SECTIONS = [
   { id: "general", label: "일반" },
@@ -98,8 +98,33 @@ function GeneralSection() {
         <DefaultAccess />
         <p className="pick-note muted">새 대화가 이 모드로 시작해요. 전부 알아서는 확인 후 바로 적용돼요.</p>
       </div>
+      <HarnessSelect />
       <PushRow />
       <BudgetLine />
+    </div>
+  );
+}
+
+/** Which headless harness answers: GJC (default) or OMP. One line; the model picker follows it. */
+function HarnessSelect() {
+  const { s, conn, notify } = useApp();
+  const [busy, act] = useBusy(notify);
+  const cur = s.headSettings?.harness ?? "gjc";
+  return (
+    <div>
+      <label className="field">
+        <span>대화 엔진 실행 도구</span>
+        <select
+          value={cur}
+          disabled={busy || !conn}
+          onChange={(e) => void act(async () => void (await conn!.request("head.defaults.set", { harness: e.target.value })))}
+          aria-label="대화 엔진 실행 도구"
+        >
+          <option value="gjc">GJC</option>
+          <option value="omp">OMP</option>
+        </select>
+      </label>
+      <p className="pick-note muted">답을 쓰는 엔진을 바꿔요. GJC 로그인이 만료되면 OMP로 계속 대화할 수 있어요.</p>
     </div>
   );
 }

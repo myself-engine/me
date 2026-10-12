@@ -1,1 +1,1 @@
-{ "name": "@me/plugin-jev", "private": true, "type": "module", "dependencies": { "@me/sdk": "workspace:*", "@me/protocol": "workspace:*", "@me/gjc": "workspace:*" } }
+{ "name": "@me/plugin-jev", "private": true, "type": "module", "dependencies": {"@me/sdk": "workspace:*", "@me/protocol": "workspace:*", "@me/gjc": "workspace:*", "@me/runner": "workspace:*"} }

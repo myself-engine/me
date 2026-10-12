@@ -2,7 +2,7 @@
 // The brief doubles as the delegation instruction for a worker harness.
 import { join } from "node:path";
 import { definePlugin } from "@me/sdk";
-import { parseJsonObject, runGjc } from "@me/gjc";
+import { isHeadHarness, parseJsonObject, runHead, type HeadHarness } from "@me/runner";
 
 export interface Summary {
   summaryEn: string;
@@ -23,6 +23,8 @@ const plugin = definePlugin({
   methods: {
     summarize: async (p: { original: string; normalized: string; harnesses: string[]; project?: string }, ctx) => {
       const model = (plugin.config.model as string) ?? "openai-codex/gpt-5.6-luna";
+      // Follows the head's harness when the operator sets the same value here (own config, no cross-plugin call).
+      const harness: HeadHarness = isHeadHarness(plugin.config.harness) ? plugin.config.harness : "gjc";
       const prompt = [
         "You turn a user's chat message to their coding-agent orchestrator into a structured English task summary.",
         "The user writes casual Korean. Interpret intent, not literal words. Output ONLY one JSON object, no prose.",
@@ -42,7 +44,7 @@ const plugin = definePlugin({
         '- "criterion": if work is needed, one observable English sentence that says when the work is done (e.g. "bun test passes and the README lists the new flag."); otherwise "".',
         '- "role": one of "none", "test" (only runs or writes tests), "code", "docs", "research", "deploy" (ships or releases anything), "db-write" (changes a database). Pick the most dangerous that applies.',
       ].join("\n");
-      const res = await runGjc({ prompt, model, cwd: join(dataDir, "runs"), ephemeral: true, thinking: "low", signal: ctx.signal });
+      const res = await runHead({ harness, prompt, model, cwd: join(dataDir, "runs"), ephemeral: true, thinking: "low", signal: ctx.signal });
       const s = parseJsonObject<Summary>(res.text);
       if (!p.harnesses.includes(s.harness)) s.harness = p.harnesses[0] ?? s.harness;
       s.criterion = typeof s.criterion === "string" ? s.criterion.trim() : "";

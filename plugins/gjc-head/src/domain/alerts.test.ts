@@ -8,6 +8,14 @@ describe("describeFailure", () => {
     expect(a!.fix).toContain("터미널에서 gjc 실행 후 /login");
     expect(friendlyError(new Error("gjc error: provider login expired"))).toContain("GJC의 OpenAI 로그인이 만료됐어요 · 터미널에서 gjc 실행 후 /login");
   });
+  test("OMP login expiry on the omp harness maps to the omp /login fix", () => {
+    const a = describeFailure(new Error("omp error: provider login expired (openai)"), "omp");
+    expect(a).toMatchObject({ cause: "omp-login", title: "OMP 로그인이 만료됐어요" });
+    expect(a!.fix).toContain("터미널에서 omp 실행 후 /login");
+    expect(friendlyError(new Error("omp error: provider login expired"), "omp")).toContain("OMP 로그인이 만료됐어요 · 터미널에서 omp 실행 후 /login");
+    // Same error on the gjc harness keeps the GJC text.
+    expect(describeFailure(new Error("omp error: provider login expired"), "gjc")?.cause).toBe("gjc-login");
+  });
   test("Korean login-expiry text maps too", () => {
     expect(describeFailure("GJC의 OpenAI 로그인이 만료됐어요")?.cause).toBe("gjc-login");
   });

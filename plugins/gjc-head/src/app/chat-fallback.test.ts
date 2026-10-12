@@ -5,9 +5,10 @@ import { createHead, type HeadPorts } from "./chat.ts";
 const PRIMARY = "primary/model";
 const FB = "fb/model";
 
-function setup(opts: { script?: (Error | string)[]; fallbackModels?: string[]; cooldownSec?: number; clock?: () => number; warmError?: Error } = {}) {
+function setup(opts: { script?: (Error | string)[]; fallbackModels?: string[]; cooldownSec?: number; clock?: () => number; warmError?: Error; harness?: "gjc" | "omp" } = {}) {
   let saved: HeadSettings | null = null;
   const tried: string[] = [];
+  const triedHarness: string[] = [];
   const script = [...(opts.script ?? ["ok"])];
   const messages = new Map<string, Message>();
   const threads = new Map<string, Thread>();
@@ -18,6 +19,7 @@ function setup(opts: { script?: (Error | string)[]; fallbackModels?: string[]; c
     brain: {
       reply: async (p) => {
         tried.push(p.model);
+        triedHarness.push(p.harness);
         const next = script.shift();
         if (next instanceof Error) throw next;
         p.onUpdate({ kind: "text_delta", delta: typeof next === "string" ? next : "ok" });
@@ -57,6 +59,7 @@ function setup(opts: { script?: (Error | string)[]; fallbackModels?: string[]; c
   };
   const head = createHead(ports, {
     harnesses: ["local.codex"],
+    harness: opts.harness ?? "gjc",
     simpleThreshold: 0.8,
     approvalExpiresSec: 60,
     defaultProject: "/p",
@@ -69,7 +72,7 @@ function setup(opts: { script?: (Error | string)[]; fallbackModels?: string[]; c
     ...(opts.clock ? { clock: opts.clock } : {}),
   });
   const turn = { update: (u: any) => updates.push(u), phase: () => {}, signal: new AbortController().signal, traceId: "tr" };
-  return { head, turn, tried, messages, alerts, updates, cancels };
+  return { head, turn, tried, triedHarness, messages, alerts, updates, cancels };
 }
 
 describe("model fallback", () => {
@@ -80,8 +83,8 @@ describe("model fallback", () => {
     expect(s.tried).toEqual([PRIMARY, FB]);
     const reply = s.messages.get(r.messageId)!;
     expect(reply.text).toBe("대체 답");
-    expect(reply.fallback).toEqual({ from: PRIMARY, to: FB, reason: "quota" });
-    expect(s.updates.find((u) => u.kind === "fallback")).toMatchObject({ from: PRIMARY, to: FB, reason: "quota" });
+    expect(reply.fallback).toEqual({ from: "gjc:primary/model", to: "gjc:fb/model", reason: "quota" });
+    expect(s.updates.find((u) => u.kind === "fallback")).toMatchObject({ from: "gjc:primary/model", to: "gjc:fb/model", reason: "quota" });
     // The primary is still broken: its alert stays so the user fixes it.
     expect(s.alerts.get("model-unavailable")).toMatchObject({ active: true });
   });
@@ -109,10 +112,10 @@ describe("model fallback", () => {
     let at = 1_000_000;
     const s = setup({ clock: () => at, script: [new Error("429 too many requests"), "fb-1", "fb-2", "primary-again"] });
     const first = await s.head.send({ text: "안녕" }, s.turn);
-    expect(s.messages.get(first.messageId)!.fallback).toMatchObject({ from: PRIMARY, to: FB });
+    expect(s.messages.get(first.messageId)!.fallback).toMatchObject({ from: "gjc:primary/model", to: "gjc:fb/model" });
     const second = await s.head.send({ text: "안녕" }, s.turn);
     expect(s.tried).toEqual([PRIMARY, FB, FB]);
-    expect(s.messages.get(second.messageId)!.fallback).toMatchObject({ from: PRIMARY, to: FB, reason: "cooldown" });
+    expect(s.messages.get(second.messageId)!.fallback).toMatchObject({ from: "gjc:primary/model", to: "gjc:fb/model", reason: "cooldown" });
     at += 601_000;
     const third = await s.head.send({ text: "안녕" }, s.turn);
     expect(s.tried).toEqual([PRIMARY, FB, FB, PRIMARY]);
@@ -125,7 +128,7 @@ describe("model fallback", () => {
     expect(r.status).toBe("done");
     expect(s.tried).toEqual([FB]);
     expect(s.cancels).toEqual([]);
-    expect(s.messages.get(r.messageId)!.fallback).toMatchObject({ from: PRIMARY, to: FB, reason: "provider-error" });
+    expect(s.messages.get(r.messageId)!.fallback).toMatchObject({ from: "gjc:primary/model", to: "gjc:fb/model", reason: "provider-error" });
   });
 
   test("Anthropic fallbacks and bad cooldowns are refused before anything runs", async () => {
@@ -138,5 +141,30 @@ describe("model fallback", () => {
     expect(await s.head.settings()).toMatchObject({ fallbackModels: [FB], cooldownSec: 30 });
     await s.head.setDefaults({ fallbackModels: null, cooldownSec: null });
     expect(await s.head.settings()).toMatchObject({ fallbackModels: [], cooldownSec: 600 });
+  });
+
+  test("a GJC auth failure falls back to an OMP ref on the other harness", async () => {
+    const s = setup({ script: [new Error("gjc error: provider login expired"), "omp 답"], fallbackModels: ["omp:fb/model"] });
+    const r = await s.head.send({ text: "안녕" }, s.turn);
+    expect(r.status).toBe("done");
+    expect(s.tried).toEqual([PRIMARY, FB]);
+    expect(s.triedHarness).toEqual(["gjc", "omp"]);
+    expect(s.messages.get(r.messageId)!.fallback).toEqual({ from: "gjc:primary/model", to: "omp:fb/model", reason: "auth-expired" });
+  });
+
+  test("switching the default harness sends the next turn there", async () => {
+    const s = setup({ script: ["gjc 답", "omp 답"], fallbackModels: [] });
+    await s.head.send({ text: "안녕" }, s.turn);
+    await s.head.setDefaults({ harness: "omp" });
+    expect(await s.head.settings()).toMatchObject({ harness: "omp" });
+    await s.head.send({ text: "안녕" }, s.turn);
+    expect(s.triedHarness).toEqual(["gjc", "omp"]);
+  });
+
+  test("unknown harnesses and harness-qualified Anthropic models are refused", async () => {
+    const s = setup({ fallbackModels: [] });
+    await expect(s.head.setDefaults({ harness: "claude-code" as never })).rejects.toThrow("gjc, omp");
+    await expect(s.head.setDefaults({ fallbackModels: ["omp:anthropic/claude-x"] })).rejects.toThrow("대화 엔진(OMP)");
+    expect(s.tried).toEqual([]);
   });
 });

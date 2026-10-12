@@ -513,3 +513,15 @@
 
 ## 32. 릴리스는 기본 패치로 올린다 (2026-10-13)
 - **`me release`는 깃발 없이 패치를 올린다.** `--minor`를 줄 때만 마이너를 올리고, `--patch`는 그대로 두어도 된다(기본값과 같아서 아무 일도 안 한다). 마이너 올리기가 너무 잦았기 때문이다.
+
+## 33. 대화 head 하네스 선택: GJC 그대로, OMP 추가 (2026-10-13)
+- **플러그인 id는 `gjc-head` 그대로, 속만 고른다.** 설정·저널·화면이 id에 묶여 있어서 이름을 바꾸면 다 깨진다. 설정에 `harness: "gjc" | "omp"`(기본 `"gjc"`)와 하네스별 기본 모델 `models: {gjc, omp}`를 뒀다. 옛 `model`은 gjc 기본값으로 그대로 읽힌다.
+- **실행 추상은 `lib/runner`에 한 곳에만 둔다.** GJC 코드는 `@me/gjc`에서 `@me/runner`로 옮기고 `@me/gjc`는 같은 이름 재보내기로 남겼다. OMP는 GJC와 깃발 모양이 같아서(`-p --mode json --tools/--no-tools --thinking --model`) 이벤트 읽기 코드를 공유한다. OMP에 `--no-mcp`는 없고, `--no-extensions` + `--no-skills` + 명시한 `--tools` 목록이 그 자리를 대신한다(도움말에 없음 확인). 세션은 `sessions-omp`에 따로 둬서 GJC 세션과 섞이지 않는다.
+- **OMP 실측(2026-10-13, `omp` v18.2.7).** `say ok` 한 번이 `session → message_update(text_delta) → message_end → turn_end → agent_end`를 돌려주고, 도구 켜면 `tool_execution_start/end`도 GJC와 같은 이름으로 온다. 그래서 노출 도구 감시는 손대지 않았다. `omp models --json`으로 목록을 읽고 Anthropic 이름은 GJC와 같이 뺀다(ToS). `deepseek-v4.1-flash`는 구독이 없어 403이 났고, 기본 모델(`openai-codex/gpt-5.6-luna`)은 답·이어받기(`--resume`)·미리 띄우기(stdin 대기)까지 확인했다. 실측 한 줄 샘플은 `lib/runner/fixtures/omp-say-ok.jsonl`에 뒀다(서명 뭉치만 지움).
+- **읽기 전용 규칙은 하네스와 상관없이 기계적으로 둔다.** 두 하네스 모두 도구 없이 띄우고, 허용 목록 밖의 도구 실행이 보이면 그 실행을 중단한다. Anthropic 검사는 모델 이름 앞의 `gjc:`·`omp:`를 떼고 본다.
+- **fallback은 `harness:model`로 적는다.** 맨 모델 이름은 같은 하네스, `omp:모델`·`gjc:모델`은 그 하네스로 넘어간다. GJC 로그인 만료가 나면 OMP 차례로 넘어갈 수 있다. 같은 모델 이름은 하네스별로 따로 식힌다(`gjc:이름`, `omp:이름`).
+- **알림은 하네스 이름을 밝힌다.** `omp-login` 원인을 새로 두고 "OMP 로그인이 만료됐어요 · 터미널에서 omp 실행 후 /login"을 보여 준다. GJC 문구는 그대로다.
+- **summarize와 jev는 각자 `harness` 설정을 본다.** head 설정을 읽으러 오가면 느려지고 묶이니까, 세 곳에 같은 값을 적으면 따라온다. jev의 OpenRouter 먼저는 그대로다.
+- **화면은 일반란 한 줄만 건든다.** "대화 엔진 실행 도구" 고르기와 한 줄 설명, 모델 고르기는 고른 하네스의 목록을 보여 준다. 전체 화면 손보기는 나중 일이다.
+- **버린 대안**: 플러그인 id 바꾸기(설정·저널·화면이 다 깨진다), `lib/gjc` 안에 OMP 넣기(이름이 거짓말이 된다), summarize·jev가 head 설정을 매번 읽어오기(느리고 묶인다), 스레드마다 하네스 두기(모델 고르기와 기본값이 겹쳐서 헷갈린다).
+- DESIGN 6·8절의 "head는 GJC" 서술은 전체 화면 손보기 때 함께 고친다.

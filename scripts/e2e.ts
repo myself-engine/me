@@ -281,7 +281,16 @@ try {
     await request("head.thread.set", { threadId: thread.id, access: null });
     const models = await request("head.models");
     if (!Array.isArray(models) || models.length === 0 || models.some((m: any) => /claude|anthropic/i.test(m.id))) throw new Error(`models ${models?.length}`);
-    return `effort=low reply ok, models=${models.length}, anthropic refused`;
+    if (d.harness !== "gjc" || d.models?.gjc !== "openai-codex/gpt-5.6-luna" || !d.models?.omp) throw new Error(`headSettings.harness ${JSON.stringify({ harness: d.harness, models: d.models })}`);
+    const badHarness = await request("head.defaults.set", { harness: "claude-code" }).then(() => null, (e: Error) => e.message);
+    if (!badHarness) throw new Error("unknown harness accepted");
+    const ompModels = await request("head.models", { harness: "omp" });
+    if (!Array.isArray(ompModels) || ompModels.length === 0 || ompModels.some((m: any) => /claude|anthropic/i.test(m.id))) throw new Error(`omp models ${ompModels?.length}`);
+    await request("head.defaults.set", { harness: "omp" });
+    const d2 = (await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json()).headSettings;
+    if (d2.harness !== "omp") throw new Error(`harness not saved ${d2.harness}`);
+    await request("head.defaults.set", { harness: "gjc" });
+    return `effort=low reply ok, models=${models.length}, ompModels=${ompModels.length}, anthropic refused`;
   });
 
   await check("상태: kernel.op 기록", async () => {

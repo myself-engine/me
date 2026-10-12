@@ -25,6 +25,10 @@ export interface Thread {
 
 /** gjc-head.settings: the head's defaults and the choices offered for the head and for workers. */
 export interface HeadSettings {
+  /** Which headless harness answers: "gjc" (default) or "omp". Absent on settings stored before harness selection existed. */
+  harness?: "gjc" | "omp";
+  /** Per-harness default models. Absent on settings stored before harness selection existed. */
+  models?: { gjc: string; omp: string };
   model: string;
   effort: Effort;
   /** Default access mode for new threads. Absent on settings stored before access modes existed. */
@@ -37,7 +41,6 @@ export interface HeadSettings {
   efforts: Effort[];
   workers: { models: Record<string, string[]>; efforts: string[] };
 }
-
 /** One model the head can run; `efforts` is null when unknown. */
 export interface ModelInfo {
   id: string;

@@ -1,8 +1,9 @@
 // Known ways a reply or delegation can stay blocked, and what the user can do.
 // Pure: string in, Korean cause and fix out. The head records one alert entity
 // per cause (gjc-head.alert) and shows the same text on the failed message.
+import type { HeadHarness } from "@me/runner";
 import { fallbackReason } from "./fallback.ts";
-export type AlertCause = "gjc-login" | "herdr-pane" | "dirty-repo" | "model-refused" | "model-unavailable";
+export type AlertCause = "gjc-login" | "omp-login" | "herdr-pane" | "dirty-repo" | "model-refused" | "model-unavailable";
 
 export interface FailureAlert {
   cause: AlertCause;
@@ -24,7 +25,7 @@ export interface HeadAlert extends FailureAlert {
 const textOf = (err: unknown) => (typeof err === "string" ? err : String((err as Error)?.message ?? err));
 
 /** Maps a thrown error to its blocking cause, or null when the cause is unknown. */
-export function describeFailure(err: unknown): FailureAlert | null {
+export function describeFailure(err: unknown, harness: HeadHarness = "gjc"): FailureAlert | null {
   const text = textOf(err);
   if (/uncommitted changes|커밋되지 않은 변경/.test(text)) {
     return {
@@ -47,8 +48,15 @@ export function describeFailure(err: unknown): FailureAlert | null {
       fix: "대화 설정에서 다른 모델을 고르세요",
     };
   }
-  // Token-expiry English ("authentication token has expired", "token expired") and refresh prompts only count with a login context (gjc/openai/auth/…). The gate below keeps stray token errors out.
-  if (/로그인.*만료|만료.*로그인|인증.*만료|만료.*인증|login[\s\S]{0,40}expir|expir[\s\S]{0,40}login|token[\s\S]{0,40}expir|expir[\s\S]{0,40}token|authentication[\s\S]{0,40}token|refresh|unauthorized|401/i.test(text) && /gjc|openai|login|로그인|인증|auth|401|unauthorized/i.test(text)) {
+  // Token-expiry English ("authentication token has expired", "token expired") and refresh prompts only count with a login context (gjc/omp/openai/auth/…). The gate below keeps stray token errors out.
+  if (/로그인.*만료|만료.*로그인|인증.*만료|만료.*인증|login[\s\S]{0,40}expir|expir[\s\S]{0,40}login|token[\s\S]{0,40}expir|expir[\s\S]{0,40}token|authentication[\s\S]{0,40}token|refresh|unauthorized|401/i.test(text) && /gjc|omp|openai|login|로그인|인증|auth|401|unauthorized/i.test(text)) {
+    if (harness === "omp") {
+      return {
+        cause: "omp-login",
+        title: "OMP 로그인이 만료됐어요",
+        fix: "터미널에서 omp 실행 후 /login",
+      };
+    }
     return {
       cause: "gjc-login",
       title: "GJC의 OpenAI 로그인이 만료됐어요",
@@ -68,8 +76,8 @@ export function describeFailure(err: unknown): FailureAlert | null {
 }
 
 /** What lands on the message: cause and fix in Korean, or the raw error when unknown. */
-export function friendlyError(err: unknown): string {
-  const alert = describeFailure(err);
+export function friendlyError(err: unknown, harness: HeadHarness = "gjc"): string {
+  const alert = describeFailure(err, harness);
   if (alert) return `${alert.title} · ${alert.fix}`;
   return textOf(err).slice(0, 500);
 }

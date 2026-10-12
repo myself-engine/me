@@ -1,14 +1,11 @@
 // What the head's use case needs from the outside world. Adapters implement these over
-// the kernel SDK and GJC; the use case and domain never import either directly.
+// the kernel SDK and the runners; the use case and domain never import either directly.
+import type { HeadHarness, RunnerUpdate } from "@me/runner";
 import type { AlertCause, HeadAlert } from "../domain/alerts.ts";
 import type { Effort, HeadSettings, Judgement, Message, ModelInfo, Summary, Thread, Understood } from "../domain/types.ts";
 
 /** Streamed output of the head's own reply; kinds match the chat.send op.update contract. */
-export type BrainUpdate =
-  | { kind: "text_delta"; delta: string }
-  | { kind: "thought_delta"; delta: string }
-  | { kind: "tool_call"; toolCallId: string; toolName: string; intent?: string; args?: unknown }
-  | { kind: "tool_result"; toolCallId: string; toolName: string; ok: boolean };
+export type BrainUpdate = RunnerUpdate;
 
 export interface BrainReply {
   text: string;
@@ -23,22 +20,23 @@ export interface WarmBrain {
   cancel(): void;
 }
 
-/** Which model the head replies with, and how hard it thinks. */
+/** Which harness and model the head replies with, and how hard it thinks. */
 export interface BrainChoice {
+  harness: HeadHarness;
   model: string;
   effort: Effort;
 }
 
 export interface Brain {
-  /** Generates a direct reply, resuming the thread's conversation when sessionId is set. */
+  /** Generates a direct reply, resuming the thread's conversation when sessionId is set. Routing by `harness` happens above; each adapter serves one harness. */
   reply(p: { prompt: string; sessionId: string | null; signal: AbortSignal; onUpdate: (u: BrainUpdate) => void } & BrainChoice): Promise<BrainReply>;
   /** Optional: start early so startup overlaps with judging; used only if the answer is direct. */
   prepare?(p: { sessionId: string | null } & BrainChoice): WarmBrain;
 }
 
-/** The models the head could run. */
+/** The models each head harness could run. */
 export interface ModelCatalog {
-  list(): Promise<ModelInfo[]>;
+  list(harness: HeadHarness): Promise<ModelInfo[]>;
 }
 
 export interface Normalizer {

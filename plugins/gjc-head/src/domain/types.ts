@@ -1,6 +1,6 @@
 // Message and thread shapes owned by the head. Pure data: stored as entities
 // gjc-head.thread / gjc-head.message and streamed to the UI unchanged.
-
+import type { HeadHarness } from "@me/runner";
 export interface Thread {
   id: string;
   title: string;
@@ -30,12 +30,16 @@ export interface ModelInfo {
 /** The head's settings, stored as one entity so every screen sees changes live. */
 export interface HeadSettings {
   id: "default";
-  /** Defaults for new threads and threads without their own choice. */
+  /** Which headless harness answers: "gjc" (default) or "omp". Plugin id stays gjc-head. */
+  harness: HeadHarness;
+  /** Per-harness default models for new threads and threads without their own choice. */
+  models: Record<HeadHarness, string>;
+  /** Defaults for new threads and threads without their own choice: the gjc entry of `models` (legacy). */
   model: string;
   effort: Effort;
   /** Default access mode for new threads; "project" means delegate at once, apply after review. */
   access: AccessMode;
-  /** Ordered fallback models for direct replies; empty means fail as today. */
+  /** Ordered fallback models for direct replies; empty means fail as today. Bare ids try the same harness, "harness:id" crosses to that harness. */
   fallbackModels: string[];
   /** How long a failed model stays out of rotation, in seconds. */
   cooldownSec: number;

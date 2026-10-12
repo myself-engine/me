@@ -1,1 +1,1 @@
-{ "name": "@me/plugin-gjc-head", "private": true, "type": "module", "dependencies": { "@me/sdk": "workspace:*", "@me/protocol": "workspace:*", "@me/gjc": "workspace:*" } }
+{ "name": "@me/plugin-gjc-head", "private": true, "type": "module", "dependencies": {"@me/sdk": "workspace:*", "@me/protocol": "workspace:*", "@me/gjc": "workspace:*", "@me/runner": "workspace:*"} }

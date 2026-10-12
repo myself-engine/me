@@ -312,9 +312,9 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       return { opId, traceId };
     }
     case "head.models":
-      return plugin.invoke("gjc-head", "chat.models", {}, { timeoutMs: 90_000 });
+      return plugin.invoke("gjc-head", "chat.models", { harness: m.harness }, { timeoutMs: 90_000 });
     case "head.defaults.set":
-      return plugin.invoke("gjc-head", "chat.settings.set", { model: m.model, effort: m.effort, access: m.access, confirm: m.confirm });
+      return plugin.invoke("gjc-head", "chat.settings.set", { model: m.model, effort: m.effort, access: m.access, confirm: m.confirm, harness: m.harness, fallbackModels: m.fallbackModels });
     case "head.thread.set":
       return plugin.invoke("gjc-head", "chat.thread.set", { threadId: m.threadId, model: m.model, effort: m.effort, access: m.access, confirm: m.confirm });
     case "head.favorites.set":

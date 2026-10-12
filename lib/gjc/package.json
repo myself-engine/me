@@ -1,1 +1,1 @@
-{ "name": "@me/gjc", "private": true, "type": "module", "exports": { ".": "./index.ts" }, "dependencies": { "@me/protocol": "workspace:*" } }
+{ "name": "@me/gjc", "private": true, "type": "module", "exports": { ".": "./index.ts" }, "dependencies": { "@me/protocol": "workspace:*", "@me/runner": "workspace:*" } }

@@ -5,15 +5,20 @@ import { join } from "node:path";
 import { chooseHarness, decideRoute, fastPathJudgement, isFastPath } from "../domain/routing.ts";
 import { describeFailure, friendlyError, type AlertCause } from "../domain/alerts.ts";
 import { fallbackReason } from "../domain/fallback.ts";
-import { withModelFallback } from "@me/gjc";
-import { accessOf, brainChoice, checkAccess, checkCooldownSec, checkFallbackModels, checkHeadChoice, checkWorkerChoice, DEFAULT_ACCESS, DEFAULT_COOLDOWN_SEC, EFFORTS, isAccessMode, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
+import { harnessName, isHeadHarness, withModelFallback, type HeadHarness } from "@me/runner";
+import { accessOf, brainChoice, checkAccess, checkCooldownSec, checkFallbackModels, checkHarness, checkHeadChoice, checkHeadModels, checkWorkerChoice, DEFAULT_ACCESS, DEFAULT_COOLDOWN_SEC, DEFAULT_HARNESS, EFFORTS, isAccessMode, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
+import { parseFallbackRef, refKey, resolveFallbackRef } from "../domain/settings.ts";
 import type { AccessMode, DelegationState, Effort, HeadSettings, Message, Thread } from "../domain/types.ts";
 import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, ModelCatalog, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
 
 export interface HeadConfig {
   harnesses: string[];
+  /** Which headless harness answers; unset means gjc. */
+  harness?: HeadHarness;
   /** Initial defaults for the head; once the user changes them, the stored settings win. */
   model: string;
+  /** Per-harness defaults; unset entries fall back to `model`. */
+  models?: Partial<Record<HeadHarness, string>>;
   effort: Effort;
   favoriteModels: string[];
   /** Favourite worker models per harness, offered at approval. */
@@ -45,6 +50,10 @@ export interface HeadPorts {
 export interface Choice {
   model?: string | null;
   effort?: Effort | null;
+  /** Harness change for new threads; null resets to the config default. Thread choices ignore it. */
+  harness?: HeadHarness | null;
+  /** Per-harness default models; null resets to the config defaults. Thread choices ignore it. */
+  models?: Partial<Record<HeadHarness, string>> | null;
   /** Access mode change; "full" needs `confirm: true`. Null clears a thread back to the default. */
   access?: AccessMode | null;
   confirm?: boolean;
@@ -75,8 +84,8 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   const clock = config.clock ?? Date.now;
 
   /** Records the blocking cause as gjc-head.alert (one doc per cause) so it survives reloads. */
-  async function recordAlert(err: unknown, threadId: string, messageId: string) {
-    const found = describeFailure(err);
+  async function recordAlert(err: unknown, threadId: string, messageId: string, harness: HeadHarness = "gjc") {
+    const found = describeFailure(err, harness);
     if (!found) return;
     const ts = now();
     try {
@@ -102,14 +111,21 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     const saved = await store.getSettings();
     const userFavorites = [...new Set(saved?.userFavorites ?? [])];
     const configFavorites = [...new Set(config.favoriteModels)];
+    const harness = (isHeadHarness(saved?.harness) ? saved.harness : undefined) ?? config.harness ?? DEFAULT_HARNESS;
+    const models = {
+      gjc: saved?.models?.gjc || config.models?.gjc || config.model,
+      omp: saved?.models?.omp || config.models?.omp || config.models?.gjc || config.model,
+    };
     return {
       id: "default",
-      model: saved?.model ?? config.model,
+      harness,
+      models,
+      model: saved?.model ?? models.gjc,
       effort: saved?.effort ?? config.effort,
       access: isAccessMode(saved?.access) ? saved.access : DEFAULT_ACCESS,
       fallbackModels: saved?.fallbackModels ?? config.fallbackModels ?? [],
       cooldownSec: saved?.cooldownSec ?? config.cooldownSec ?? DEFAULT_COOLDOWN_SEC,
-      favorites: [...new Set([...configFavorites, ...userFavorites, config.model])],
+      favorites: [...new Set([...configFavorites, ...userFavorites, models[harness]])],
       userFavorites,
       configFavorites,
       efforts: EFFORTS,
@@ -119,12 +135,23 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
 
   /** Changes the defaults for new threads (and threads without their own choice). */
   async function setDefaults(p: Choice) {
-    checkHeadChoice(p);
+    const s = await settings();
+    const hn = checkHarness(p);
+    const harness = hn.harness ?? (p.harness === null ? (config.harness ?? DEFAULT_HARNESS) : s.harness);
+    checkHeadChoice(p, harness);
     const access = checkAccess(p);
     const fb = checkFallbackModels(p);
     const cd = checkCooldownSec(p);
-    const s = await settings();
-    if (p.model) s.model = p.model.trim();
+    const hm = checkHeadModels(p);
+    s.harness = harness;
+    if (p.models === null) {
+      s.models = { gjc: config.models?.gjc || config.model, omp: config.models?.omp || config.models?.gjc || config.model };
+    } else {
+      if (hm.model) s.models.gjc = hm.model;
+      if (hm.models?.gjc) s.models.gjc = hm.models.gjc;
+      if (hm.models?.omp) s.models.omp = hm.models.omp;
+    }
+    s.model = s.models.gjc;
     if (p.effort) s.effort = p.effort;
     if (access.access) s.access = access.access;
     if (p.fallbackModels !== undefined) s.fallbackModels = fb.fallbackModels ?? config.fallbackModels ?? [];
@@ -137,20 +164,21 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   async function setFavorite(p: { model?: unknown; on?: unknown }) {
     if (typeof p.model !== "string" || !p.model.trim()) throw new Error("모델 이름이 비어 있어요");
     const model = p.model.trim();
-    if (isAnthropic(model)) throw new Error(`${model}은 대화 엔진(GJC)에서 쓸 수 없어요. Claude 모델은 Claude Code에서만 써요`);
     const s = await settings();
+    if (isAnthropic(model)) throw new Error(`${model}은 대화 엔진(${harnessName(s.harness)})에서 쓸 수 없어요. Claude 모델은 Claude Code에서만 써요`);
     const next = new Set(s.userFavorites);
     if (p.on === false) next.delete(model);
     else next.add(model);
     s.userFavorites = [...next];
-    s.favorites = [...new Set([...s.configFavorites, ...s.userFavorites, config.model])];
+    s.favorites = [...new Set([...s.configFavorites, ...s.userFavorites, s.models[s.harness]])];
     await store.saveSettings(s);
     return s;
   }
 
   /** Applies a choice to a thread; null clears it back to the default. */
-  function applyChoice(thread: Thread, p: Choice) {
-    checkHeadChoice(p);
+  /** Applies a choice to a thread; null clears it back to the default. */
+  function applyChoice(thread: Thread, p: Choice, harness: HeadHarness) {
+    checkHeadChoice(p, harness);
     if (p.model !== undefined) thread.model = p.model ? p.model.trim() : null;
     if (p.effort !== undefined) thread.effort = p.effort ?? null;
   }
@@ -164,7 +192,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   async function setThread(p: Choice & { threadId: string }) {
     const thread = await store.getThread(p.threadId);
     if (!thread) throw new Error(`unknown thread ${p.threadId}`);
-    applyChoice(thread, p);
+    applyChoice(thread, p, (await settings()).harness);
     applyAccess(thread, p);
     await store.saveThread(thread);
     return thread;
@@ -195,10 +223,10 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
 
   async function send(p: SendParams, turn: Turn) {
     if (!p.text?.trim()) throw new Error("text is required");
-    checkHeadChoice(p);
     checkAccess(p);
     const threshold = config.simpleThreshold;
     const defaults = await settings();
+    checkHeadChoice(p, defaults.harness);
     // Refuse a bad fallback config before anything runs, like other head choices.
     const fbModels = checkFallbackModels({ fallbackModels: defaults.fallbackModels }).fallbackModels ?? [];
     const fbCooldownSec = checkCooldownSec({ cooldownSec: defaults.cooldownSec }).cooldownSec ?? DEFAULT_COOLDOWN_SEC;
@@ -207,7 +235,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     // A thread keeps its mode: chat.send's access only applies to a new thread.
     if (!created && p.access !== undefined) turn.update({ kind: "access", mode: accessOf(thread, defaults), kept: true });
     if (p.project && expandHome(p.project) !== thread.project) thread.project = expandHome(p.project);
-    applyChoice(thread, p);
+    applyChoice(thread, p, defaults.harness);
     const choice = brainChoice(thread, defaults);
     const access = accessOf(thread, defaults);
     turn.update({ kind: "thread", threadId: thread.id, project: thread.project, access });
@@ -258,7 +286,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         const w = warm;
         warm = null;
         const usedFallback = await answerDirectly(thread, reply, p.text, turn, w, choice, { models: fbModels, cooldownSec: fbCooldownSec });
-        if (!usedFallback) await clearAlerts(["gjc-login", "model-refused", "model-unavailable"]);
+        if (!usedFallback) await clearAlerts(["gjc-login", "omp-login", "model-refused", "model-unavailable"]);
       }
       else if (!readOnly) {
         // Delegated: the warm brain will never get a prompt.
@@ -272,15 +300,15 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       if (reply.route === "direct" && !readOnly) {
         // Direct-without-fallback already cleared above; a fallback keeps the
         // primary's alert so the user still fixes it.
-      } else if (reply.route === "direct") await clearAlerts(["gjc-login", "model-refused", "model-unavailable"]);
+      } else if (reply.route === "direct") await clearAlerts(["gjc-login", "omp-login", "model-refused", "model-unavailable"]);
       else if (reply.delegation?.state === "delegated") await clearAlerts(["herdr-pane", "dirty-repo", "model-refused"]);
     } catch (err: any) {
       warm?.cancel();
       warm = null;
       reply.status = "error";
-      reply.error = friendlyError(err);
+      reply.error = friendlyError(err, choice.harness);
       turn.update({ kind: "error", message: reply.error });
-      await recordAlert(err, thread.id, reply.id);
+      await recordAlert(err, thread.id, reply.id, choice.harness);
     }
     thread.updatedAt = now();
     await store.saveThread(thread);
@@ -289,11 +317,13 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   }
 
   /**
-   * Answers with the thread's model, falling back to each configured fallback
-   * model in order when the failure is eligible (quota, expired auth, model
-   * gone, provider 5xx/network). Returns true when a fallback answered.
+   * Answers with the thread's harness and model, falling back to each
+   * configured fallback in order when the failure is eligible (quota, expired
+   * auth, model gone, provider 5xx/network). Bare fallback ids try the same
+   * harness; "harness:id" refs cross to that harness, so a GJC auth failure
+   * can fall back to OMP. Returns true when a fallback answered.
    * The summarize/judge calls keep today's behavior: jev owns its own
-   * OpenRouter→GJC chain and summarize's model belongs to that plugin.
+   * OpenRouter chain and summarize's model belongs to that plugin.
    */
   async function answerDirectly(
     thread: Thread,
@@ -301,7 +331,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     text: string,
     turn: Turn,
     warm: WarmBrain | null,
-    choice: { model: string; effort: Effort },
+    choice: { harness: HeadHarness; model: string; effort: Effort },
     fb: { models: string[]; cooldownSec: number },
   ): Promise<boolean> {
     reply.status = "streaming";
@@ -310,17 +340,26 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       if (u.kind === "text_delta") reply.text += u.delta;
       turn.update(u);
     };
+    // Cooldown keys are always explicit refs so the same model id cools per harness.
+    const primaryRef = refKey(choice.harness, choice.model);
+    const candidates = [primaryRef];
+    for (const ref of fb.models) {
+      const r = resolveFallbackRef(ref, choice.harness);
+      if (!r.model) continue;
+      const key = refKey(r.harness, r.model);
+      if (!candidates.includes(key)) candidates.push(key);
+    }
     let warmUsed = false;
     try {
       const res = await withModelFallback({
-        primary: choice.model,
-        fallbackModels: fb.models,
+        primary: primaryRef,
+        fallbackModels: candidates.slice(1),
         cooldownSec: fb.cooldownSec,
         cooldowns,
         now: clock,
         isEligible: fallbackReason,
-        run: async (model) => {
-          if (model === choice.model && warm) {
+        run: async (key) => {
+          if (key === primaryRef && warm) {
             warmUsed = true;
             const w = warm;
             warm = null;
@@ -328,7 +367,8 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
           }
           // Drop partial deltas from the failed attempt; the winner's full text replaces them below.
           reply.text = "";
-          return brain.reply({ prompt: text, sessionId: thread.sessionId, signal: turn.signal, onUpdate, model, effort: choice.effort });
+          const { harness, model } = parseFallbackRef(key);
+          return brain.reply({ prompt: text, sessionId: thread.sessionId, signal: turn.signal, onUpdate, harness: harness ?? choice.harness, model, effort: choice.effort });
         },
         onFallback: (f) => turn.update({ kind: "fallback", ...f }),
       });
@@ -341,7 +381,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       if (res.fallback) {
         reply.fallback = res.fallback;
         // The primary is still broken: keep its alert so the user fixes it.
-        await recordAlert(res.primaryError, thread.id, reply.id);
+        await recordAlert(res.primaryError, thread.id, reply.id, choice.harness);
         return true;
       }
       return false;
@@ -451,6 +491,6 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     setDefaults,
     setFavorite,
     setThread,
-    models: () => models.list(),
+    models: async (p?: { harness?: unknown }) => models.list(checkHarness(p ?? {}).harness ?? (await settings()).harness),
   };
 }

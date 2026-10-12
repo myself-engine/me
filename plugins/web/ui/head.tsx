@@ -19,9 +19,15 @@ const EFFORT_LABEL: Record<Effort, string> = {
 };
 export const effortLabel = (e: string) => EFFORT_LABEL[e as Effort] ?? e;
 
-/** `gjc --list-models` takes seconds; one request per page load is enough. */
-let catalog: Promise<ModelInfo[]> | null = null;
-const loadCatalog = (conn: Connection) => (catalog ??= conn.request<ModelInfo[]>("head.models").catch((err) => ((catalog = null), Promise.reject(err))));
+/** Model lists take seconds; one request per harness per page load is enough. */
+const catalogs = new Map<string, Promise<ModelInfo[]>>();
+const loadCatalog = (conn: Connection, harness: string) => {
+  const hit = catalogs.get(harness);
+  if (hit) return hit;
+  const p = conn.request<ModelInfo[]>("head.models", { harness }).catch((err) => ((catalogs.delete(harness)), Promise.reject(err)));
+  catalogs.set(harness, p);
+  return p;
+};
 
 /** Shows what the next reply will use; opens the picker. `thread` is null for a new thread, whose choice is the draft. */
 export function HeadChip({ thread, draft, setDraft }: { thread: Thread | null; draft: HeadChoice; setDraft: (c: HeadChoice) => void }) {
@@ -62,6 +68,7 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
   const { s, conn, notify } = useApp();
   const [dev] = useDevView();
   const d = s.headSettings!;
+  const harness = d.harness ?? "gjc";
   const cur = headChoice(thread ?? draft, d)!;
   const [model, setModel] = useState(cur.model);
   const [effort, setEffort] = useState<Effort>(cur.effort);
@@ -74,13 +81,15 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
   useEffect(() => {
     if (!conn) return;
     let alive = true;
-    loadCatalog(conn)
+    setModels(null);
+    setListError(null);
+    loadCatalog(conn, harness)
       .then((m) => alive && setModels(m))
       .catch((err) => alive && setListError(err.message));
     return () => {
       alive = false;
     };
-  }, [conn]);
+  }, [conn, harness]);
 
   const info = models?.find((m) => m.id === model);
   const efforts = info?.efforts ?? d.efforts;
