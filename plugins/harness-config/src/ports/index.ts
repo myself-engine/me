@@ -82,3 +82,13 @@ export interface Events {
   /** `name` is relative to the plugin, e.g. `applied` becomes `harness-config.applied`. */
   emit(name: string, data: unknown): Promise<void>;
 }
+
+/** The kernel approval gate, for `apply.request`. Resolves when the user decides (or it expires as a reject). */
+export interface Approvals {
+  request(req: {
+    summary: string;
+    risk: "low" | "medium" | "high";
+    payload: Record<string, string>;
+    expiresInSec: number;
+  }): Promise<{ decision: "approve" | "reject"; note?: string; approvalId: string }>;
+}

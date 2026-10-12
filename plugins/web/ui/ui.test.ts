@@ -13,14 +13,18 @@ describe("parseRoute", () => {
     expect(parseRoute("#/chat/t1")).toEqual({ tab: "chat", threadId: "t1" });
     expect(parseRoute("#/tasks/a%2Fb?project=%2Fx%2Fy")).toEqual({ tab: "tasks", taskId: "a/b", project: "/x/y" });
     expect(parseRoute(taskHref(null, "/Users/me/dev/me"))).toEqual({ tab: "tasks", taskId: null, project: "/Users/me/dev/me" });
-    expect(parseRoute("#/ops")).toEqual({ tab: "ops" });
+    expect(parseRoute("#/ops")).toEqual({ tab: "ops", view: null, fake: null });
     // Old tabs: approvals moved into 작업 (and the thread), projects into 상태.
     expect(parseRoute("#/approvals")).toEqual({ tab: "tasks", taskId: null, project: null });
-    expect(parseRoute("#/projects")).toEqual({ tab: "ops" });
+    expect(parseRoute("#/projects")).toEqual({ tab: "ops", view: null, fake: null });
+    expect(parseRoute("#/ops/harness")).toEqual({ tab: "ops", view: "harness", fake: null });
+    expect(parseRoute("#/ops/harness?fake=list")).toEqual({ tab: "ops", view: "harness", fake: "list" });
   });
   test("detail screens are deep", () => {
     expect(isDeep(parseRoute("#/chat/t1"))).toBe(true);
     expect(isDeep(parseRoute("#/tasks"))).toBe(false);
+    expect(isDeep(parseRoute("#/ops"))).toBe(false);
+    expect(isDeep(parseRoute("#/ops/harness"))).toBe(true);
   });
 });
 

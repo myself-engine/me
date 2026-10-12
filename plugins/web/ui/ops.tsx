@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { HeadAlert, OpsCheck, PluginInfo } from "./api.ts";
 import { useApp } from "./context.ts";
+import { HarnessLink } from "./harness.tsx";
 import { ProjectsSection } from "./projects.tsx";
 import { taskHref } from "./routes.ts";
 import { Header, Section, StatusDot, elapsed, timeAgo, useBusy, useNow } from "./shared.tsx";
@@ -76,6 +77,7 @@ export function OpsScreen() {
         <Machines checks={checks} />
         <Parts plugins={plugins} />
         <ProjectsSection />
+        <HarnessLink />
         <details className="fold advanced">
           <summary>고급 진단</summary>
           <RunningNow />

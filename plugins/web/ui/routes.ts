@@ -5,7 +5,7 @@ import { useMemo, useSyncExternalStore } from "react";
 
 export type Tab = "chat" | "tasks" | "ops";
 
-export type Route = { tab: "chat"; threadId: string | null } | { tab: "tasks"; taskId: string | null; project: string | null } | { tab: "ops" };
+export type Route = { tab: "chat"; threadId: string | null } | { tab: "tasks"; taskId: string | null; project: string | null } | { tab: "ops"; view: string | null; fake: string | null };
 
 /** Thread id used for the phone's "new conversation" screen (desktop shows it at #/chat). */
 export const NEW_THREAD = "new";
@@ -22,18 +22,21 @@ export function parseRoute(hash: string): Route {
       return { tab: "tasks", taskId: null, project: null };
     case "ops":
     case "projects":
-      return { tab: "ops" };
+      return { tab: "ops", view: parts[1] ?? null, fake: q.get("fake") };
     default:
       return { tab: "chat", threadId: parts[0] === "chat" ? (parts[1] ?? null) : null };
   }
 }
 
 /** True when the route is a detail screen (phones hide the tab bar and show a back button). */
-export const isDeep = (r: Route) => (r.tab === "chat" && r.threadId !== null) || (r.tab === "tasks" && r.taskId !== null);
+export const isDeep = (r: Route) => (r.tab === "chat" && r.threadId !== null) || (r.tab === "tasks" && r.taskId !== null) || (r.tab === "ops" && r.view !== null);
 
 export const chatHref = (threadId?: string | null) => (threadId ? `#/chat/${encodeURIComponent(threadId)}` : "#/chat");
 export const taskHref = (taskId?: string | null, project?: string | null) =>
   `#/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}${project ? `?project=${encodeURIComponent(project)}` : ""}`;
+
+/** 실행 도구 설정 and its shot fakes (fake=empty|list|diff renders canned data for screenshots). */
+export const harnessHref = (fake?: string | null) => (fake ? `#/ops/harness?fake=${encodeURIComponent(fake)}` : "#/ops/harness");
 
 /** Pushes a new screen. */
 export const go = (href: string) => {

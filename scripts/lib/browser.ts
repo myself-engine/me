@@ -147,6 +147,9 @@ export function screens(s: Seeded): Screen[] {
     ...(s.taskId ? [{ name: "task-detail", hash: `#/tasks/${encodeURIComponent(s.taskId)}` }] : []),
     { name: "status", hash: "#/ops" },
     { name: "status-advanced", hash: "#/ops", open: ".fold.advanced > summary" },
+    { name: "harness-empty", hash: "#/ops/harness?fake=empty" },
+    { name: "harness-list", hash: "#/ops/harness?fake=list" },
+    { name: "harness-diff", hash: "#/ops/harness?fake=diff" },
   ];
 }
 

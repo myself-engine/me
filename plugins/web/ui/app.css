@@ -2010,3 +2010,87 @@ a.dline:hover {
     display: block;
   }
 }
+
+/* ------------------------------------------------- 실행 도구 설정 */
+
+.server-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+}
+.server-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  text-align: left;
+  cursor: pointer;
+}
+.server-main .chev {
+  margin-left: auto;
+}
+.kind {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.apply-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+}
+.conflict {
+  margin-top: 12px;
+}
+.kv {
+  margin: 12px 0;
+}
+.kv-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+.kv-row .field-input:first-child {
+  flex: 1 1 8em;
+  min-width: 0;
+  max-width: 12em;
+}
+.kv-row .field-input:nth-child(2) {
+  flex: 2 1 10em;
+  min-width: 0;
+}
+.diff-target {
+  margin-bottom: 12px;
+}
+.drawer-body .field,
+.drawer-body .pick,
+.drawer-body .kv {
+  margin: 12px 0;
+}
+.drawer-body .field-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.drawer-foot {
+  gap: 8px;
+}

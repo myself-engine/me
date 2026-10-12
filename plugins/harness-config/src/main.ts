@@ -4,9 +4,10 @@
 // Writing harness config files (~/.claude.json, ~/.codex/config.toml, opencode.json, GJC mcp.json,
 // AGENTS.md/CLAUDE.md, ~/.claude/settings.json, ~/.codex/hooks.json) and skill entries in each
 // harness's skills directory is this plugin's whole purpose. The kernel has no file-write permission, so
-// the manifest asks only for read-state and emit; there is no shell and no network access.
+// the manifest asks only for read-state, emit and approve.request; there is no shell and no network access.
 // Writes are gated instead: `apply` needs the planId of a fresh `plan` and an approvalId the caller
-// got from kernel approval, and every file (or skill entry) is backed up before it is replaced.
+// got from kernel approval (`apply.request` asks the gate itself, like an ops action), and every file
+// (or skill entry) is backed up before it is replaced.
 //
 // Config: sourcePath (default $ME_HOME/harness-config/source.json), projectDir (enables Claude Code's
 // project .mcp.json). This file only wires ports to adapters; logic lives in domain/ and app/.
@@ -14,7 +15,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { definePlugin } from "@me/sdk";
 import { composeService } from "./adapters/compose.ts";
-import { kernelEvents } from "./adapters/kernel.ts";
+import { kernelApprovals, kernelEvents } from "./adapters/kernel.ts";
 import type { Service } from "./app/service.ts";
 
 let service: Service;
@@ -30,6 +31,7 @@ const plugin = definePlugin({
       projectDir: typeof info.config.projectDir === "string" ? info.config.projectDir : undefined,
       env: process.env,
       events: kernelEvents(plugin),
+      approvals: kernelApprovals(plugin),
     });
   },
   methods: {
@@ -37,6 +39,10 @@ const plugin = definePlugin({
     apply: (p) => service.apply(p ?? {}),
     import: (p) => service.import(p ?? {}),
     list: () => service.list(),
+    "source.get": () => service.getSource(),
+    "source.update": (p) => service.updateSource(p ?? {}),
+    "draft.adopt": (p) => service.adoptDraft(p ?? {}),
+    "apply.request": (p) => service.requestApply(p ?? {}),
   },
 });
 

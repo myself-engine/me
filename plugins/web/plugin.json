@@ -11,6 +11,7 @@
     "call:slang",
     "call:ops",
     "call:ops-*",
+    "call:harness-config",
     "approve.decide",
     "journal.read",
     "network",

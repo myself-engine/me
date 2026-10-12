@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { composeService } from "../adapters/compose.ts";
 import { makeFixture, SECRETS, type Fixture } from "./fixtures.ts";
@@ -441,5 +441,207 @@ describe("list", () => {
     expect(l.files.find((f) => f.target === "codex:hooks")).toMatchObject({ managed: ["bell"], unmanaged: [] });
     expect(l.unsupported.map((u) => u.target)).toEqual(["opencode:hooks", "gjc:hooks"]);
     secretFree(l);
+  });
+
+  test("reports whether each harness file exists", async () => {
+    const l = await svc().list();
+    expect(l.files.find((f) => f.target === "claude-code:user")).toMatchObject({ exists: true });
+    expect(l.files.find((f) => f.target === "claude-code:skills")).toMatchObject({ exists: true });
+    expect(l.files.find((f) => f.target === "gjc:instructions")).toMatchObject({ exists: false });
+  });
+});
+
+describe("source.get", () => {
+  test("returns the source with references readable and literals redacted", async () => {
+    const got = await svc().getSource();
+    expect(got.exists).toBe(true);
+    expect(got.source.mcpServers.pencil!.env).toEqual({ API_KEY: "${file:~/.config/me/pencil.key}" });
+    expect(got.source.mcpServers.notion!.headers).toEqual({ Authorization: "Bearer ${env:NOTION_TOKEN}" });
+    secretFree(got);
+  });
+
+  test("a hand-edited literal secret never leaves the function", async () => {
+    fx.write("me-home/harness-config/source.json", JSON.stringify({ mcpServers: { bad: { command: "x", env: { API_KEY: "literal-secret-123" }, share: "all" } } }));
+    const got = await svc().getSource();
+    expect(got.source.mcpServers.bad!.env).toEqual({ API_KEY: "<set>" });
+    expect(JSON.stringify(got)).not.toContain("literal-secret-123");
+  });
+
+  test("a missing source reads as an empty one", async () => {
+    rmSync(join(fx.meHome, "harness-config", "source.json"));
+    expect(await svc().getSource()).toMatchObject({ exists: false, source: { mcpServers: {} } });
+  });
+});
+
+describe("source.update", () => {
+  const sourceJson = () => JSON.parse(readFileSync(join(fx.meHome, "harness-config", "source.json"), "utf8"));
+
+  test("setShare reroutes a server and backs the source up", async () => {
+    const before = readFileSync(join(fx.meHome, "harness-config", "source.json"), "utf8");
+    const res = await svc().updateSource({ op: "setShare", name: "pencil", share: ["opencode"] });
+    expect(res.source.mcpServers.pencil!.share).toEqual(["opencode"]);
+    secretFree(res);
+    expect(sourceJson().mcpServers.pencil.share).toEqual(["opencode"]);
+    const backups = readdirSync(join(fx.meHome, "harness-config")).filter((f) => f.startsWith("source.json.me-backup-"));
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(fx.meHome, "harness-config", backups[0]!), "utf8")).toBe(before);
+    const plan = await svc().plan();
+    expect(names(target(plan, "opencode:user").diff.added)).toEqual(["notion"]);
+    expect(names(target(plan, "opencode:user").diff.changed)).toEqual(["pencil"]);
+    expect(names(target(plan, "claude-code:user").diff.removed)).toEqual(["pencil"]);
+  });
+
+  test("setShare and remove refuse unknown servers", async () => {
+    await expect(svc().updateSource({ op: "setShare", name: "nope", share: "all" })).rejects.toThrow(/unknown server/);
+    await expect(svc().updateSource({ op: "remove", name: "nope" })).rejects.toThrow(/unknown server/);
+  });
+
+  test("upsert stores a secret-looking value as a 0600 file reference, never a literal", async () => {
+    const res = await svc().updateSource({
+      op: "upsert",
+      name: "newmcp",
+      server: { kind: "command", command: "new-mcp", args: ["--x"], env: { TOKEN: "sk-live-secret-999" }, share: ["claude-code", "codex"] },
+    });
+    secretFree(res);
+    const stored = sourceJson().mcpServers.newmcp;
+    expect(stored.env.TOKEN).toMatch(/^\$\{file:~\/.config\/me\/secrets\/mcp\/newmcp-TOKEN\}$/);
+    const file = join(fx.home, stored.env.TOKEN.slice("${file:~/".length, -1));
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(readFileSync(file, "utf8").trim()).toBe("sk-live-secret-999");
+    expect((await svc().getSource()).source.mcpServers.newmcp!.env!.TOKEN).toBe(stored.env.TOKEN);
+    expect(names(target(await svc().plan(), "claude-code:user").diff.added)).toEqual(["newmcp", "notion"]);
+  });
+
+  test("upsert keeps a stored secret when the form sends a blank value", async () => {
+    await svc().updateSource({
+      op: "upsert",
+      name: "newmcp",
+      server: { kind: "command", command: "new-mcp", env: { TOKEN: "sk-live-secret-999" }, share: "all" },
+    });
+    const ref = sourceJson().mcpServers.newmcp.env.TOKEN;
+    await svc().updateSource({
+      op: "upsert",
+      name: "newmcp",
+      server: { kind: "command", command: "new-mcp2", env: { TOKEN: "" }, share: "all" },
+    });
+    expect(sourceJson().mcpServers.newmcp).toMatchObject({ command: "new-mcp2", env: { TOKEN: ref } });
+  });
+
+  test("upsert validates its fields", async () => {
+    const s = svc();
+    await expect(s.updateSource({ op: "upsert", name: "a/b", server: { kind: "command", command: "x", share: "all" } })).rejects.toThrow(/name may only/);
+    await expect(s.updateSource({ op: "upsert", name: "x", server: { kind: "command", share: "all" } })).rejects.toThrow(/command is required/);
+    await expect(s.updateSource({ op: "upsert", name: "x", server: { kind: "url", share: "all" } })).rejects.toThrow(/url is required/);
+    await expect(s.updateSource({ op: "upsert", name: "x", server: { kind: "command", command: "x", share: ["nope"] } })).rejects.toThrow(/share must be/);
+    await expect(s.updateSource({ op: "mangle", name: "x" })).rejects.toThrow(/unknown op/);
+  });
+
+  test("remove unmanages a server without touching harness files", async () => {
+    const claudeBefore = read(".claude.json");
+    await svc().updateSource({ op: "remove", name: "notion" });
+    expect((await svc().getSource()).source.mcpServers.notion).toBeUndefined();
+    expect(read(".claude.json")).toBe(claudeBefore);
+    expect(JSON.stringify((await svc().plan()).targets.map((t) => t.diff))).not.toContain("notion");
+  });
+});
+
+describe("draft.adopt", () => {
+  const dropSource = () => rmSync(join(fx.meHome, "harness-config", "source.json"));
+  const pickFirst = (conflicts: Record<string, { targets: string[] }>) =>
+    Object.fromEntries(Object.entries(conflicts).map(([k, c]) => [k, c.targets[0]!]));
+
+  test("adopts the draft once every conflict has a picked side", async () => {
+    dropSource();
+    const imp = await svc().import({ write: true });
+    expect(Object.keys(imp.conflicts)).toContain("pencil");
+    const res = await svc().adoptDraft({ resolutions: pickFirst(imp.conflicts) });
+    expect(res.adopted).toContain("pencil");
+    secretFree(res);
+    const sourceText = readFileSync(join(fx.meHome, "harness-config", "source.json"), "utf8");
+    secretFree(JSON.parse(sourceText));
+    const source = JSON.parse(sourceText);
+    expect(source.mcpServers.pencil.share).toEqual(["claude-code"]);
+    expect(source.mcpServers.pencil.env.API_KEY).toMatch(/^\$\{file:~\/.config\/me\/secrets\/mcp\/pencil-API_KEY\}$/);
+    expect((await svc().plan()).ok).toBe(true);
+  });
+
+  test("refuses without a draft, with unresolved conflicts, and when a source exists", async () => {
+    dropSource();
+    await expect(svc().adoptDraft({ resolutions: {} })).rejects.toThrow(/no draft/);
+    await svc().import({ write: true });
+    await expect(svc().adoptDraft({ resolutions: {} })).rejects.toThrow(/unresolved conflicts: pencil/);
+    fx.write("me-home/harness-config/source.json", JSON.stringify({ mcpServers: {} }));
+    const imp = await svc().import({});
+    await expect(svc().adoptDraft({ resolutions: pickFirst(imp.conflicts) })).rejects.toThrow(/already exists/);
+  });
+
+  test("refuses when harness files moved since the import", async () => {
+    dropSource();
+    const imp = await svc().import({ write: true });
+    fx.write("home/.claude.json", JSON.stringify({ mcpServers: { pencil: { command: "changed-pencil" } } }));
+    await expect(svc().adoptDraft({ resolutions: pickFirst(imp.conflicts) })).rejects.toThrow(/stale/);
+  });
+});
+
+describe("apply.request", () => {
+  const gate = (decision: "approve" | "reject", ms = 10) => {
+    const asked: any[] = [];
+    return {
+      asked,
+      approvals: {
+        request: async (req: any) => {
+          asked.push(req);
+          await Bun.sleep(ms);
+          return { decision, approvalId: "approval-1" };
+        },
+      },
+    };
+  };
+  const quiet = async (s: ReturnType<typeof composeService>, ms = 5000) => {
+    for (let t = 0; t < ms; t += 25) {
+      if ((await s.plan()).changes === 0) return true;
+      await Bun.sleep(25);
+    }
+    return false;
+  };
+
+  test("refuses without an approval gate", async () => {
+    await expect(svc().requestApply({})).rejects.toThrow(/approvals are not available/);
+  });
+
+  test("reports nothing to change instead of asking", async () => {
+    const s = composeService({ home: fx.home, meHome: fx.meHome, env: fx.env, approvals: gate("approve").approvals });
+    const plan = await s.plan();
+    await s.apply({ planId: plan.planId, approvalId: "a" });
+    const res = await s.requestApply({});
+    expect(res.requested).toBe(false);
+    expect((res as any).reason).toBe("nothing to change");
+  });
+
+  test("an approved request applies the pinned plan through the gate", async () => {
+    const g = gate("approve");
+    const events: [string, unknown][] = [];
+    const s = composeService({ home: fx.home, meHome: fx.meHome, env: fx.env, events: { emit: async (n, d) => void events.push([n, d]) }, approvals: g.approvals });
+    const res = await s.requestApply({});
+    expect(res.requested).toBe(true);
+    expect(g.asked[0]).toMatchObject({ summary: expect.stringContaining("바뀜"), risk: "medium" });
+    expect(await quiet(s)).toBe(true);
+    expect(events[0]![0]).toBe("applied");
+    expect((events[0]![1] as any).approvalId).toBe("approval-1");
+    expect(json(".claude.json").mcpServers.notion.url).toBe("https://mcp.notion.com/mcp");
+  });
+
+  test("a rejected request writes nothing", async () => {
+    const before = read(".claude.json");
+    const s = composeService({ home: fx.home, meHome: fx.meHome, env: fx.env, approvals: gate("reject").approvals });
+    expect((await s.requestApply({})).requested).toBe(true);
+    await Bun.sleep(100);
+    expect(read(".claude.json")).toBe(before);
+  });
+
+  test("a second request refuses while one is waiting", async () => {
+    const s = composeService({ home: fx.home, meHome: fx.meHome, env: fx.env, approvals: { request: () => new Promise<any>(() => {}) } });
+    expect((await s.requestApply({})).requested).toBe(true);
+    await expect(s.requestApply({})).rejects.toThrow(/already waiting or running/);
   });
 });

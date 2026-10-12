@@ -1,7 +1,7 @@
 // Wires real adapters into the service. Shared by main.ts and tools/config so both resolve paths alike.
 import { isAbsolute, join, resolve } from "node:path";
 import { createService } from "../app/service.ts";
-import type { Events } from "../ports/index.ts";
+import type { Approvals, Events } from "../ports/index.ts";
 import { nodeFileSystem } from "./fs.ts";
 import { secretResolver } from "./secrets.ts";
 import { nodeSkillStore } from "./skills.ts";
@@ -19,6 +19,8 @@ export interface ComposeOptions {
   /** For `${env:NAME}` references. */
   env: Record<string, string | undefined>;
   events?: Events;
+  /** Without it, `apply.request` refuses. The kernel plugin wires the gate; the CLI has none. */
+  approvals?: Approvals;
 }
 
 const expand = (p: string, home: string, base: string) =>
@@ -33,6 +35,7 @@ export function composeService(o: ComposeOptions) {
     clock: { now: () => new Date() },
     secrets: secretResolver(o.env, o.home),
     events: o.events,
+    approvals: o.approvals,
     files: harnessFiles(paths),
     skillDirs: skillDirs(paths),
     unsupported: UNSUPPORTED,

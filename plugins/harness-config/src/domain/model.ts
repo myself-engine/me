@@ -142,7 +142,7 @@ export function toServer(s: SourceServer): McpServer {
 const isStringMap = (v: unknown): v is Record<string, string> =>
   !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => typeof x === "string");
 
-function validateShare(share: unknown, where: string): Share {
+export function validateShare(share: unknown, where: string): Share {
   if (share === "all") return "all";
   if (Array.isArray(share) && share.length > 0 && share.every(isHarness)) return [...new Set(share)] as HarnessId[];
   throw new Error(`${where}: share must be "all" or a non-empty list of ${HARNESSES.join(", ")}`);

@@ -133,7 +133,7 @@ export function diffServers(
   return { diff, change };
 }
 
-const normText = (t: string) => t.replace(/\r\n/g, "\n").trim();
+export const normText = (t: string) => t.replace(/\r\n/g, "\n").trim();
 
 /** Same rules as diffServers for managed instruction blocks; content is shown as a line count only. */
 export function diffInstructions(

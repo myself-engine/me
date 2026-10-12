@@ -4,6 +4,11 @@
 //   import  builds a source.json draft from what the harness files hold now; never copies secrets;
 //           read-only unless `write: true`
 //   list    source items with their targets, and managed/unmanaged names per harness file
+//   source.get    the source with secret values redacted (references stay, literals become "<set>")
+//   source.update set one server's share list, remove a server, or add/edit a server from fields;
+//           secret-looking values become ${file:...} references (stored 0600), never source literals
+//   draft.adopt   turns source.draft.json into source.json once every conflict has a picked side
+//   apply.request pins a fresh plan, asks the kernel approval gate, and applies on approve (like ops actions)
 // Skills are directories, so they go through SkillStore instead of the text codec, but follow the same
 // plan / pin / backup / write steps. Sections a harness cannot hold (see targets.ts) are reported as
 // `unsupported` with the items they skip; they are not errors, so a hook shared with "all" still applies.
@@ -16,13 +21,18 @@ import {
   diffSize,
   diffSkills,
   emptyDiff,
+  hasRef,
   importInstructions,
   importServers,
+  normText,
+  placeholderize,
+  redactUrl,
   type Change,
   type DesiredServer,
   type DesiredSkill,
   type Found,
   type FoundInstructions,
+  type FoundSecret,
   type ImportConflict,
   type SectionDiff,
   type SkillState,
@@ -34,21 +44,26 @@ import {
   sharedWith,
   toHook,
   toServer,
+  validateShare,
   validateSource,
   type HarnessId,
   type Hook,
   type McpServer,
   type Section,
+  type Share,
   type Source,
+  type SourceServer,
   type Target,
 } from "../domain/model.ts";
-import type { Clock, Events, FileSystem, HarnessConfigFile, SecretResolver, SkillsDir, SkillStore, Unsupported } from "../ports/index.ts";
+import type { Approvals, Clock, Events, FileSystem, HarnessConfigFile, SecretResolver, SkillsDir, SkillStore, Unsupported } from "../ports/index.ts";
 
 export interface ServiceDeps {
   fs: FileSystem;
   clock: Clock;
   secrets: SecretResolver;
   events?: Events;
+  /** Without it, `apply.request` refuses (the CLI has none; the kernel plugin wires the gate). */
+  approvals?: Approvals;
   skills: SkillStore;
   files: HarnessConfigFile<McpServer | string | Hook>[];
   skillDirs: SkillsDir[];
@@ -348,12 +363,12 @@ export function createService(deps: ServiceDeps) {
     return backupDir;
   }
 
-  /** Read-only unless `write` is set; then writes source.draft.json (never source.json) and fragments. */
-  async function importDraft(p: { write?: boolean; harnesses?: string[] } = {}) {
+  /** Reads every harness file's owned section, for import and draft.adopt. Values stay as read here. */
+  async function readFound(harnesses?: string[]) {
     const found: Found[] = [];
     const foundInstr: FoundInstructions[] = [];
     const counts: Record<string, { entries: number } | { error: string }> = {};
-    for (const file of select(files, p.harnesses)) {
+    for (const file of select(files, harnesses)) {
       try {
         const entries = file.read(await fs.read(file.path));
         counts[file.target.id] = { entries: Object.keys(entries).length };
@@ -366,7 +381,21 @@ export function createService(deps: ServiceDeps) {
     }
     // Skills and hooks are counted, not drafted: hooks only carry a name once me has written them,
     // and a skill directory is better declared by hand than copied.
-    for (const dir of select(skillDirs, p.harnesses)) counts[dir.target.id] = { entries: (await deps.skills.names(dir.path)).length };
+    for (const dir of select(skillDirs, harnesses)) counts[dir.target.id] = { entries: (await deps.skills.names(dir.path)).length };
+    return { found, foundInstr, counts };
+  }
+
+  /** Content fingerprint of every owned entry, so draft.adopt notices when files moved since import. */
+  function fingerprintFound(found: Found[], foundInstr: FoundInstructions[]) {
+    const fp: Record<string, string> = {};
+    for (const f of found) for (const [n, s] of Object.entries(f.servers)) fp[`mcp:${f.harness}:${f.scope}:${n}`] = sha(JSON.stringify(s));
+    for (const f of foundInstr) for (const [n, t] of Object.entries(f.blocks)) fp[`instructions:${f.harness}:${n}`] = sha(normText(t));
+    return fp;
+  }
+
+  /** Read-only unless `write` is set; then writes source.draft.json (never source.json) and fragments. */
+  async function importDraft(p: { write?: boolean; harnesses?: string[] } = {}) {
+    const { found, foundInstr, counts } = await readFound(p.harnesses);
     const servers = importServers(found);
     const instr = importInstructions(foundInstr);
     const conflicts: Record<string, ImportConflict> = { ...servers.conflicts };
@@ -376,6 +405,8 @@ export function createService(deps: ServiceDeps) {
         at: deps.clock.now().toISOString(),
         note: "Draft. Secret-looking env/header values are ${file:~/.config/me/secrets/mcp/...} references (written 0600 with --write), other values are kept as they are; conflicting names are left out. Skills and hooks are not imported; declare them by hand.",
         conflicts,
+        harnesses: p.harnesses ?? null,
+        fingerprint: fingerprintFound(found, foundInstr),
       },
       mcpServers: servers.mcpServers,
       instructions: Object.fromEntries(Object.entries(instr.instructions).map(([n, i]) => [n, { file: `instructions/${n}.md`, share: i.share }])),
@@ -417,22 +448,23 @@ export function createService(deps: ServiceDeps) {
         ]),
       );
     const out = [];
-    const entry = (target: Target, path: string, names: string[]) => {
+    const entry = (target: Target, path: string, exists: boolean, names: string[]) => {
       const declared = new Set(Object.keys(source?.[target.section] ?? {}));
-      return { target: target.id, path, managed: names.filter((n) => declared.has(n)), unmanaged: names.filter((n) => !declared.has(n)) };
+      return { target: target.id, path, exists, managed: names.filter((n) => declared.has(n)), unmanaged: names.filter((n) => !declared.has(n)) };
     };
     for (const file of files) {
       try {
-        out.push(entry(file.target, file.path, Object.keys(file.read(await fs.read(file.path)))));
+        const text = await fs.read(file.path);
+        out.push(entry(file.target, file.path, text !== null, Object.keys(file.read(text))));
       } catch (err) {
-        out.push({ target: file.target.id, path: file.path, error: message(err) });
+        out.push({ target: file.target.id, path: file.path, exists: false, error: message(err) });
       }
     }
     for (const dir of skillDirs) {
       try {
-        out.push(entry(dir.target, dir.path, await deps.skills.names(dir.path)));
+        out.push(entry(dir.target, dir.path, ((await deps.skills.realpath(dir.path)) ?? null) !== null, await deps.skills.names(dir.path)));
       } catch (err) {
-        out.push({ target: dir.target.id, path: dir.path, error: message(err) });
+        out.push({ target: dir.target.id, path: dir.path, exists: false, error: message(err) });
       }
     }
     return {
@@ -443,8 +475,230 @@ export function createService(deps: ServiceDeps) {
       unsupported: source ? unsupportedPlan(source) : unsupported.map((u) => ({ target: `${u.harness}:${u.section}`, harness: u.harness, reason: u.reason, skipped: [] })),
     };
   }
+  const stamp = () => deps.clock.now().toISOString().replace(/[:.]/g, "-");
 
-  return { plan, apply, import: importDraft, list };
+  /**
+   * The source with secret values redacted: `${env:...}` and `${file:...}` references stay readable
+   * (they name no value), literal values become "<set>", URLs are redacted like in plan.
+   * A hand-edited literal secret therefore never leaves this function.
+   */
+  function redactSource(source: Source): Source {
+    const hide = (m: Record<string, string> | undefined) =>
+      m === undefined ? undefined : Object.fromEntries(Object.entries(m).map(([k, v]) => [k, hasRef(v) ? v : "<set>"]));
+    return {
+      ...source,
+      mcpServers: Object.fromEntries(
+        Object.entries(source.mcpServers).map(([name, s]) => [
+          name,
+          { ...s, ...(s.url ? { url: redactUrl(s.url) } : {}), ...(s.env ? { env: hide(s.env)! } : {}), ...(s.headers ? { headers: hide(s.headers)! } : {}) },
+        ]),
+      ),
+    };
+  }
+
+  async function getSource(): Promise<{ sourcePath: string; exists: boolean; source: Source }> {
+    const text = await fs.read(deps.sourcePath);
+    if (text === null) return { sourcePath: deps.sourcePath, exists: false, source: { mcpServers: {}, instructions: {}, skills: {}, hooks: {} } };
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (err) {
+      throw new Error(`${deps.sourcePath} is not valid JSON: ${message(err)}`);
+    }
+    return { sourcePath: deps.sourcePath, exists: true, source: redactSource(validateSource(raw)) };
+  }
+
+  /** Stores placeholderized secrets 0600 under home. An existing different secret is kept, not overwritten. */
+  async function storeSecrets(secrets: FoundSecret[]) {
+    const paths: string[] = [];
+    const kept: string[] = [];
+    for (const sec of secrets) {
+      const path = join(deps.home, sec.path);
+      const cur = await fs.read(path);
+      if (cur === null) await fs.write(path, `${sec.value}\n`);
+      else if (cur.replace(/\r?\n$/, "") !== sec.value) kept.push(`~/${sec.path}`);
+      paths.push(`~/${sec.path}`);
+    }
+    return { secrets: paths, ...(kept.length ? { secretsKept: kept } : {}) };
+  }
+
+  /** Builds one source server entry from screen fields. Pure: secrets come back separately for storing. */
+  function buildServer(name: string, s: any, prev?: SourceServer): { entry: SourceServer; secrets: FoundSecret[] } {
+    if (!s || typeof s !== "object") throw new Error(`${name}: server fields are required`);
+    const share = validateShare(s.share, `${name}.share`);
+    const scope = s.scope === undefined ? prev?.scope : s.scope;
+    if (scope !== undefined && scope !== "user" && scope !== "project") throw new Error(`${name}: scope must be user or project`);
+    // A blank value keeps the entry's current value (so a stored secret survives an edit untouched);
+    // a key left out of the map is removed.
+    const keep = (next: unknown, old: Record<string, string> | undefined, where: string) => {
+      if (next === undefined) return old && Object.keys(old).length ? { ...old } : undefined;
+      if (!next || typeof next !== "object" || Array.isArray(next)) throw new Error(`${name}.${where} must map names to strings`);
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(next as Record<string, unknown>)) {
+        if (typeof v !== "string") throw new Error(`${name}.${where}.${k} must be a string`);
+        if (v === "") {
+          if (old?.[k] !== undefined) out[k] = old[k]!;
+        } else out[k] = v;
+      }
+      return Object.keys(out).length ? out : undefined;
+    };
+    let base: McpServer;
+    if (s.kind === "command") {
+      const command = typeof s.command === "string" ? s.command.trim() : "";
+      if (!command) throw new Error(`${name}: command is required`);
+      const args = s.args === undefined ? (prev?.args ?? []) : s.args;
+      if (!Array.isArray(args) || !args.every((a: unknown) => typeof a === "string")) throw new Error(`${name}: args must be a list of strings`);
+      base = { type: "stdio", command, ...(args.length ? { args } : {}) };
+    } else if (s.kind === "url") {
+      const url = typeof s.url === "string" ? s.url.trim() : "";
+      if (!url) throw new Error(`${name}: url is required`);
+      base = { type: "http", url };
+    } else throw new Error(`${name}: kind must be command or url`);
+    const env = keep(s.env, prev?.env, "env");
+    const headers = keep(s.headers, prev?.headers, "headers");
+    const { server, secrets } = placeholderize(name, { ...base, ...(env ? { env } : {}), ...(headers ? { headers } : {}) });
+    return { entry: { ...server, share, ...(scope ? { scope } : {}) }, secrets };
+  }
+
+  async function updateSource(p: { op?: unknown; name?: unknown; share?: unknown; server?: unknown }) {
+    if (!p || typeof p !== "object") throw new Error("op is required: setShare, remove or upsert");
+    const op = (p as any).op;
+    const name = (p as any).name;
+    if (typeof name !== "string" || !/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("name may only use letters, digits, . _ -");
+    const text = await fs.read(deps.sourcePath);
+    let raw: any = { mcpServers: {}, instructions: {}, skills: {}, hooks: {} };
+    if (text !== null) {
+      try {
+        raw = JSON.parse(text);
+      } catch (err) {
+        throw new Error(`${deps.sourcePath} is not valid JSON: ${message(err)}`);
+      }
+    }
+    const source = validateSource(raw);
+    let secrets: FoundSecret[] = [];
+    if (op === "setShare") {
+      const cur = source.mcpServers[name];
+      if (!cur) throw new Error(`unknown server: ${name}`);
+      source.mcpServers[name] = { ...cur, share: validateShare((p as any).share, `${name}.share`) };
+    } else if (op === "remove") {
+      if (!source.mcpServers[name]) throw new Error(`unknown server: ${name}`);
+      delete source.mcpServers[name];
+    } else if (op === "upsert") {
+      const built = buildServer(name, (p as any).server, source.mcpServers[name]);
+      source.mcpServers[name] = built.entry;
+      secrets = built.secrets;
+    } else throw new Error(`unknown op: ${String(op)} (setShare, remove or upsert)`);
+    const next = validateSource(source);
+    const stored = await storeSecrets(secrets);
+    // Two edits in the same millisecond share a stamp; the next free suffix wins.
+    let backup: string | null = null;
+    if (text !== null) {
+      const base = `me-backup-${stamp()}`;
+      for (let i = 0; ; i++) {
+        try {
+          backup = await fs.backup(deps.sourcePath, i ? `${base}-${i}` : base);
+          break;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException)?.code !== "EEXIST" || i > 5) throw err;
+        }
+      }
+    }
+    await fs.write(deps.sourcePath, `${JSON.stringify(next, null, 2)}\n`);
+    return { sourcePath: deps.sourcePath, backup, source: redactSource(next), ...stored };
+  }
+
+  async function adoptDraft(p: { resolutions?: Record<string, string> } = {}) {
+    const dir = dirname(deps.sourcePath);
+    const draftPath = join(dir, "source.draft.json");
+    const draftText = await fs.read(draftPath);
+    if (draftText === null) throw new Error(`no draft at ${draftPath}; run import with write first`);
+    let draft: any;
+    try {
+      draft = JSON.parse(draftText);
+    } catch (err) {
+      throw new Error(`${draftPath} is not valid JSON: ${message(err)}`);
+    }
+    const draftConflicts: Record<string, ImportConflict> | undefined = draft?._import?.conflicts;
+    if (!draftConflicts || typeof draftConflicts !== "object" || Array.isArray(draftConflicts))
+      throw new Error(`${draftPath} has no import conflicts; run import again`);
+    if ((await fs.read(deps.sourcePath)) !== null) throw new Error(`source already exists at ${deps.sourcePath}; edit it instead of adopting`);
+    const harnesses = Array.isArray(draft?._import?.harnesses) ? draft._import.harnesses : undefined;
+    const { found, foundInstr } = await readFound(harnesses);
+    const liveServers = importServers(found);
+    const liveInstr = importInstructions(foundInstr);
+    const liveConflicts: Record<string, ImportConflict> = { ...liveServers.conflicts };
+    for (const [n, c] of Object.entries(liveInstr.conflicts)) liveConflicts[`instructions.${n}`] = c;
+    const before = Object.keys(draftConflicts).sort();
+    const liveKeys = Object.keys(liveConflicts).sort();
+    if (JSON.stringify(before) !== JSON.stringify(liveKeys)) throw new Error("draft is stale: harness files changed since import; run import again");
+    const printed = draft?._import?.fingerprint;
+    if (!printed || typeof printed !== "object") throw new Error("draft is stale: it has no content fingerprint; run import again");
+    const canon = (o: Record<string, string>) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
+    if (canon(printed) !== canon(fingerprintFound(found, foundInstr))) throw new Error("draft is stale: harness files changed since import; run import again");
+    const resolutions = p?.resolutions ?? {};
+    const unresolved = before.filter((k) => typeof resolutions[k] !== "string" || !liveConflicts[k]!.targets.includes(resolutions[k]!));
+    if (unresolved.length) throw new Error(`unresolved conflicts: ${unresolved.join(", ")} (pick one side per conflict)`);
+    const mcpServers: Record<string, unknown> = { ...(draft.mcpServers ?? {}) };
+    const instructions: Record<string, unknown> = { ...(draft.instructions ?? {}) };
+    const adopted: string[] = [];
+    const pickedSecrets: FoundSecret[] = [];
+    for (const key of before) {
+      const pick = resolutions[key]!;
+      if (key.startsWith("instructions.")) {
+        const n = key.slice("instructions.".length);
+        const side = foundInstr
+          .flatMap((f) => Object.entries(f.blocks).map(([bn, text]) => ({ harness: f.harness, name: bn, text })))
+          .find((e) => e.name === n && `${e.harness}:instructions` === pick);
+        if (!side) throw new Error(`${key}: no such side: ${pick}`);
+        await fs.write(join(dir, "instructions", `${n}.md`), `${normText(side.text)}\n`);
+        instructions[n] = { file: `instructions/${n}.md`, share: [side.harness] };
+      } else {
+        const side = found
+          .flatMap((f) => Object.entries(f.servers).map(([bn, server]) => ({ harness: f.harness, scope: f.scope, name: bn, server })))
+          .find((e) => e.name === key && `${e.harness}:${e.scope}` === pick);
+        if (!side) throw new Error(`${key}: no such side: ${pick}`);
+        const { server, secrets } = placeholderize(key, side.server);
+        pickedSecrets.push(...secrets);
+        const item: Record<string, unknown> = { ...server, share: [side.harness] as Share };
+        if (side.scope === "project") item.scope = "project";
+        mcpServers[key] = item;
+      }
+      adopted.push(key);
+    }
+    const next = validateSource({ mcpServers, instructions, skills: {}, hooks: {} });
+    const stored = await storeSecrets(pickedSecrets);
+    await fs.write(deps.sourcePath, `${JSON.stringify(next, null, 2)}\n`);
+    return { sourcePath: deps.sourcePath, adopted: adopted.sort(), ...stored };
+  }
+
+  /** At most one approval-gated apply is in flight; a second request refuses instead of stacking approvals. */
+  let applyInflight: Promise<void> | null = null;
+
+  async function requestApply(p: PlanParams = {}) {
+    if (applyInflight) throw new Error("an apply is already waiting or running");
+    const { plan } = await compute(p);
+    const failed = plan.targets.filter((t) => t.error);
+    if (failed.length) throw new Error(`refusing to apply: ${failed.map((t) => `${t.target}: ${t.error}`).join("; ")}`);
+    if (plan.changes === 0) return { requested: false as const, reason: "nothing to change", plan };
+    if (!deps.approvals) throw new Error("approvals are not available in this harness-config instance");
+    const summary = `실행 도구 설정 적용: ${plan.changes}곳 바뀜`;
+    const params = { harnesses: p.harnesses, force: p.force };
+    const slot: { cur: Promise<void> | null } = { cur: null };
+    slot.cur = (async () => {
+      try {
+        const decision = await deps.approvals!.request({ summary, risk: "medium", payload: { kind: "harness-config.apply", planId: plan.planId }, expiresInSec: 600 });
+        if (decision.decision === "approve") await apply({ ...params, planId: plan.planId, approvalId: decision.approvalId });
+      } catch (err) {
+        console.error(`[harness-config] apply.request failed: ${message(err)}`);
+      } finally {
+        if (applyInflight === slot.cur) applyInflight = null;
+      }
+    })();
+    applyInflight = slot.cur;
+    return { requested: true as const, summary, plan };
+  }
+
+  return { plan, apply, import: importDraft, list, getSource, updateSource, adoptDraft, requestApply };
 }
 
 export type Service = ReturnType<typeof createService>;

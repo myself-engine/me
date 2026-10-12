@@ -5,6 +5,7 @@ import { Connection, fetchBootstrap } from "./api.ts";
 import { ChatScreen } from "./chat.tsx";
 import { AppContext, type Ctx } from "./context.ts";
 import { downCount, OpsScreen } from "./ops.tsx";
+import { HarnessScreen } from "./harness.tsx";
 import { chatHref, isDeep, NEW_THREAD, replace, useRoute, type Route, type Tab } from "./routes.ts";
 import { initial, isDelegationApproval, reducer, toneOf, workItems, type HeadChoice } from "./state.ts";
 import { TasksScreen } from "./tasks.tsx";
@@ -180,7 +181,7 @@ function Screen({ route, ...chat }: { route: Route; project: string; setProject:
     case "tasks":
       return <TasksScreen taskId={route.taskId} project={route.project} />;
     case "ops":
-      return <OpsScreen />;
+      return route.view === "harness" ? <HarnessScreen fake={route.fake} /> : <OpsScreen />;
   }
 }
 

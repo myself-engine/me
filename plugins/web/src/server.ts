@@ -224,6 +224,25 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
     }
     case "slang.add":
       return plugin.invoke("slang", "dict.add", { from: m.from, to: m.to });
+    case "harness.plan":
+      return plugin.invoke("harness-config", "plan", { ...(m.harnesses ? { harnesses: m.harnesses } : {}), ...(m.force ? { force: true } : {}) });
+    case "harness.list":
+      return plugin.invoke("harness-config", "list", {});
+    case "harness.source.get":
+      return plugin.invoke("harness-config", "source.get", {});
+    case "harness.source.update":
+      return plugin.invoke("harness-config", "source.update", {
+        op: m.op,
+        name: m.name,
+        ...(m.share !== undefined ? { share: m.share } : {}),
+        ...(m.server !== undefined ? { server: m.server } : {}),
+      });
+    case "harness.import":
+      return plugin.invoke("harness-config", "import", { ...(m.write ? { write: true } : {}) });
+    case "harness.draft.adopt":
+      return plugin.invoke("harness-config", "draft.adopt", { resolutions: m.resolutions ?? {} });
+    case "harness.apply.request":
+      return plugin.invoke("harness-config", "apply.request", { ...(m.harnesses ? { harnesses: m.harnesses } : {}), ...(m.force ? { force: true } : {}) });
     case "projects.add": {
       const path = await checkedProject(m.path);
       const next = [...new Set([...(await storedProjects()), path])];
