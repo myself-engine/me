@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v0.9.0 (2026-10-12)
+
+- brgr verify: read worktree and base commit from the real status shape (e956700)
+- brgr verify: run in the task worktree when present, install deps from the lockfile, env allowlist (23b18e1)
+- brgr: verify gate before accept, per-project queue with global cap, budget check before start (4ba49e9)
+- child env allowlist and secret redaction for journal, issue export, and messengers (38ef882)
+- budget plugin: daily delegation caps and meter quota floors before each delegation (82bb517)
+
 ## v0.8.0 (2026-10-12)
 
 - web: explain access modes inline; failed replies read 실패 with the fix; glued bold renders; sidebar shows a reply preview and clock times (f9c1aaf)
