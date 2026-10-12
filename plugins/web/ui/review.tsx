@@ -110,19 +110,64 @@ export function Review({ task }: { task: Task }) {
                   ? "변경사항을 적용하고 커밋하는 중이에요"
                   : task.state === "apply-failed"
                     ? "적용하지 못했어요 · 위 오류를 확인하세요"
-                    : "이미 결정된 작업이에요"}
+                    : task.state === "reverted"
+                      ? `되돌렸어요 · 커밋 ${task.revert?.commit.slice(0, 8) ?? task.commitSha?.slice(0, 8) ?? ""}`
+                      : "이미 결정된 작업이에요"}
             </span>
           )}
           {/* Only while the diff can still change or be retried; an applied diff is final. */}
-          {task.state !== "applied" && (
+          {task.state !== "applied" && task.state !== "reverted" && (
             <button className="quiet right" disabled={busy} onClick={() => act(load)}>
               다시 불러오기
             </button>
           )}
         </div>
       )}
+      <RevertControl task={task} />
     </section>
   );
 }
 
 const fileAnchor = (path: string) => `file-${path.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+/** Applied tasks can be undone: `git revert` of the applied commit, with a confirm step. Reverted tasks show the result text. */
+export function RevertControl({ task }: { task: Task }) {
+  const { conn, notify } = useApp();
+  const [busy, act] = useBusy(notify);
+  const [confirming, setConfirming] = useState(false);
+  if (task.state === "reverted") {
+    return (
+      <div className="outcome">
+        ✓ 되돌렸어요 · 커밋 <code>{task.revert?.commit.slice(0, 8) ?? task.commitSha?.slice(0, 8) ?? ""}</code>
+      </div>
+    );
+  }
+  if (task.state !== "applied" || !conn) return null;
+  if (!confirming) {
+    return (
+      <div className="review-bar">
+        <button type="button" className="quiet" disabled={busy} onClick={() => setConfirming(true)}>
+          되돌리기
+        </button>
+        <span className="muted review-note">적용한 커밋을 되돌려요</span>
+      </div>
+    );
+  }
+  return (
+    <div className="review-bar">
+      <span className="proj-confirm" role="group" aria-label="되돌리기 확인">
+        <span className="muted">적용한 커밋 {task.commitSha?.slice(0, 8) ?? ""}을 되돌릴까요?</span>
+        <button
+          type="button"
+          className="quiet"
+          disabled={busy}
+          onClick={() => act(() => conn.request("task.revert", { taskId: task.taskId }).then(() => setConfirming(false)))}
+        >
+          되돌리기
+        </button>
+        <button type="button" className="quiet" onClick={() => setConfirming(false)}>
+          취소
+        </button>
+      </span>
+    </div>
+  );
+}

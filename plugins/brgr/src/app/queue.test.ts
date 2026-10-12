@@ -39,6 +39,12 @@ const git: Git = {
   add: async () => {},
   commit: async () => {},
   headSha: async () => "deadbeef",
+  isAncestor: async () => true,
+  isMerge: async () => false,
+  filesIn: async () => [],
+  changedSince: async () => [],
+  revert: async () => {},
+  abortRevert: async () => {},
 };
 
 class MemoryStore implements TaskStore {

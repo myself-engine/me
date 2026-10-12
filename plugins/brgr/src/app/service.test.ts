@@ -55,6 +55,12 @@ class FakeGit implements Git {
   add = async (cwd: string, files: string[]) => this.step("add", [cwd, files]);
   commit = async (cwd: string, message: string) => this.step("commit", [cwd, message]);
   headSha = async (cwd: string) => (this.step("headSha", [cwd]), "deadbeef");
+  isAncestor = async (cwd: string, _sha: string) => (this.step("isAncestor", [cwd]), true);
+  isMerge = async (cwd: string, _sha: string) => (this.step("isMerge", [cwd]), false);
+  filesIn = async (cwd: string, _sha: string) => (this.step("filesIn", [cwd]), [] as string[]);
+  changedSince = async (cwd: string, _from: string) => (this.step("changedSince", [cwd]), [] as string[]);
+  revert = async (cwd: string, _sha: string) => this.step("revert", [cwd]);
+  abortRevert = async (cwd: string) => this.step("abortRevert", [cwd]);
 }
 
 class MemoryStore implements TaskStore {

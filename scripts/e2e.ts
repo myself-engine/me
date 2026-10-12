@@ -81,6 +81,16 @@ const brgr = definePlugin({
       await brgr.emit("task.applied", { taskId: task.taskId, state: "applied", harness: task.harness });
       return task;
     },
+    "task.revert": async (p: any) => {
+      const task = tasks.get(p.taskId);
+      if (!task || task.state !== "applied" || !task.commitSha) throw new Error("not applied");
+      const reverted = sh(["git", "-c", "user.email=e2e@me.local", "-c", "user.name=me e2e", "revert", "--no-edit", task.commitSha], task.project);
+      if (reverted.exitCode !== 0) throw new Error("git revert failed");
+      Object.assign(task, { state: "reverted", revert: { commit: task.commitSha, at: new Date().toISOString() }, updatedAt: new Date().toISOString() });
+      await brgr.entity.upsert("brgr.task", task.taskId, task);
+      await brgr.emit("task.reverted", { taskId: task.taskId, state: "reverted", harness: task.harness });
+      return task;
+    },
     "task.reject": async (p: any) => {
       const task = tasks.get(p.taskId);
       Object.assign(task, { state: "rejected", updatedAt: new Date().toISOString() });
@@ -134,7 +144,7 @@ try {
   void brgr.run(p);
   await kernel.attach(
     validateManifest(
-      { id: "brgr", version: "e2e", protocol: { min: 1, max: 1 }, run: { command: ["true"] }, permissions: ["read-state", "emit"], provides: { methods: ["task.delegate", "task.diff", "task.accept", "task.reject", "task.result", "task.cancel", "harness.list"], kinds: ["task"] } },
+      { id: "brgr", version: "e2e", protocol: { min: 1, max: 1 }, run: { command: ["true"] }, permissions: ["read-state", "emit"], provides: { methods: ["task.delegate", "task.diff", "task.accept", "task.reject", "task.result", "task.cancel", "task.revert", "harness.list"], kinds: ["task"] } },
       root,
     ),
     k,
@@ -200,6 +210,19 @@ try {
     const msg = assistantOf(traceId);
     if (msg?.delegation?.approvedBy !== "mode:project") throw new Error(`approvedBy ${msg?.delegation?.approvedBy}`);
     return `commit ${String(applied.commitSha).slice(0, 8)}`;
+  });
+
+  await check("되돌리기: 적용 커밋 revert → reverted", async () => {
+    const bootTasks: any[] = (await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json()).tasks;
+    const applied = bootTasks.find((t: any) => t.state === "applied");
+    if (!applied) throw new Error("no applied task");
+    const reverted = await request("task.revert", { taskId: applied.taskId });
+    if (reverted.state !== "reverted") throw new Error(`state=${reverted.state}`);
+    if (!reverted.revert || reverted.revert.commit !== applied.commitSha) throw new Error("revert record missing");
+    const log = new TextDecoder().decode(sh(["git", "log", "--oneline", "-1"]).stdout).trim();
+    if (!/^[\da-f]+ Revert /.test(log)) throw new Error(`log=${log}`);
+    await waitFor((m) => m.type === "entity" && m.kind === "brgr.task" && m.data.taskId === applied.taskId && m.data.state === "reverted", 30_000, "reverted task");
+    return `revert ${String(reverted.revert.commit).slice(0, 8)}`;
   });
 
   await check("읽기 전용: 위임하지 않고 모드 안내", async () => {

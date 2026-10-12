@@ -76,6 +76,8 @@ export interface Task {
   error: string | null;
   commitSha?: string | null;
   decisionReason?: string | null;
+  /** Undo of the applied commit; null until task.revert runs. */
+  revert?: { commit: string; at: string } | null;
   createdAt: string;
   updatedAt: string;
 }

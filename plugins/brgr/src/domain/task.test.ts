@@ -45,6 +45,7 @@ describe("task state machine", () => {
     ["sealed", "apply-failed"],
     ["accepted", "applied"],
     ["accepted", "apply-failed"],
+    ["applied", "reverted"],
   ] as [TaskState, TaskState][])("allows %s -> %s", (from, to) => {
     expect(canTransition(from, to)).toBe(true);
     expect(transition(at(from), to, {}, "later").state).toBe(to);
@@ -62,6 +63,7 @@ describe("task state machine", () => {
     ["failed", "sealed"],
     ["applied", "apply-failed"],
     ["apply-failed", "applied"],
+    ["reverted", "applied"],
     ["cancelled", "running"],
   ] as [TaskState, TaskState][])("rejects %s -> %s", (from, to) => {
     expect(canTransition(from, to)).toBe(false);
@@ -69,8 +71,8 @@ describe("task state machine", () => {
   });
 
   test("terminal states have no way out", () => {
-    for (const s of ["failed", "applied", "apply-failed", "rejected", "cancelled"] as const) expect(isTerminal(s)).toBe(true);
-    for (const s of ["queued", "running", "awaiting-input", "sealed", "accepted"] as const) expect(isTerminal(s)).toBe(false);
+    for (const s of ["failed", "apply-failed", "rejected", "cancelled", "reverted"] as const) expect(isTerminal(s)).toBe(true);
+    for (const s of ["queued", "running", "awaiting-input", "sealed", "accepted", "applied"] as const) expect(isTerminal(s)).toBe(false);
   });
 
   test("queued tasks carry no remote id and no verify result yet", () => {

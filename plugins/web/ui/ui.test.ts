@@ -101,6 +101,7 @@ describe("status tones", () => {
     expect(["sealed", "awaiting-input", "apply-failed", "awaiting-approval"].map(toneOf)).toEqual(["needs", "needs", "needs", "needs"]);
     expect(toneOf("running")).toBe("running");
     expect(toneOf("applied")).toBe("done");
+    expect(toneOf("reverted")).toBe("done");
     // Accepting starts the apply; only a landed commit counts as done.
     expect(toneOf("accepted")).toBe("running");
     expect(toneOf("failed")).toBe("failed");

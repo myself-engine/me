@@ -95,6 +95,7 @@ export const STATE_LABEL: Record<string, string> = {
   accepted: "적용 중",
   applied: "적용 완료",
   "apply-failed": "적용 실패",
+  reverted: "되돌림 완료",
   failed: "실패",
   "awaiting-input": "입력 대기",
   cancelled: "취소됨",

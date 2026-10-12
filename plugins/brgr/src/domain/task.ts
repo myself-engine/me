@@ -10,7 +10,8 @@ export type TaskState =
   | "applied"
   | "apply-failed"
   | "rejected"
-  | "cancelled";
+  | "cancelled"
+  | "reverted";
 
 /** One project's check run, recorded when a sealed diff is verified. */
 export interface VerifyCommandResult {
@@ -52,6 +53,8 @@ export interface Task {
   /** Commit created in task.project when the accepted diff was applied. */
   commitSha: string | null;
   appliedAt: string | null;
+  /** Undo of the applied commit; null until task.revert runs. */
+  revert?: { commit: string; at: string } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,10 +68,11 @@ const TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
   sealed: ["accepted", "rejected", "apply-failed"],
   accepted: ["applied", "apply-failed"],
   failed: [],
-  applied: [],
+  applied: ["reverted"],
   "apply-failed": [],
   rejected: [],
   cancelled: [],
+  reverted: [],
 };
 
 export class InvalidTransition extends Error {
@@ -119,6 +123,7 @@ export function createTask(p: NewTask, at: string): Task {
     decisionReason: null,
     commitSha: null,
     appliedAt: null,
+    revert: null,
     createdAt: at,
     updatedAt: at,
   };

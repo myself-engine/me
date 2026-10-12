@@ -327,6 +327,8 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       return plugin.invoke("brgr", "task.accept", { taskId: m.taskId, reason: m.reason }, { timeoutMs: 120_000 });
     case "task.reject":
       return plugin.invoke("brgr", "task.reject", { taskId: m.taskId, reason: m.reason }, { timeoutMs: 120_000 });
+    case "task.revert":
+      return plugin.invoke("brgr", "task.revert", { taskId: m.taskId }, { timeoutMs: 120_000 });
     case "ops.action.run": {
       // The target comes from the client, so only ops instances are reachable here; argv is never sent, only ids.
       const source = String(m.source ?? "ops");

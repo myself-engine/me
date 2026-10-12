@@ -18,5 +18,30 @@ export function gitCli(bin = "git"): Git {
       await git(cwd, ["commit", "-m", message]);
     },
     headSha: async (cwd) => (await git(cwd, ["rev-parse", "HEAD"])).trim(),
+    isAncestor: async (cwd, sha) => (await spawn([bin, "merge-base", "--is-ancestor", sha, "HEAD"], cwd)).code === 0,
+    isMerge: async (cwd, sha) => {
+      const r = await spawn([bin, "rev-list", "--parents", "-n", "1", sha], cwd);
+      if (r.code !== 0) throw new Error((r.stderr.trim() || r.stdout.trim()).slice(0, 300));
+      return r.stdout.trim().split(/\s+/).length > 2;
+    },
+    filesIn: async (cwd, sha) => {
+      const r = await spawn([bin, "diff-tree", "--no-commit-id", "--name-only", "-r", sha], cwd);
+      if (r.code !== 0) throw new Error((r.stderr.trim() || r.stdout.trim()).slice(0, 300));
+      return r.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+    },
+    changedSince: async (cwd, from, to = "HEAD") => {
+      const head = await git(cwd, ["rev-parse", to]);
+      if (from === head.trim()) return [];
+      const r = await spawn([bin, "diff", "--name-only", `${from}..${to}`], cwd);
+      if (r.code !== 0) throw new Error((r.stderr.trim() || r.stdout.trim()).slice(0, 300));
+      return r.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+    },
+    revert: async (cwd, sha) => {
+      const r = await spawn([bin, "revert", "--no-edit", sha], cwd);
+      if (r.code !== 0) throw new Error((r.stderr.trim() || r.stdout.trim()).slice(0, 300));
+    },
+    abortRevert: async (cwd) => {
+      await spawn([bin, "revert", "--abort"], cwd);
+    },
   };
 }

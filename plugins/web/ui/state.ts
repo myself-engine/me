@@ -173,6 +173,7 @@ export function toneOf(state: string): Tone {
     case "accepted":
       return "running";
     case "applied":
+    case "reverted":
       return "done";
     case "failed":
     case "quarantined":

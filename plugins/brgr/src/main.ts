@@ -3,14 +3,16 @@
 // Owner identity is a fixed non-agent session name (config.ownerSession).
 // This file only wires ports to adapters; logic lives in domain/ and app/.
 import { hostname } from "node:os";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { childEnv } from "@me/env";
 import { definePlugin } from "@me/sdk";
 import { brgrCli } from "./adapters/brgr-cli.ts";
 import { gitCli } from "./adapters/git.ts";
 import { KIND, kernelApprovals, kernelBudget, kernelEvents, kernelTaskStore } from "./adapters/kernel.ts";
+import { fileSnapshots } from "./adapters/snapshots.ts";
+import { fileTrust } from "./adapters/trust.ts";
 import { createVerifier, execWithTimeout } from "./adapters/verify.ts";
 import { createService } from "./app/service.ts";
 import type { BrgrConfig } from "./ports/index.ts";
@@ -29,6 +31,7 @@ const plugin = definePlugin({
     "task.accept": (p) => service.accept(p),
     "task.reject": (p) => service.reject(p),
     "task.cancel": (p) => service.cancel(p),
+    "task.revert": (p) => service.revert(p),
     "harness.list": () => (plugin.config.harnesses as string[]) ?? ["local.claude-code", "local.codex", "local.gjc", "local.opencode"],
   },
 });
@@ -60,6 +63,46 @@ const service = createService({
   }),
   budget: kernelBudget(plugin),
   approvals: kernelApprovals(plugin),
+  trust: fileTrust({
+    readText: async (path) => readFile(path, "utf8").catch(() => null),
+    writeText: async (path, text) => {
+      // Tmp file + rename is atomic; Codex only rewrites this file on
+      // explicit config changes, so read-modify-write here is safe.
+      await mkdir(dirname(path), { recursive: true });
+      const tmp = `${path}.me-tmp-${process.pid}`;
+      await writeFile(tmp, text);
+      await rename(tmp, path);
+    },
+    exists: (path) => stat(path).then(() => true, () => false),
+  }),
+  snapshots: fileSnapshots({
+    readText: async (path) => readFile(path, "utf8").catch(() => null),
+    listFiles: (root) => listFiles(root),
+    fileBytes: async (path) => {
+      const st = await lstat(path).catch(() => null);
+      // Symlinks could escape the project; only regular files are carried.
+      if (!st || !st.isFile()) return null;
+      return st.size;
+    },
+  }),
 });
+
+// Recursive file listing for snapshot patterns: skips .git always and
+// node_modules unless a literal pattern names it (literals bypass listing).
+async function listFiles(root: string): Promise<string[]> {
+  const out: string[] = [];
+  const walk = async (dir: string) => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (e.name === ".git" || e.name === "node_modules") continue;
+      const abs = join(dir, e.name);
+      if (e.isSymbolicLink()) continue;
+      if (e.isDirectory()) await walk(abs);
+      else if (e.isFile()) out.push(abs);
+    }
+  };
+  await walk(root);
+  return out;
+}
 
 await plugin.run();

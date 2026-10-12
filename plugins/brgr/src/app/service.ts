@@ -1,9 +1,10 @@
 // Use cases of the brgr plugin, written against ports only.
 import { commitMessage, touchedFiles } from "../domain/commit.ts";
+import { configListFor, planSnapshots, SNAPSHOT_CAP_BYTES } from "../domain/snapshot.ts";
 import { createQueuedTask, transition, type Task, type TaskPatch, type TaskState } from "../domain/task.ts";
 import type { VerifyInfo } from "../domain/task.ts";
 import { firstFailure, parseTaskStatus } from "../domain/verify.ts";
-import type { Approvals, BrgrCli, BrgrConfig, Budget, CliResult, Events, Git, TaskStore, Verifier } from "../ports/index.ts";
+import type { Approvals, BrgrCli, BrgrConfig, Budget, CliResult, Events, Git, SnapshotFiles, TaskStore, Trust, Verifier } from "../ports/index.ts";
 
 export interface ServiceDeps {
   brgr: BrgrCli;
@@ -13,14 +14,18 @@ export interface ServiceDeps {
   deadlineSeconds: () => number;
   now?: () => string;
   sleep?: (ms: number) => Promise<unknown>;
-  /** Plugin config (maxRunning, verify, verifyRequired, verifyTimeoutMs). Defaults to {}. */
+  /** Plugin config (maxRunning, verify, verifyRequired, verifyTimeoutMs, include, setup). Defaults to {}. */
   config?: () => BrgrConfig;
   /** Runs the sealed diff's project checks. Defaults to a no-check (skipped) stub. */
   verifier?: Verifier;
   /** Optional budget plugin; absent or failing calls let the delegation proceed. */
   budget?: Budget;
-  /** Kernel approval gate for budget-requested human decisions. */
+  /** Kernel approval gate for budget-requested human decisions and revert confirmations. */
   approvals?: Approvals;
+  /** Worker trust preparation (Codex config); absent means no preparation. Failures never fail a delegation. */
+  trust?: Trust;
+  /** Snapshot file collection (.worktreeinclude + config); absent means no snapshot paths. */
+  snapshots?: SnapshotFiles;
   /** Ids for queued delegations (brgr assigns its own id when they start). */
   newId?: () => string;
 }
@@ -198,14 +203,45 @@ export function createService(deps: ServiceDeps) {
       void pump();
       return;
     }
+    // Worker preparation, all best effort: trust first (Codex TUI stops on a
+    // folder-trust prompt in a fresh worktree), then the file snapshot.
+    // Neither may fail the delegation; snapshot names are never logged.
+    if (deps.trust) {
+      try {
+        await deps.trust.ensure([]);
+      } catch (err) {
+        warnOnce(`worker trust preparation failed, proceeding: ${errorText(err)}`);
+      }
+    }
+    let snapshotPaths: string[] | undefined;
+    if (deps.snapshots) {
+      try {
+        const patterns = configListFor(task.project, readConfig().include);
+        const { files } = await deps.snapshots.collect(task.project, patterns);
+        const plan = planSnapshots(files);
+        if (!plan) {
+          const total = files.reduce((n, f) => n + f.bytes, 0);
+          await noteError(taskId, `넣어 줄 파일이 ${(total / 1048576).toFixed(1)}MB로 ${SNAPSHOT_CAP_BYTES / 1048576}MB를 넘어서 빼고 시작해요. .worktreeinclude를 줄이고 다시 맡겨 주세요.`);
+        } else if (plan.paths.length > 0) {
+          snapshotPaths = plan.paths;
+        }
+      } catch (err) {
+        warnOnce(`worker snapshot collection failed, proceeding: ${errorText(err)}`);
+      }
+    }
+    // brgr has no per-project setup hook, so setup commands travel as an
+    // instruction line in the objective (documented limitation).
+    const setup = configListFor(task.project, readConfig().setup);
+    const objective = setup.length > 0 ? `${task.objective}\n\n${setup.map((c) => `Before starting, run: ${c}`).join("\n")}` : task.objective;
     const worker = { ...(task.model ? { model: task.model } : {}), ...(task.effort ? { effort: task.effort } : {}) };
     const r = await brgr.run({
-      objective: task.objective,
+      objective,
       harness: task.harness,
       criterion: task.criterion,
       deadlineSeconds: deps.deadlineSeconds(),
       project: task.project,
       ...worker,
+      ...(snapshotPaths ? { snapshotPaths } : {}),
     });
     if (r.code !== 0) {
       const msg = r.stderr.trim() || r.stdout.trim();
@@ -389,6 +425,103 @@ export function createService(deps: ServiceDeps) {
     }
   }
 
+  /**
+   * Undo of an applied task: `git revert --no-edit` of the applied commit.
+   * Refuses (Korean, tree untouched) when the tree is dirty, the commit is
+   * not on the current branch, or it is a merge. When later commits touched
+   * the same files, a kernel approval gates it; otherwise it runs directly.
+   * A conflicting revert is aborted and the tree is left as it was.
+   */
+  async function revert(p: { taskId: string }) {
+    const task = await load(p?.taskId);
+    if (task.state !== "applied" || !task.commitSha) {
+      throw new Error(`적용한 작업만 되돌릴 수 있어요 (현재 상태: ${task.state})`);
+    }
+    const sha: string = task.commitSha;
+    let dirty: string[];
+    try {
+      dirty = await git.status(task.project);
+    } catch (err) {
+      const message = `작업 트리 상태를 확인하지 못해 되돌릴 수 없어요: ${errorText(err)}`;
+      await noteError(task.taskId, message);
+      throw new Error(message);
+    }
+    if (dirty.length > 0) {
+      const message = `대상 저장소에 커밋되지 않은 변경이 있어 되돌릴 수 없어요. 정리한 뒤 다시 시도해 주세요: ${task.project}`;
+      await noteError(task.taskId, message);
+      throw new Error(message);
+    }
+    let onBranch = false;
+    try {
+      onBranch = await git.isAncestor(task.project, sha);
+    } catch (err) {
+      const message = `커밋을 확인하지 못해 되돌릴 수 없어요: ${errorText(err)}`;
+      await noteError(task.taskId, message);
+      throw new Error(message);
+    }
+    if (!onBranch) {
+      const message = "그 커밋이 지금 브랜치에 없어서 되돌릴 수 없어요. 브랜치를 확인해 주세요.";
+      await noteError(task.taskId, message);
+      throw new Error(message);
+    }
+    let merge = false;
+    try {
+      merge = await git.isMerge(task.project, sha);
+    } catch (err) {
+      const message = `커밋을 확인하지 못해 되돌릴 수 없어요: ${errorText(err)}`;
+      await noteError(task.taskId, message);
+      throw new Error(message);
+    }
+    if (merge) {
+      const message = "합치기(머지) 커밋은 자동으로 되돌릴 수 없어요. 직접 되돌려 주세요.";
+      await noteError(task.taskId, message);
+      throw new Error(message);
+    }
+    let touched: string[];
+    let later: string[];
+    try {
+      touched = await git.filesIn(task.project, sha);
+      later = await git.changedSince(task.project, sha);
+    } catch (err) {
+      const message = `변경 파일을 확인하지 못해 되돌릴 수 없어요: ${errorText(err)}`;
+      await noteError(task.taskId, message);
+      throw new Error(message);
+    }
+    const overlap = later.filter((f) => touched.includes(f));
+    if (overlap.length > 0) {
+      if (!deps.approvals) {
+        warnOnce("revert overlaps later commits but no approval gate is wired, proceeding");
+      } else {
+        let decision;
+        try {
+          decision = await deps.approvals.request({
+            summary: `되돌리기 확인 (${task.taskId})`,
+            risk: "medium",
+            payload: { taskId: task.taskId, commit: sha, files: overlap.slice(0, 20) },
+            expiresInSec: BUDGET_APPROVAL_EXPIRES_SEC,
+          });
+        } catch (err) {
+          throw new Error(`되돌리기 승인을 요청하지 못했어요: ${errorText(err)}`);
+        }
+        if (decision.decision !== "approve") {
+          const message = decision.note === "expired" ? "승인 시간이 지나서 되돌리지 않았어요." : "되돌리기를 취소했어요.";
+          await noteError(task.taskId, message);
+          throw new Error(message);
+        }
+      }
+    }
+    try {
+      await git.revert(task.project, sha);
+    } catch (err) {
+      await git.abortRevert(task.project);
+      const message = `충돌이 나서 되돌리지 않았어요. 트리는 그대로 두었어요: ${errorText(err)}`;
+      await noteError(task.taskId, message);
+      throw new Error(message);
+    }
+    const at = now();
+    return await setState(task.taskId, "reverted", { revert: { commit: sha, at }, error: null });
+  }
+
   async function reject(p: { taskId: string; reason?: string }) {
     const reason = p.reason ?? "rejected from me";
     const task = await load(p.taskId);
@@ -420,6 +553,7 @@ export function createService(deps: ServiceDeps) {
     accept,
     reject,
     cancel,
+    revert,
     result: async (p: { taskId: string }): Promise<Task | null> => store.get(requireId(p?.taskId)),
   };
 }

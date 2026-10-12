@@ -11,6 +11,7 @@ export function brgrCli(owner: () => string, bin = "brgr"): BrgrCli {
           "run", r.objective, "--harness", r.harness, "--criterion", r.criterion, "--capture-diff", "--deadline-seconds", String(r.deadlineSeconds),
           ...(r.model ? ["--model", r.model] : []),
           ...(r.effort ? ["--effort", r.effort] : []),
+          ...(r.snapshotPaths ?? []).flatMap((p) => ["--snapshot-path", p]),
           "--json",
         ],
         r.project,

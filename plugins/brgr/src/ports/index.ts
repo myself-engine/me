@@ -17,6 +17,8 @@ export interface RunRequest {
   /** Worker model and effort; unset means the harness's own default. */
   model?: string;
   effort?: string;
+  /** Uncommitted files carried into the worker's base (`--snapshot-path`, repeatable). */
+  snapshotPaths?: string[];
 }
 
 /** The brgr CLI. Every call returns the raw process result; callers interpret exit codes and JSON. */
@@ -34,13 +36,25 @@ export interface BrgrCli {
   apply(taskId: string, workspace: string): Promise<CliResult>;
 }
 
-/** Git in a working tree. Methods throw on failure. */
+/** Git in a working tree. Unless noted, methods throw on failure. */
 export interface Git {
   /** Porcelain status lines for tracked files only (untracked files are ignored). */
   status(cwd: string): Promise<string[]>;
   add(cwd: string, files: string[]): Promise<void>;
   commit(cwd: string, message: string): Promise<void>;
   headSha(cwd: string): Promise<string>;
+  /** True when `sha` is an ancestor of HEAD (i.e. on the current branch's history). */
+  isAncestor(cwd: string, sha: string): Promise<boolean>;
+  /** True when the commit is a merge (more than one parent). */
+  isMerge(cwd: string, sha: string): Promise<boolean>;
+  /** Paths the commit touched. */
+  filesIn(cwd: string, sha: string): Promise<string[]>;
+  /** Paths changed between `from` (exclusive) and `to` (inclusive); empty when equal. */
+  changedSince(cwd: string, from: string, to?: string): Promise<string[]>;
+  /** `git revert --no-edit`; throws with git's message when it does not apply cleanly. */
+  revert(cwd: string, sha: string): Promise<void>;
+  /** Aborts an in-progress revert, restoring the tree; never throws. */
+  abortRevert(cwd: string): Promise<void>;
 }
 
 export interface TaskStore {
@@ -65,6 +79,20 @@ export interface BrgrConfig {
   verifyRequired?: boolean;
   /** Per-command timeout in ms for verify runs. Default 600000 (10 min). */
   verifyTimeoutMs?: number;
+  /** Extra uncommitted files to carry into the worker's base, per project path or repo name. */
+  include?: Record<string, string[]>;
+  /** Setup commands run by the worker before starting (no brgr support: sent as an objective line). */
+  setup?: Record<string, string[]>;
+}
+
+/** Worker trust preparation (Codex config); best effort, never throws. */
+export interface Trust {
+  ensure(paths: string[]): Promise<void>;
+}
+
+/** Uncommitted files resolved from .worktreeinclude + config; names are never logged by callers. */
+export interface SnapshotFiles {
+  collect(project: string, patterns: string[]): Promise<{ files: { path: string; bytes: number }[] }>;
 }
 
 /** Runs a sealed diff's project checks, preferably in the task's own worktree. */

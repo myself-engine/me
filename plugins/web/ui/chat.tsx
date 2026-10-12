@@ -11,6 +11,7 @@ import { chatHref, settingsHref, taskHref } from "./routes.ts";
 import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, threadTime, timeAgo, toolName, useBusy, useFocusTrap, useNow } from "./shared.tsx";
 import { effortLabel, HeadChip } from "./head.tsx";
 import { ProjectButton } from "./picker.tsx";
+import { RevertControl } from "./review.tsx";
 import { TONE_LABEL, activeAlerts, taskTitle, threadApproval, threadPreview, threadTone, threadWait, toneOf, turnOp, unlinkedApprovals, type HeadChoice, type Live } from "./state.ts";
 // One mapping source of truth for failure text: the head's describeFailure also
 // runs over stored errors, so old messages saved with raw English render friendly.
@@ -397,7 +398,7 @@ function PhaseLine({ m, live }: { m: Message; live?: Live }) {
   );
 }
 
-const SETTLED = new Set(["sealed", "applied", "accepted", "apply-failed", "failed", "rejected", "cancelled"]);
+const SETTLED = new Set(["sealed", "applied", "accepted", "apply-failed", "failed", "rejected", "cancelled", "reverted"]);
 
 /** A delegation as one line: [status][goal][state][wait] → task panel. Worker tool labels show in 개발자 보기 only. */
 function DelegationLine({ m }: { m: Message }) {
@@ -445,7 +446,7 @@ const workerLabel = (w: { harness: string; model?: string; effort?: string }) =>
   [toolName(w.harness), w.model, w.effort && effortLabel(w.effort)].filter(Boolean).join(" · ");
 
 /** States where a delegation's result sits in the thread as a card instead of a line. */
-const RESULT_STATES = new Set(["sealed", "accepted", "applied", "apply-failed"]);
+const RESULT_STATES = new Set(["sealed", "accepted", "applied", "apply-failed", "reverted"]);
 
 /** First sentence of the worker's report for the card: body text over headings, markdown marks dropped. */
 const firstLine = (text: string | null) => {
@@ -510,6 +511,7 @@ function ResultCard({ task, time }: { task: Task; time: string }) {
       )}
       {task.state === "accepted" && <p className="result-note muted">변경사항을 적용하고 커밋하는 중이에요.</p>}
       {task.state === "applied" && <p className="result-note">{task.commitSha ? <>커밋 <code>{task.commitSha.slice(0, 8)}</code>에 적용했어요.</> : "적용했어요."}</p>}
+      {(task.state === "applied" || task.state === "reverted") && <RevertControl task={task} />}
       {task.state === "apply-failed" && <div className="card error">⚠️ {task.error ?? "적용하지 못했어요. 전체 diff에서 확인해 주세요."}</div>}
     </article>
   );
