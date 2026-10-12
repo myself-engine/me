@@ -2,9 +2,13 @@ import { describe, expect, test } from "bun:test";
 import {
   commandsForProject,
   configCommandsFor,
+  detectArgv,
   detectCommands,
   firstFailure,
+  installCommandFor,
+  needsInstall,
   packageManagerFor,
+  parseTaskStatus,
   tailText,
   TAIL_CAP,
 } from "./verify.ts";
@@ -71,5 +75,64 @@ describe("tailText and firstFailure", () => {
     expect(firstFailure([{ cmd: "a", exitCode: 0 }, { cmd: "b", exitCode: 1 }])).toBe("b");
     expect(firstFailure([{ cmd: "a", exitCode: 0 }])).toBeNull();
     expect(firstFailure([])).toBeNull();
+  });
+});
+describe("detectArgv", () => {
+  test("returns fixed argv per script, no shell words", () => {
+    expect(detectArgv({ test: "bun test", lint: "x", typecheck: "tsc" }, [])).toEqual([
+      ["bun", "run", "typecheck"],
+      ["bun", "run", "lint"],
+      ["bun", "run", "test"],
+    ]);
+    expect(detectArgv({ test: "vitest run" }, ["pnpm-lock.yaml"])).toEqual([["pnpm", "run", "test"]]);
+  });
+
+  test("returns null when no known script exists", () => {
+    expect(detectArgv({ build: "tsc" }, [])).toBeNull();
+    expect(detectArgv(undefined, [])).toBeNull();
+  });
+});
+
+describe("installCommandFor and needsInstall", () => {
+  test("maps each lockfile to its frozen install", () => {
+    expect(installCommandFor(["bun.lock"])).toEqual(["bun", "install", "--frozen-lockfile"]);
+    expect(installCommandFor(["bun.lockb"])).toEqual(["bun", "install", "--frozen-lockfile"]);
+    expect(installCommandFor(["pnpm-lock.yaml"])).toEqual(["pnpm", "install", "--frozen-lockfile"]);
+    expect(installCommandFor(["yarn.lock"])).toEqual(["yarn", "install", "--immutable"]);
+    expect(installCommandFor(["package-lock.json"])).toEqual(["npm", "ci"]);
+    expect(installCommandFor(["package.json"])).toBeNull();
+    expect(installCommandFor([])).toBeNull();
+  });
+
+  test("needs an install only with package.json, a lockfile, and no node_modules", () => {
+    expect(needsInstall(["package.json", "bun.lock"])).toBe(true);
+    expect(needsInstall(["package.json", "bun.lock", "node_modules"])).toBe(false);
+    expect(needsInstall(["package.json"])).toBe(false);
+    expect(needsInstall(["bun.lock"])).toBe(false);
+    expect(needsInstall([])).toBe(false);
+  });
+});
+
+describe("parseTaskStatus", () => {
+  test("reads the workspace and base commit from one task object", () => {
+    expect(parseTaskStatus(JSON.stringify({ task_id: "r1", workspace: "/tmp/wt", base_commit: "abc" }), "r1")).toEqual({
+      workspace: "/tmp/wt",
+      base: "abc",
+    });
+  });
+
+  test("finds the task in a list and tolerates key variants", () => {
+    const text = JSON.stringify([
+      { taskId: "other", workspace: "/tmp/no" },
+      { task_id: "r1", workspace: "/tmp/wt", baseSha: "def" },
+    ]);
+    expect(parseTaskStatus(text, "r1")).toEqual({ workspace: "/tmp/wt", base: "def" });
+  });
+
+  test("unknown shapes mean clone at HEAD", () => {
+    expect(parseTaskStatus("{}", "r1")).toEqual({ workspace: null, base: null });
+    expect(parseTaskStatus("not json", "r1")).toEqual({ workspace: null, base: null });
+    expect(parseTaskStatus("[]", "r1")).toEqual({ workspace: null, base: null });
+    expect(parseTaskStatus(JSON.stringify({ task_id: "r1", workspace: "" }), "r1")).toEqual({ workspace: null, base: null });
   });
 });

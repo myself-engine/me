@@ -18,6 +18,7 @@ export function brgrCli(owner: () => string, bin = "brgr"): BrgrCli {
     wait: (taskId) => brgr(["wait", taskId, "--json"]),
     result: (taskId) => brgr(["result", taskId, "--json"]),
     diff: (taskId, stat) => brgr(["diff", taskId, ...(stat ? ["--stat"] : [])]),
+    status: (taskId) => brgr(["status", taskId, "--json"]),
     accept: (taskId, reason) => brgr(["accept", taskId, "--reason", reason, "--json"]),
     reject: (taskId, reason) => brgr(["reject", taskId, "--reason", reason, "--json"]),
     cancel: (taskId) => brgr(["cancel", taskId, "--json"]),

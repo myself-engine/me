@@ -2,7 +2,7 @@
 import { commitMessage, touchedFiles } from "../domain/commit.ts";
 import { createQueuedTask, transition, type Task, type TaskPatch, type TaskState } from "../domain/task.ts";
 import type { VerifyInfo } from "../domain/task.ts";
-import { firstFailure } from "../domain/verify.ts";
+import { firstFailure, parseTaskStatus } from "../domain/verify.ts";
 import type { Approvals, BrgrCli, BrgrConfig, Budget, CliResult, Events, Git, TaskStore, Verifier } from "../ports/index.ts";
 
 export interface ServiceDeps {
@@ -238,7 +238,18 @@ export function createService(deps: ServiceDeps) {
     try {
       const id = remote(task) ?? task.taskId;
       const d = await brgr.diff(id);
-      return await verifier.verify({ taskId: task.taskId, project: task.project, diff: d.code === 0 ? d.stdout : "" });
+      // The task's own worktree already holds the worker's result (and usually
+      // its installed dependencies); a failed or unknown status just falls back
+      // to the temp clone at HEAD.
+      const s = await brgr.status(id).catch(() => null);
+      const at = s && s.code === 0 ? parseTaskStatus(s.stdout, id) : { workspace: null, base: null };
+      return await verifier.verify({
+        taskId: task.taskId,
+        project: task.project,
+        diff: d.code === 0 ? d.stdout : "",
+        workspace: at.workspace,
+        base: at.base,
+      });
     } catch {
       return { state: "error", commands: [] };
     }

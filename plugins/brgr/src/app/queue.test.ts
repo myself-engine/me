@@ -26,6 +26,7 @@ class GatedBrgr implements BrgrCli {
   }
   result = (_id: string) => Promise.resolve(ok(JSON.stringify({ artifacts: [{ text: "done" }] })));
   diff = (_id: string, _stat?: boolean) => Promise.resolve(ok(DIFF));
+  status = (_id: string) => Promise.resolve(ok("{}"));
   accept = (_id: string, _reason: string) => Promise.resolve(ok("{}"));
   reject = (_id: string, _reason: string) => Promise.resolve(ok("{}"));
   cancelCalls: string[] = [];

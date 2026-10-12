@@ -11,6 +11,7 @@ class FakeBrgr implements BrgrCli {
   wait = (_id: string) => Promise.resolve(ok(JSON.stringify({ state: "sealed", outcome: "candidate" })));
   result = (_id: string) => Promise.resolve(ok(JSON.stringify({ artifacts: [{ text: "done" }] })));
   diff = (_id: string, _stat?: boolean) => Promise.resolve(ok("diff --git a/x b/x\n"));
+  status = (_id: string) => Promise.resolve(ok("{}"));
   accept = (_id: string, _reason: string) => Promise.resolve(ok("{}"));
   reject = (_id: string, _reason: string) => Promise.resolve(ok("{}"));
   cancel = (_id: string) => Promise.resolve(ok("{}"));

@@ -35,6 +35,7 @@ class FakeBrgr implements BrgrCli {
   wait = (id: string) => this.reply("wait", [id], ok(JSON.stringify({ state: "sealed", outcome: "candidate" })));
   result = (id: string) => this.reply("result", [id], ok(JSON.stringify({ artifacts: [{ text: "done" }] })));
   diff = (id: string, stat?: boolean) => this.reply("diff", [id, stat], ok(this.diffText));
+  status = (id: string) => this.reply("status", [id], ok("{}"));
   accept = (id: string, reason: string) => this.reply("accept", [id, reason], ok("{}"));
   reject = (id: string, reason: string) => this.reply("reject", [id, reason], ok("{}"));
   cancel = (id: string) => this.reply("cancel", [id], ok("{}"));
@@ -258,7 +259,7 @@ describe("autoApply (full access mode)", () => {
     expect(store.tasks.get(taskId)).toMatchObject({ autoApply: true });
     const t = await settle(store, taskId, "applied");
     expect(t).toMatchObject({ state: "applied", commitSha: "deadbeef", decisionReason: "자동 적용 (전부 알아서)", error: null });
-    expect(brgr.names()).toEqual(["run", "wait", "result", "diff", "diff", "accept", "apply"]);
+    expect(brgr.names()).toEqual(["run", "wait", "result", "diff", "status", "diff", "accept", "apply"]);
     expect(brgr.calls.find((c) => c[0] === "accept")).toEqual(["accept", taskId, "자동 적용 (전부 알아서)"]);
     expect(git.calls.map((c) => c[0])).toEqual(["status", "add", "commit", "headSha"]);
     expect(events.names()).toEqual(["task.queued", "task.running", "task.sealed", "task.verified", "task.accepted", "task.applied"]);
@@ -269,7 +270,7 @@ describe("autoApply (full access mode)", () => {
     const { taskId } = await service.delegate({ harness: "local.codex", objective: "obj", project: "/repo" });
     const t = await settle(store, taskId, "sealed");
     expect(t).toMatchObject({ state: "sealed", autoApply: false });
-    expect(brgr.names()).toEqual(["run", "wait", "result", "diff"]);
+    expect(brgr.names()).toEqual(["run", "wait", "result", "diff", "status"]);
   });
 
   test("a failed result never auto-applies", async () => {
@@ -288,7 +289,7 @@ describe("autoApply (full access mode)", () => {
     const { taskId } = await service.delegate({ harness: "local.codex", objective: "obj", project: "/repo", autoApply: true });
     const t = await settle(store, taskId, "apply-failed");
     expect(t.error).toContain("patch does not apply");
-    expect(brgr.names()).toEqual(["run", "wait", "result", "diff", "diff", "accept", "apply"]);
+    expect(brgr.names()).toEqual(["run", "wait", "result", "diff", "status", "diff", "accept", "apply"]);
     expect(events.names()).toEqual(["task.queued", "task.running", "task.sealed", "task.verified", "task.accepted", "task.apply-failed"]);
   });
 
@@ -301,6 +302,6 @@ describe("autoApply (full access mode)", () => {
     const t = store.tasks.get(taskId)!;
     expect(t.state).toBe("sealed");
     expect(t.error).toContain("커밋되지 않은 변경");
-    expect(brgr.names()).toEqual(["run", "wait", "result", "diff"]);
+    expect(brgr.names()).toEqual(["run", "wait", "result", "diff", "status"]);
   });
 });

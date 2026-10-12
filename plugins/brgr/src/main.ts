@@ -6,6 +6,7 @@ import { hostname } from "node:os";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { childEnv } from "@me/env";
 import { definePlugin } from "@me/sdk";
 import { brgrCli } from "./adapters/brgr-cli.ts";
 import { gitCli } from "./adapters/git.ts";
@@ -34,6 +35,13 @@ const plugin = definePlugin({
 
 const owner = () => (plugin.config.ownerSession as string) ?? `me:${hostname().split(".")[0]}`;
 
+// Verifier children get the allowlist only, plus this plugin's own
+// run.envPass when the manifest declares one (read from the manifest file;
+// the kernel never sends it, and pluginConfig must not duplicate it).
+const manifest = (await Bun.file(new URL("../plugin.json", import.meta.url)).json().catch(() => null)) as {
+  run?: { envPass?: unknown };
+} | null;
+const manifestEnvPass = Array.isArray(manifest?.run?.envPass) ? (manifest.run.envPass as string[]) : [];
 const service = createService({
   brgr: brgrCli(owner),
   git: gitCli(),
@@ -42,7 +50,7 @@ const service = createService({
   deadlineSeconds: () => Number(plugin.config.deadlineSeconds ?? 1800),
   config: () => plugin.config as unknown as BrgrConfig,
   verifier: createVerifier({
-    exec: execWithTimeout,
+    exec: (cmd, cwd, timeoutMs) => execWithTimeout(cmd, cwd, timeoutMs, childEnv(manifestEnvPass)),
     readFile: async (path) => readFile(path, "utf8").catch(() => null),
     listDir: (dir) => readdir(dir),
     mkTemp: (prefix) => mkdtemp(join(tmpdir(), prefix)),

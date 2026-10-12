@@ -25,6 +25,8 @@ export interface BrgrCli {
   wait(taskId: string): Promise<CliResult>;
   result(taskId: string): Promise<CliResult>;
   diff(taskId: string, stat?: boolean): Promise<CliResult>;
+  /** Shows one task's attempt and result state; carries `workspace` (the task worktree) when it still exists. */
+  status(taskId: string): Promise<CliResult>;
   accept(taskId: string, reason: string): Promise<CliResult>;
   reject(taskId: string, reason: string): Promise<CliResult>;
   cancel(taskId: string): Promise<CliResult>;
@@ -65,9 +67,17 @@ export interface BrgrConfig {
   verifyTimeoutMs?: number;
 }
 
-/** Runs a sealed diff's project checks in an isolated worktree. */
+/** Runs a sealed diff's project checks, preferably in the task's own worktree. */
 export interface Verifier {
-  verify(p: { taskId: string; project: string; diff: string }): Promise<VerifyInfo>;
+  verify(p: {
+    taskId: string;
+    project: string;
+    diff: string;
+    /** The task's own brgr worktree; checks run there when it still exists, without touching tracked files. */
+    workspace?: string | null;
+    /** Commit a fallback clone checks out before applying the diff; HEAD when unknown. */
+    base?: string | null;
+  }): Promise<VerifyInfo>;
 }
 
 /** Reply of the optional budget plugin's `budget.check`. */

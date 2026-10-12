@@ -13,6 +13,8 @@ class FakeBrgr implements BrgrCli {
   wait = (_id: string) => Promise.resolve(ok(JSON.stringify({ state: "sealed", outcome: "candidate" })));
   result = (_id: string) => Promise.resolve(ok(JSON.stringify({ artifacts: [{ text: "done" }] })));
   diff = (_id: string, _stat?: boolean) => Promise.resolve(ok(DIFF));
+  statusText = "{}";
+  status = (_id: string) => Promise.resolve(ok(this.statusText));
   accept = (id: string, _reason: string) => (this.accepts.push(id), Promise.resolve(ok("{}")));
   reject = (_id: string, _reason: string) => Promise.resolve(ok("{}"));
   cancel = (_id: string) => Promise.resolve(ok("{}"));
@@ -78,6 +80,28 @@ const until = async (cond: () => boolean) => {
   for (let i = 0; i < 200 && !cond(); i++) await Bun.sleep(10);
   expect(cond()).toBe(true);
 };
+describe("verify gate worktree", () => {
+  test("status workspace and base reach the verifier for the in-place check", async () => {
+    const seen: { workspace: unknown; base: unknown }[] = [];
+    const { brgr, store, service } = setup({
+      verify: async (p) => (seen.push({ workspace: p.workspace, base: p.base }), passed),
+    });
+    brgr.statusText = JSON.stringify({ task_id: "remote-1", workspace: "/tmp/wt-1", base_commit: "abc123" });
+    const { taskId } = await service.delegate({ harness: "local.codex", objective: "o", project: "/repo", autoApply: true });
+    await until(() => store.tasks.get(taskId)?.state === "applied");
+    expect(seen).toEqual([{ workspace: "/tmp/wt-1", base: "abc123" }]);
+  });
+
+  test("an unreadable status still verifies through the clone fallback", async () => {
+    const seen: { workspace: unknown; base: unknown }[] = [];
+    const { store, service } = setup({
+      verify: async (p) => (seen.push({ workspace: p.workspace, base: p.base }), passed),
+    });
+    const { taskId } = await service.delegate({ harness: "local.codex", objective: "o", project: "/repo", autoApply: true });
+    await until(() => store.tasks.get(taskId)?.state === "applied");
+    expect(seen).toEqual([{ workspace: null, base: null }]);
+  });
+});
 
 describe("verify gate", () => {
   test("a passed gate auto-applies and records the result", async () => {
