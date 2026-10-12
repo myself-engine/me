@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## v0.6.0 (2026-10-12)
+
+- web: keep typed secrets out of the call journal; fix a CSS block that swallowed later rules (1cef5fa)
+- harness settings screen: manage MCP servers per harness with preview and approval (36ac646)
+- web: folder suggestions open the folder; typed ~ paths are stored expanded (f558597)
+- web: pick projects from discovered repositories instead of typing paths (79a1793)
+
 ## v0.5.0 (2026-10-12)
 
 - web: say what is blocked and how to fix it; add projects from the screen (a2a31fe)
