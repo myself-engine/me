@@ -1,5 +1,6 @@
 // What the head's use case needs from the outside world. Adapters implement these over
 // the kernel SDK and GJC; the use case and domain never import either directly.
+import type { AlertCause, HeadAlert } from "../domain/alerts.ts";
 import type { Effort, HeadSettings, Judgement, Message, ModelInfo, Summary, Thread, Understood } from "../domain/types.ts";
 
 /** Streamed output of the head's own reply; kinds match the chat.send op.update contract. */
@@ -77,6 +78,9 @@ export interface Store {
   messagesByTask(taskId: string): Promise<Message[]>;
   getSettings(): Promise<HeadSettings | null>;
   saveSettings(s: HeadSettings): Promise<void>;
+  listAlerts(): Promise<HeadAlert[]>;
+  saveAlert(a: HeadAlert): Promise<void>;
+  clearAlert(cause: AlertCause): Promise<void>;
 }
 
 export interface Events {

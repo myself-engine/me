@@ -124,4 +124,14 @@ describe("parseConfig", () => {
   test("tolerates missing config", () => {
     expect(parseConfig(undefined)).toEqual({ checks: [], intervalSec: 60, startDelaySec: 0, confirm: 2, heartbeatSec: 600, errors: [] });
   });
+
+  test("extraChecks append to checks with the same validation", () => {
+    const c = parseConfig({
+      checks: [{ id: "web", kind: "http", url: "http://127.0.0.1:3000/health" }],
+      extraChecks: [{ id: "local", kind: "process", match: "x" }, { id: "web", kind: "process", match: "y" }, { kind: "process", match: "z" }],
+    });
+    expect(c.checks.map((x) => x.id)).toEqual(["web", "local"]);
+    expect(c.errors).toHaveLength(2);
+    expect(c.errors[0]!.error).toContain("duplicate");
+  });
 });

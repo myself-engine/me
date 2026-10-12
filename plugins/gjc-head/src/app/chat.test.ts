@@ -3,16 +3,22 @@ import type { HeadSettings, Message, Summary, Thread } from "../domain/types.ts"
 import type { ApprovalOutcome } from "../ports/index.ts";
 import { createHead, type HeadPorts } from "./chat.ts";
 
-function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean } = {}) {
+function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean; brainError?: string; delegateError?: string } = {}) {
   let saved: HeadSettings | null = null;
   const warmLog: string[] = [];
   const calls: Record<string, any[]> = { summarize: [], judge: [], approval: [], delegate: [], brain: [] };
   const messages = new Map<string, Message>();
   const threads = new Map<string, Thread>();
+  const alerts = new Map<string, any>();
   const updates: any[] = [];
   const ports: HeadPorts = {
     brain: {
-      reply: async (p) => (calls.brain!.push(p), p.onUpdate({ kind: "text_delta", delta: "안녕!" }), { text: "안녕!", sessionId: "s1", violation: null }),
+      reply: async (p) => {
+        calls.brain!.push(p);
+        if (opts.brainError && calls.brain!.length === 1) throw new Error(opts.brainError);
+        p.onUpdate({ kind: "text_delta", delta: "안녕!" });
+        return { text: "안녕!", sessionId: "s1", violation: null };
+      },
       ...(opts.warm
         ? {
             prepare: () => (
@@ -34,7 +40,13 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
     },
     judge: { judge: async (p) => (calls.judge!.push(p), { simpleProb: opts.simpleProb ?? 0.1, confidence: 0.9, source: "jev", model: "m" }) },
     approvals: { request: async (p) => (calls.approval!.push(p), { approvalId: "a1", ...(opts.decision ?? { decision: "approve" }) }) },
-    delegator: { delegate: async (p) => (calls.delegate!.push(p), { taskId: "t1" }) },
+    delegator: {
+      delegate: async (p) => {
+        calls.delegate!.push(p);
+        if (opts.delegateError && calls.delegate!.length === 1) throw new Error(opts.delegateError);
+        return { taskId: "t1" };
+      },
+    },
     store: {
       registerKinds: async () => {},
       getThread: async (id) => threads.get(id) ?? null,
@@ -43,6 +55,12 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
       messagesByTask: async (taskId) => [...messages.values()].filter((m) => m.taskId === taskId),
       getSettings: async () => saved,
       saveSettings: async (s) => void (saved = structuredClone(s)),
+      listAlerts: async () => [...alerts.values()],
+      saveAlert: async (a) => void alerts.set(a.id, structuredClone(a)),
+      clearAlert: async (cause) => {
+        const cur = alerts.get(cause);
+        if (cur?.active) alerts.set(cause, { ...cur, active: false });
+      },
     },
     models: { list: async () => [{ id: "openai-codex/gpt-6.1-sol", efforts: ["off", "low", "high"] }] },
     events: { messageChanged: async () => {}, guardViolation: async () => {} },
@@ -59,7 +77,7 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
   });
   const phases: string[] = [];
   const turn = { update: (u: any) => updates.push(u), phase: (ph: string) => void phases.push(ph), signal: new AbortController().signal, traceId: "tr" };
-  return { head, turn, calls, messages, threads, updates, phases, warmLog };
+  return { head, turn, calls, messages, threads, alerts, updates, phases, warmLog };
 }
 
 describe("chat.send", () => {
@@ -149,7 +167,37 @@ describe("chat.send", () => {
     const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
     expect(r.status).toBe("error");
     expect(calls.delegate).toHaveLength(0);
-    expect(messages.get(r.messageId)!.error).toContain("Claude Code에서만");
+    expect(messages.get(r.messageId)!.error).toContain("다른 모델을 고르세요");
+  });
+
+  test("a refused worker model records a model alert with the fix", async () => {
+    const { head, turn, messages, alerts } = setup({ decision: { decision: "approve", amend: { harness: "local.codex", model: "claude-opus-5-5" } } });
+    const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
+    expect(r.status).toBe("error");
+    expect(messages.get(r.messageId)!.error).toContain("다른 모델을 고르세요");
+    expect(alerts.get("model-refused")).toMatchObject({ active: true, title: "모델을 쓸 수 없어요" });
+  });
+
+  test("a Herdr pane refusal records an alert and a retry clears it", async () => {
+    const s = setup({ delegateError: "커널이 에이전트 없는 Herdr pane에서 실행돼야 brgr로 위임할 수 있어요" });
+    const failed = await s.head.send({ text: "README 오타 고쳐줘" }, s.turn);
+    expect(failed.status).toBe("error");
+    expect(s.messages.get(failed.messageId)!.error).toContain("터미널에서 me를 실행");
+    expect(s.alerts.get("herdr-pane")).toMatchObject({ active: true });
+    const ok = await s.head.send({ text: "README 오타 고쳐줘" }, s.turn);
+    expect(ok.status).toBe("done");
+    expect(s.alerts.get("herdr-pane").active).toBe(false);
+  });
+
+  test("a GJC login expiry records an alert and a direct reply clears it", async () => {
+    const s = setup({ simpleProb: 0.97, brainError: "gjc error: provider login expired (openai)" });
+    const failed = await s.head.send({ text: "뮤텍스랑 세마포어 차이를 실제 예시 하나씩 들어서 두세 문장으로 비교 설명해 줄 수 있어?" }, s.turn);
+    expect(failed.status).toBe("error");
+    expect(s.messages.get(failed.messageId)!.error).toContain("GJC의 OpenAI 로그인이 만료됐어요 · 터미널에서 gjc 실행 후 /login");
+    expect(s.alerts.get("gjc-login")).toMatchObject({ active: true });
+    const ok = await s.head.send({ text: "뮤텍스랑 세마포어 차이를 실제 예시 하나씩 들어서 두세 문장으로 비교 설명해 줄 수 있어?" }, s.turn);
+    expect(ok.status).toBe("done");
+    expect(s.alerts.get("gjc-login").active).toBe(false);
   });
 });
 

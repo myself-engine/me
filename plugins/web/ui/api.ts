@@ -108,6 +108,20 @@ export interface Approval {
   payload?: any;
 }
 
+/** gjc-head.alert: the latest blocking problem per cause; only active ones block. */
+export interface HeadAlert {
+  id: string;
+  cause: string;
+  title: string;
+  fix: string;
+  detail?: string;
+  active: boolean;
+  ts: string;
+  updatedAt: string;
+  threadId?: string;
+  messageId?: string;
+}
+
 /** Who is viewing: set when the request came through `tailscale serve`, null for localhost. */
 export interface Viewer {
   login: string;
@@ -125,7 +139,8 @@ export interface Bootstrap {
   checks: OpsCheck[];
   approvals: Approval[];
   headSettings?: HeadSettings | null;
-  config: { projects: string[]; defaultProject: string; githubRepo: string | null };
+  alerts?: HeadAlert[];
+  config: { projects: string[]; addedProjects?: string[]; defaultProject: string; githubRepo: string | null };
 }
 
 export type ServerMsg =

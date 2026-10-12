@@ -1,11 +1,13 @@
 // Ports over the kernel SDK: other plugins via invoke, entities, approvals and events.
 import type { Plugin } from "@me/sdk";
+import type { AlertCause, HeadAlert } from "../domain/alerts.ts";
 import type { HeadSettings, Judgement, Message, Summary, Thread, Understood } from "../domain/types.ts";
 import type { Approvals, Delegator, Events, Judge, Normalizer, Store, Summarizer } from "../ports/index.ts";
 
 export const THREAD = "gjc-head.thread";
 export const MESSAGE = "gjc-head.message";
 export const SETTINGS = "gjc-head.settings";
+export const ALERT = "gjc-head.alert";
 
 export function kernelNormalizer(plugin: Plugin): Normalizer {
   return { normalize: (text) => plugin.invoke<Understood>("slang", "normalize", { text }) };
@@ -37,6 +39,7 @@ export function entityStore(plugin: Plugin): Store {
         properties: { role: { enum: ["user", "assistant"] }, status: { enum: ["pending", "streaming", "done", "error"] } },
       });
       await plugin.entity.registerKind(SETTINGS, { type: "object", required: ["id", "model", "effort"] });
+      await plugin.entity.registerKind(ALERT, { type: "object", required: ["id", "cause", "title", "fix", "active"] });
     },
     getThread: async (id) => (await plugin.entity.get<Thread>(THREAD, id))?.data ?? null,
     saveThread: async (t) => void (await plugin.entity.upsert(THREAD, t.id, t)),
@@ -44,6 +47,12 @@ export function entityStore(plugin: Plugin): Store {
     messagesByTask: async (taskId) => (await plugin.entity.list<Message>({ kind: MESSAGE, where: { taskId }, limit: 5 })).map((d) => d.data),
     getSettings: async () => (await plugin.entity.get<HeadSettings>(SETTINGS, "default"))?.data ?? null,
     saveSettings: async (s) => void (await plugin.entity.upsert(SETTINGS, s.id, s)),
+    listAlerts: async () => (await plugin.entity.list<HeadAlert>({ kind: ALERT, limit: 20 })).map((d) => d.data),
+    saveAlert: async (a) => void (await plugin.entity.upsert(ALERT, a.id, a)),
+    clearAlert: async (cause: AlertCause) => {
+      const cur = await plugin.entity.get<HeadAlert>(ALERT, cause);
+      if (cur?.data.active) await plugin.entity.upsert(ALERT, cause, { ...cur.data, active: false, updatedAt: new Date().toISOString() });
+    },
   };
 }
 

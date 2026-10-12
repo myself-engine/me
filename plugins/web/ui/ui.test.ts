@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { diffTotals, parseDiffStat, splitDiff } from "./diff.ts";
 import { fenceLanguage, highlight } from "./highlight.ts";
 import { isDeep, parseRoute, taskHref } from "./routes.ts";
-import { headChoice, initial, reducer, shortModel, taskTitle, threadTone, toneOf, workItems, type State } from "./state.ts";
+import { activeAlerts, headChoice, initial, reducer, shortModel, taskTitle, threadTone, toneOf, workItems, type State } from "./state.ts";
 
 describe("parseRoute", () => {
   test("defaults to chat", () => {
@@ -112,6 +112,26 @@ describe("status tones", () => {
       msg: { type: "entity", kind: "kernel.op", id: "o1", data: { opId: "o1", traceId: "tr2", callee: "gjc-head", state: "running", phaseLabel: "판정 중" } },
     });
     expect(s.ops.o1?.phaseLabel).toBe("판정 중");
+  });
+
+  test("blocking alerts land in state and only active ones count", () => {
+    const alert = { id: "gjc-login", cause: "gjc-login", title: "GJC의 OpenAI 로그인이 만료됐어요", fix: "터미널에서 gjc 실행 후 /login", active: true, ts: "2026-10-11T00:00:00.000Z", updatedAt: "2026-10-11T00:00:00.000Z" };
+    let s = reducer(state(), { type: "server", msg: { type: "entity", kind: "gjc-head.alert", id: "gjc-login", data: alert } });
+    expect(activeAlerts(s).map((a) => a.id)).toEqual(["gjc-login"]);
+    s = reducer(s, { type: "server", msg: { type: "entity", kind: "gjc-head.alert", id: "gjc-login", data: { ...alert, active: false } } });
+    expect(activeAlerts(s)).toEqual([]);
+  });
+
+  test("web.settings entities merge added projects without losing the config list", () => {
+    let s = reducer(initial, {
+      type: "bootstrap",
+      data: { token: "t", viewer: null, threads: [], messages: [], tasks: [], plugins: [], ops: [], checks: [], approvals: [], alerts: [], config: { projects: ["/base"], addedProjects: [], defaultProject: "", githubRepo: null } },
+    });
+    s = reducer(s, { type: "server", msg: { type: "entity", kind: "web.settings", id: "default", data: { id: "default", projects: ["/added"] } } });
+    expect(s.config.projects).toEqual(["/base", "/added"]);
+    expect(s.config.addedProjects).toEqual(["/added"]);
+    s = reducer(s, { type: "server", msg: { type: "entity", kind: "web.settings", id: "default", data: { id: "default", projects: [] } } });
+    expect(s.config.projects).toEqual(["/base"]);
   });
 });
 

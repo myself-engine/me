@@ -17,7 +17,7 @@
   "provides": {
     "methods": ["chat.send", "chat.settings", "chat.settings.set", "chat.thread.set", "chat.models", "chat.favorites.set"],
     "events": ["gjc-head.message.changed", "gjc-head.guard.violation"],
-    "kinds": ["thread", "message", "settings"]
+    "kinds": ["thread", "message", "settings", "alert"]
   },
   "subscribes": ["brgr.task.*"],
   "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }

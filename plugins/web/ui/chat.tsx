@@ -7,7 +7,7 @@ import { diffTotals, parseDiffStat } from "./diff.ts";
 import { chatHref, NEW_THREAD, taskHref } from "./routes.ts";
 import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, timeAgo, toolName, useBusy, useNow } from "./shared.tsx";
 import { effortLabel, HeadChip } from "./head.tsx";
-import { TONE_LABEL, taskTitle, threadTone, toneOf, turnOp, type HeadChoice, type Live } from "./state.ts";
+import { TONE_LABEL, activeAlerts, taskTitle, threadTone, toneOf, turnOp, type HeadChoice, type Live } from "./state.ts";
 
 export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
   const { s, conn } = useApp();
@@ -77,6 +77,20 @@ function ThreadList({ activeId }: { activeId: string | null }) {
   );
 }
 
+/** While something blocks replies or delegations: one slim line with the cause and where to fix it. */
+function AlertBanner() {
+  const { s } = useApp();
+  const alerts = activeAlerts(s);
+  if (alerts.length === 0) return null;
+  const first = alerts[0]!;
+  return (
+    <div className="conn-banner alert-banner" role="status">
+      <StatusDot tone="needs" label="막힘" /> {first.title} · {first.fix}
+      {alerts.length > 1 && ` (+${alerts.length - 1})`} <a className="link" href="#/ops">상태에서 보기 ›</a>
+    </div>
+  );
+}
+
 function Conversation(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
   const { s, conn } = useApp();
   const { threadId } = props;
@@ -102,6 +116,7 @@ function Conversation(props: { threadId: string | null; project: string; setProj
           </span>
         )}
       </Header>
+      <AlertBanner />
       <div className="scroll">
         {messages.length === 0 && (
           <div className="hello">

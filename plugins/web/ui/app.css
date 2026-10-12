@@ -1936,6 +1936,34 @@ a.dline:hover {
 }
 .brief.path { overflow-wrap: anywhere; }
 
+/* Blocking alerts and added projects: slim banner in 대화, todo card and repo form in 상태. */
+.alert-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 8px 12px 0;
+}
+.proj-form {
+  margin: 0 0 12px;
+}
+.proj-form .field-input {
+  flex: 1 1 12em;
+}
+.proj-row {
+  display: flex;
+  align-items: center;
+  gap: 4px 8px;
+}
+.proj-row .row-link {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.proj-remove {
+  flex: 0 0 auto;
+  margin-right: 8px;
+}
+
 /* Phone conversation list: a composer at the bottom starts a new conversation (only where the list is the whole screen). */
 .list-composer {
   display: none;

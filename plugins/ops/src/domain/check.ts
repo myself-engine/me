@@ -158,9 +158,9 @@ function parseProbe(raw: any): CheckSpec {
   }
 }
 
-/** `uid` resolves launchd action targets (`gui/<uid>/<job>`); without it launchd actions are rejected. */
+/** `uid` resolves launchd action targets (`gui/<uid>/<job>`); without it launchd actions are rejected. `extraChecks` are appended to `checks` with the same validation, so a local file can add checks without replacing the shared list. */
 export function parseConfig(config: Record<string, unknown> | undefined, opts: { uid?: number | null } = {}): OpsConfig {
-  const rawChecks = Array.isArray(config?.checks) ? (config!.checks as unknown[]) : [];
+  const rawChecks = [...(Array.isArray(config?.checks) ? (config!.checks as unknown[]) : []), ...(Array.isArray((config as any)?.extraChecks) ? ((config as any).extraChecks as unknown[]) : [])];
   const checks: CheckSpec[] = [];
   const errors: OpsConfig["errors"] = [];
   const seen = new Set<string>();

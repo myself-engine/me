@@ -1,12 +1,12 @@
 // 상태: is everything fine, per-machine checks, what each part of me does, projects; raw diagnostics folded.
 // A failing check card offers its configured actions; pressing one asks for approval (the card shows up in 작업).
 import { useState } from "react";
-import type { OpsCheck, PluginInfo } from "./api.ts";
+import type { HeadAlert, OpsCheck, PluginInfo } from "./api.ts";
 import { useApp } from "./context.ts";
 import { ProjectsSection } from "./projects.tsx";
 import { taskHref } from "./routes.ts";
 import { Header, Section, StatusDot, elapsed, timeAgo, useBusy, useNow } from "./shared.tsx";
-import { activeOps, type Tone } from "./state.ts";
+import { activeAlerts, activeOps, type Tone } from "./state.ts";
 
 /** What the ops plugin adds to a check record when the check declares actions (plugins/ops domain/action.ts). */
 interface CheckAction {
@@ -71,6 +71,7 @@ export function OpsScreen() {
         )}
       </Header>
       <div className="pane-scroll page-body">
+        <AlertsCard />
         <Summary checks={checks} plugins={plugins} />
         <Machines checks={checks} />
         <Parts plugins={plugins} />
@@ -92,6 +93,34 @@ export function OpsScreen() {
         </details>
       </div>
     </div>
+  );
+}
+
+/** Blocked replies and delegations: the cause and the exact fix, until the same thing succeeds. */
+function AlertsCard() {
+  const { s } = useApp();
+  const alerts = activeAlerts(s);
+  if (alerts.length === 0) return null;
+  return (
+    <Section label="해야 할 일" count={alerts.length} tone="needs">
+      <ul className="rows boxed">
+        {alerts.map((a: HeadAlert) => (
+          <li key={a.id} className="part-row alert-row">
+            <span className="row-main">
+              <StatusDot tone="needs" label="막힘" />
+              <span className="row-title">{a.title}</span>
+              <span className="row-sub">{a.fix}</span>
+              {a.detail && (
+                <span className="row-sub muted" title={a.detail}>
+                  {a.detail.slice(0, 120)}
+                </span>
+              )}
+              <span className="row-sub muted">{timeAgo(a.updatedAt)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

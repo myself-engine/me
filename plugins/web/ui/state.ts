@@ -1,5 +1,5 @@
 // Client state: one reducer fed by the bootstrap snapshot and the server's WebSocket pushes.
-import type { Approval, Bootstrap, Effort, HeadSettings, Message, Op, OpsCheck, PluginInfo, ServerMsg, Task, Thread } from "./api.ts";
+import type { Approval, Bootstrap, Effort, HeadAlert, HeadSettings, Message, Op, OpsCheck, PluginInfo, ServerMsg, Task, Thread } from "./api.ts";
 
 /** What has streamed in for one request (by traceId) before the message entity catches up. */
 export interface Live {
@@ -24,6 +24,8 @@ export interface State {
   approvals: Record<string, Approval>;
   /** The head's defaults and pickers; null until gjc-head has stored them. */
   headSettings: HeadSettings | null;
+  /** The latest blocking problem per cause; only active ones block. */
+  alerts: Record<string, HeadAlert>;
   live: Record<string, Live>;
   config: Bootstrap["config"];
   viewer: Bootstrap["viewer"];
@@ -47,7 +49,8 @@ export function reducer(s: State, a: Action): State {
       checks: Object.fromEntries((a.data.checks ?? []).map((c) => [`${c.source ?? "ops"}/${c.id}`, c])),
       approvals: byId(a.data.approvals, "approvalId"),
       headSettings: a.data.headSettings ?? null,
-      config: a.data.config,
+      alerts: byId(a.data.alerts ?? [], "id"),
+      config: { addedProjects: [], ...a.data.config },
       viewer: a.data.viewer ?? null,
     };
   }
@@ -58,9 +61,15 @@ export function reducer(s: State, a: Action): State {
       if (m.kind === "gjc-head.message") return { ...s, messages: { ...s.messages, [m.id]: m.data } };
       if (m.kind === "brgr.task") return { ...s, tasks: { ...s.tasks, [m.id]: m.data } };
       if (m.kind === "gjc-head.settings") return { ...s, headSettings: m.data };
+      if (m.kind === "gjc-head.alert") return { ...s, alerts: { ...s.alerts, [m.id]: m.data } };
       if (m.kind === "kernel.plugin") return { ...s, plugins: { ...s.plugins, [m.id]: m.data } };
       if (m.kind === "kernel.op") return { ...s, ops: { ...s.ops, [m.id]: m.data } };
       if (m.kind === "ops.check") return { ...s, checks: { ...s.checks, [m.id]: m.data } };
+      if (m.kind === "web.settings") {
+        const addedProjects = (m.data.projects as string[]) ?? [];
+        const base = s.config.projects.filter((p) => !(s.config.addedProjects ?? []).includes(p));
+        return { ...s, config: { ...s.config, addedProjects, projects: [...new Set([...base, ...addedProjects])] } };
+      }
       return s;
     }
     case "approval": {
@@ -102,11 +111,17 @@ export const initial: State = {
   checks: {},
   approvals: {},
   headSettings: null,
+  alerts: {},
   live: {},
-  config: { projects: [], defaultProject: "", githubRepo: null },
+  config: { projects: [], addedProjects: [], defaultProject: "", githubRepo: null },
   viewer: null,
 };
 
+/** Blocking problems that still need the user: active alerts, oldest first. */
+export const activeAlerts = (s: State): HeadAlert[] =>
+  Object.values(s.alerts)
+    .filter((a) => a.active)
+    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
 // ---------------------------------------------------------------------------
 // Derived views
 // ---------------------------------------------------------------------------

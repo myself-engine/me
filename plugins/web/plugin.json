@@ -16,7 +16,7 @@
     "network",
     "shell"
   ],
-  "provides": { "methods": [] },
+  "provides": { "methods": [], "kinds": ["settings"] },
   "subscribes": ["kernel.*", "gjc-head.*", "brgr.*"],
   "restart": { "policy": "on-failure", "maxRestarts": 5, "windowSec": 300 }
 }

@@ -1,7 +1,7 @@
 // Web plugin: localhost-only UI over the kernel. Security floor (DESIGN §7):
 // bind 127.0.0.1, check Host and Origin, require a per-start token for every mutation and the socket.
 // Remote access goes only through `tailscale serve` (tailnet, never funnel); see access.ts for the rules.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerWebSocket } from "bun";
@@ -16,7 +16,9 @@ mkdirSync(dataDir, { recursive: true });
 const token = crypto.randomUUID().replaceAll("-", "");
 writeFileSync(join(dataDir, "token"), token, { mode: 0o600 });
 
-const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "gjc-head.settings", "brgr.task", "kernel.plugin", "kernel.op"]);
+const WATCHED_KINDS = new Set(["gjc-head.thread", "gjc-head.message", "gjc-head.settings", "gjc-head.alert", "brgr.task", "kernel.plugin", "kernel.op", "web.settings"]);
+const SETTINGS_KIND = "web.settings";
+const SETTINGS_ID = "default";
 /** ops runs once per machine (ops on this Mac, ops-<name> on servers); each owns `<id>.check`. */
 const OPS_KIND = /^(ops(?:-[a-z0-9-]+)?)\.check$/;
 const isOpsPlugin = (id: string) => id === "ops" || id.startsWith("ops-");
@@ -29,6 +31,9 @@ const broadcast = (msg: unknown) => {
 };
 
 const plugin = definePlugin({
+  async onInit() {
+    await plugin.entity.registerKind(SETTINGS_KIND, { type: "object", required: ["id", "projects"] });
+  },
   async onEvent(name, data, ctx) {
     if (name === "kernel.entity.changed" && WATCHED_KINDS.has(data.kind)) {
       const doc = await plugin.entity.get(data.kind, data.id);
@@ -103,8 +108,46 @@ async function recentOps() {
     .slice(0, 200);
 }
 
+/** Projects added in 상태 › 프로젝트, stored as the web-owned web.settings entity and merged with config projects. */
+async function storedProjects(): Promise<string[]> {
+  const doc = await plugin.entity.get<{ id: string; projects: string[] }>(SETTINGS_KIND, SETTINGS_ID).catch(() => null);
+  return (doc?.data.projects ?? []).map(expand);
+}
+
+async function saveStoredProjects(projects: string[]) {
+  await plugin.entity.upsert(SETTINGS_KIND, SETTINGS_ID, { id: SETTINGS_ID, projects });
+}
+
+/** True when git itself recognises the directory as a repository (worktrees included). */
+async function isGitRepo(path: string): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["git", "-C", path, "rev-parse", "--git-dir"], { stdout: "pipe", stderr: "pipe" });
+    const timer = setTimeout(() => proc.kill(), 5000);
+    const code = await proc.exited;
+    clearTimeout(timer);
+    return code === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Expands and validates a repository path from the UI: it must exist, be a directory, and be a git repo. */
+async function checkedProject(raw: unknown): Promise<string> {
+  if (typeof raw !== "string" || !raw.trim()) throw new Error("저장소 경로를 입력하세요");
+  const path = expand(raw.trim());
+  if (!existsSync(path)) throw new Error(`없는 경로예요: ${path}`);
+  try {
+    if (!statSync(path).isDirectory()) throw new Error(`디렉터리가 아니에요: ${path}`);
+  } catch (err: any) {
+    if (err?.message?.startsWith("디렉터리가")) throw err;
+    throw new Error(`읽을 수 없는 경로예요: ${path}`);
+  }
+  if (!(await isGitRepo(path))) throw new Error(`git 저장소가 아니에요: ${path}`);
+  return path;
+}
+
 async function bootstrap(req: Access) {
-  const [threads, messages, tasks, plugins, ops, checks, approvals, headSettings] = await Promise.all([
+  const [threads, messages, tasks, plugins, ops, checks, approvals, headSettings, alerts, webSettings] = await Promise.all([
     plugin.entity.list({ kind: "gjc-head.thread", limit: 500 }),
     plugin.entity.list({ kind: "gjc-head.message", limit: 1000 }),
     plugin.entity.list({ kind: "brgr.task", limit: 500 }),
@@ -113,7 +156,11 @@ async function bootstrap(req: Access) {
     opsChecks(),
     plugin.approval.list(),
     plugin.entity.get("gjc-head.settings", "default").catch(() => null),
+    plugin.entity.list({ kind: "gjc-head.alert", limit: 20 }).catch(() => []),
+    plugin.entity.get<{ id: string; projects: string[] }>(SETTINGS_KIND, SETTINGS_ID).catch(() => null),
   ]);
+  const addedProjects = ((webSettings?.data.projects as string[]) ?? []).map(expand);
+  const projects = [...new Set([...((plugin.config.projects as string[]) ?? []).map(expand), ...addedProjects])];
   return {
     token,
     viewer: viewerOf(req),
@@ -125,8 +172,10 @@ async function bootstrap(req: Access) {
     checks: checks.map((d) => d.data),
     approvals,
     headSettings: headSettings?.data ?? null,
+    alerts: alerts.map((d) => d.data),
     config: {
-      projects: ((plugin.config.projects as string[]) ?? []).map(expand),
+      projects,
+      addedProjects,
       defaultProject: expand((plugin.config.defaultProject as string) ?? ""),
       githubRepo: (plugin.config.githubRepo as string) ?? null,
     },
@@ -174,6 +223,18 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
     }
     case "slang.add":
       return plugin.invoke("slang", "dict.add", { from: m.from, to: m.to });
+    case "projects.add": {
+      const path = await checkedProject(m.path);
+      const next = [...new Set([...(await storedProjects()), path])];
+      await saveStoredProjects(next);
+      return { projects: next };
+    }
+    case "projects.remove": {
+      if (typeof m.path !== "string" || !m.path) throw new Error("path is required");
+      const path = expand(m.path);
+      await saveStoredProjects((await storedProjects()).filter((p) => p !== path));
+      return { removed: path };
+    }
     case "trace.get":
       return plugin.getTrace(String(m.traceId ?? ""));
     case "issue.create":

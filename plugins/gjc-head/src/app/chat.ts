@@ -3,6 +3,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { chooseHarness, decideRoute, fastPathJudgement, isFastPath } from "../domain/routing.ts";
+import { describeFailure, friendlyError, type AlertCause } from "../domain/alerts.ts";
 import { brainChoice, checkHeadChoice, checkWorkerChoice, EFFORTS, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
 import type { DelegationState, Effort, HeadSettings, Message, Thread } from "../domain/types.ts";
 import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, ModelCatalog, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
@@ -52,6 +53,29 @@ const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(
 
 export function createHead(ports: HeadPorts, config: HeadConfig) {
   const { brain, normalizer, summarizer, judge, approvals, delegator, store, events, models } = ports;
+
+  /** Records the blocking cause as gjc-head.alert (one doc per cause) so it survives reloads. */
+  async function recordAlert(err: unknown, threadId: string, messageId: string) {
+    const found = describeFailure(err);
+    if (!found) return;
+    const ts = now();
+    try {
+      await store.saveAlert({ id: found.cause, cause: found.cause, title: found.title, fix: found.fix, detail: String((err as Error)?.message ?? err).slice(0, 500), active: true, ts, updatedAt: ts, threadId, messageId });
+    } catch {
+      // The message error below still tells the user what to do.
+    }
+  }
+
+  /** Clears the causes that the same success proves over: a direct reply proves the brain works, a delegation proves brgr works. */
+  async function clearAlerts(causes: AlertCause[]) {
+    for (const cause of causes) {
+      try {
+        await store.clearAlert(cause);
+      } catch {
+        // Clearing is best-effort; a stale alert is fixed on the next success.
+      }
+    }
+  }
 
   /** Stored settings, with the config's favourites and worker choices always current. */
   async function settings(): Promise<HeadSettings> {
@@ -191,12 +215,15 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       turn.phase?.("done", "완료", 1);
 
       reply.status = "done";
+      if (reply.route === "direct") await clearAlerts(["gjc-login", "model-refused"]);
+      else if (reply.delegation?.state === "delegated") await clearAlerts(["herdr-pane", "dirty-repo", "model-refused"]);
     } catch (err: any) {
       warm?.cancel();
       warm = null;
       reply.status = "error";
-      reply.error = String(err?.message ?? err);
+      reply.error = friendlyError(err);
       turn.update({ kind: "error", message: reply.error });
+      await recordAlert(err, thread.id, reply.id);
     }
     thread.updatedAt = now();
     await store.saveThread(thread);
