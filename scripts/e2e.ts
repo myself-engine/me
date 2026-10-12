@@ -54,7 +54,7 @@ const brgr = definePlugin({
     "task.delegate": async (p: any) => {
       const taskId = `e2e-${crypto.randomUUID().slice(0, 8)}`;
       const now = new Date().toISOString();
-      const task = { taskId, harness: p.harness, ...(p.model ? { model: p.model } : {}), ...(p.effort ? { effort: p.effort } : {}), objective: p.objective, project: p.project, criterion: p.criterion ?? "", origin: p.origin ?? null, state: "running", outcome: null, resultText: null, error: null, decisionReason: null, commitSha: null, appliedAt: null, createdAt: now, updatedAt: now };
+      const task = { taskId, harness: p.harness, ...(p.model ? { model: p.model } : {}), ...(p.effort ? { effort: p.effort } : {}), objective: p.objective, project: p.project, criterion: p.criterion ?? "", origin: p.origin ?? null, autoApply: p.autoApply === true, state: "running", outcome: null, resultText: null, error: null, decisionReason: null, commitSha: null, appliedAt: null, createdAt: now, updatedAt: now };
       tasks.set(taskId, task);
       await brgr.entity.upsert("brgr.task", taskId, task);
       await brgr.emit("task.running", { taskId, state: "running", harness: p.harness });
@@ -178,35 +178,61 @@ try {
     return `children=${kids.join(",")} root=${root.durationMs}ms text_delta live=${live.length} journal=${rows.length}`;
   });
 
-  const delegate = async (text: string) => {
-    const { traceId } = await request("chat.send", { text });
-    const pending = await waitFor((m) => m.type === "approval" && m.event === "kernel.approval.pending" && m.traceId === traceId, 120_000, "approval");
-    return { traceId, approval: pending.data };
+  const sendChat = async (text: string, extra: object = {}) => {
+    const { traceId } = await request("chat.send", { text, ...extra });
+    return { traceId };
   };
+  const assistantOf = (traceId: string) =>
+    inbox.filter((m) => m.type === "entity" && m.kind === "gjc-head.message" && m.data.traceId === traceId && m.data.role === "assistant").at(-1)?.data;
 
-  await check("위임: 판정 → 지시서 → 승인(하네스 변경) → 결과 → 수락 → 커밋", async () => {
-    const { traceId, approval } = await delegate("이 프로젝트에 NOTES.md 파일 만들어서 hello 한 줄만 써 줘");
-    if (!approval.payload?.brief) throw new Error("approval has no brief");
-    await request("approval.decide", { approvalId: approval.approvalId, decision: "approve", amend: { harness: "local.codex", model: "gpt-6.1-sol", effort: "high" } });
+  await check("위임 (project): 판정 → 지시서 → 자동 위임 → 결과 → 수락 → 커밋", async () => {
+    await request("head.defaults.set", { access: "project" });
+    const { traceId } = await sendChat("이 프로젝트에 NOTES.md 파일 만들어서 hello 한 줄만 써 줘");
     const sealed = await waitFor((m) => m.type === "entity" && m.kind === "brgr.task" && m.data.state === "sealed", 30_000, "sealed task");
-    if (sealed.data.harness !== "local.codex") throw new Error(`harness ${sealed.data.harness} (amend ignored)`);
-    if (sealed.data.model !== "gpt-6.1-sol" || sealed.data.effort !== "high") throw new Error(`worker ${sealed.data.model}/${sealed.data.effort} (amend ignored)`);
+    if (!["local.claude-code", "local.codex"].includes(sealed.data.harness)) throw new Error(`harness ${sealed.data.harness}`);
+    if (sealed.data.autoApply !== false) throw new Error("project mode must not auto-apply");
     const diff = await request("task.diff", { taskId: sealed.data.taskId });
     if (!String(diff.diff).includes("NOTES.md")) throw new Error("diff missing file");
     const applied = await request("task.accept", { taskId: sealed.data.taskId });
     const log = new TextDecoder().decode(sh(["git", "log", "--oneline", "-1"]).stdout).trim();
     if (applied.state !== "applied" || !log.includes("NOTES.md")) throw new Error(`state=${applied.state} log=${log}`);
     await waitFor((m) => m.type === "op.end" && m.traceId === traceId, 30_000, "op.end");
+    const msg = assistantOf(traceId);
+    if (msg?.delegation?.approvedBy !== "mode:project") throw new Error(`approvedBy ${msg?.delegation?.approvedBy}`);
     return `commit ${String(applied.commitSha).slice(0, 8)}`;
   });
 
-  await check("승인 거절: 위임하지 않음", async () => {
-    const { traceId, approval } = await delegate("README에 설치 방법 섹션을 추가하고 커밋해 줘");
-    await request("approval.decide", { approvalId: approval.approvalId, decision: "reject" });
-    await waitFor((m) => m.type === "op.end" && m.traceId === traceId, 30_000, "op.end");
-    const msg = inbox.filter((m) => m.type === "entity" && m.kind === "gjc-head.message" && m.data.traceId === traceId && m.data.role === "assistant").at(-1)?.data;
-    if (msg?.delegation?.state !== "rejected") throw new Error(`delegation state ${msg?.delegation?.state}`);
-    return "rejected";
+  await check("읽기 전용: 위임하지 않고 모드 안내", async () => {
+    await request("head.defaults.set", { access: "read" });
+    const before = inbox.length;
+    try {
+      const { traceId } = await sendChat("README에 설치 방법 섹션을 추가하고 커밋해 줘");
+      await waitFor((m) => m.type === "op.end" && m.traceId === traceId, 30_000, "op.end");
+      const msg = assistantOf(traceId);
+      if (msg?.route !== "direct" || !String(msg?.text ?? "").includes("읽기 전용")) throw new Error(`reply ${msg?.route} ${String(msg?.text).slice(0, 60)}`);
+      if (msg?.delegation) throw new Error("read mode delegated");
+      if (inbox.slice(before).some((m) => m.type === "approval" && m.traceId === traceId)) throw new Error("read mode asked for approval");
+      return "read-only reply";
+    } finally {
+      await request("head.defaults.set", { access: "project" }).catch(() => {});
+    }
+  });
+
+  await check("전부 알아서: confirm 필요 + autoApply 전달", async () => {
+    const refused = await request("head.defaults.set", { access: "full" }).then(() => null, (e: Error) => e.message);
+    if (!refused) throw new Error("full without confirm accepted");
+    await request("head.defaults.set", { access: "full", confirm: true });
+    try {
+      const { traceId } = await sendChat("이 프로젝트에 CHANGELOG.md 파일을 만들어서 첫 항목을 적어 줘");
+      const sealed = await waitFor((m) => m.type === "entity" && m.kind === "brgr.task" && m.data.autoApply === true, 30_000, "autoApply task");
+      await waitFor((m) => m.type === "op.end" && m.traceId === traceId, 30_000, "op.end");
+      const msg = assistantOf(traceId);
+      if (msg?.delegation?.approvedBy !== "mode:full") throw new Error(`approvedBy ${msg?.delegation?.approvedBy}`);
+      if (sealed.data.taskId !== msg?.taskId) throw new Error("task mismatch");
+      return "autoApply=true";
+    } finally {
+      await request("head.defaults.set", { access: "project" }).catch(() => {});
+    }
   });
 
   await check("대화 엔진: 모델·effort 설정", async () => {
@@ -223,6 +249,13 @@ try {
     if (t.effort !== "low") throw new Error(`thread effort ${t.effort}`);
     const refused = await request("head.defaults.set", { model: "anthropic/claude-opus-5-5" }).then(() => null, (e: Error) => e.message);
     if (!refused) throw new Error("Anthropic model accepted as head default");
+    if (d.access !== "project") throw new Error(`headSettings.access ${d.access}`);
+    const badMode = await request("head.defaults.set", { access: "admin" }).then(() => null, (e: Error) => e.message);
+    if (!badMode) throw new Error("unknown access mode accepted");
+    await request("head.thread.set", { threadId: thread.id, access: "read" });
+    const t2 = (await (await fetch(`http://127.0.0.1:${port}/api/bootstrap`)).json()).threads.find((x: any) => x.id === thread.id);
+    if (t2.access !== "read") throw new Error(`thread access ${t2.access}`);
+    await request("head.thread.set", { threadId: thread.id, access: null });
     const models = await request("head.models");
     if (!Array.isArray(models) || models.length === 0 || models.some((m: any) => /claude|anthropic/i.test(m.id))) throw new Error(`models ${models?.length}`);
     return `effort=low reply ok, models=${models.length}, anthropic refused`;
@@ -237,15 +270,11 @@ try {
   });
   if (process.argv.includes("--serve")) {
     // Leave the seeded me running for scripts/shots.ts and scripts/a11y.ts until SIGTERM.
-    // One result waiting for review, for the in-thread result card.
-    await delegate("CHANGELOG.md 파일을 만들어서 첫 항목을 적어 줘")
-      .then(async ({ approval }) => {
-        const from = inbox.length;
-        await request("approval.decide", { approvalId: approval.approvalId, decision: "approve" });
-        await waitFor((m) => inbox.indexOf(m) >= from && m.type === "entity" && m.kind === "brgr.task" && m.data.state === "sealed", 30_000, "sealed task");
-      })
-      .catch(() => {});
-    await delegate("docs 폴더에 사용법 문서를 만들어 줘").catch(() => {}); // leaves one approval pending for screenshots
+    // One sealed result waiting for review, for the in-thread result card (project mode: no approval).
+    await request("head.defaults.set", { access: "project" }).catch(() => {});
+    const from = inbox.length;
+    await request("chat.send", { text: "CHANGELOG.md 파일을 만들어서 첫 항목을 적어 줘" }).catch(() => {});
+    await waitFor((m) => inbox.indexOf(m) >= from && m.type === "entity" && m.kind === "brgr.task" && m.data.state === "sealed", 60_000, "sealed task").catch(() => {});
     const report = results.map((r) => `${r.ok ? "PASS" : "FAIL"} ${r.flow}`).join("\n");
     console.log(`${report}\nSERVE http://127.0.0.1:${port}/`);
     await new Promise<void>((r) => (process.on("SIGTERM", r), process.on("SIGINT", r)));

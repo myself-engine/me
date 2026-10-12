@@ -67,7 +67,7 @@ export interface Approvals {
 }
 
 export interface Delegator {
-  delegate(p: { harness: string; model?: string; effort?: string; objective: string; criterion?: string; project: string; origin: Record<string, unknown> }): Promise<{ taskId: string }>;
+  delegate(p: { harness: string; model?: string; effort?: string; objective: string; criterion?: string; project: string; origin: Record<string, unknown>; autoApply?: boolean }): Promise<{ taskId: string }>;
 }
 
 export interface Store {

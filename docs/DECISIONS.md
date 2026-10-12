@@ -439,3 +439,11 @@
   - 버린 대안: 커널에 `call:ops-*` 같은 접두사 권한 추가(프로토콜 변경), 매니페스트에 인스턴스 이름 나열(사용자 기기 이름이 커밋됨).
   - 웹 서버는 요청마다 대상을 고정한다. 조치 경로는 대상이 `ops` 또는 `ops-*`일 때만 호출한다.
 - **화면**: 상태 탭의 문제 카드에 조치 버튼이 붙는다. 누르면 승인 카드가 작업 탭의 승인 요청에 뜬다. 카드는 실행할 명령(접힘)과 마지막 조치 결과를 보여 준다. 조치로 정상이 된 점검도 10분 동안 카드로 남아 결과를 보여 준다.
+
+## 23. 대화별 접근 모드: 읽기만 / 프로젝트 쓰기 / 전부 알아서 (2026-10-12)
+
+- **모드는 대화마다 하나다.** 값은 `read`(읽기만) · `project`(프로젝트 쓰기, 기본값) · `full`(전부 알아서)이다. 기본값은 `gjc-head.settings`의 `access`, 대화별 값은 `gjc-head.thread`의 `access`에 둔다. 대화는 자기 모드를 유지하고, 새 대화는 기본값을 물려받는다. `chat.settings.set`과 `chat.thread.set`이 `access`를 받고, `full`로 바꿀 때는 `confirm: true`가 있어야 한다. `chat.send`의 `access`는 새 대화에만 쓴다.
+- **위임이 모드를 따른다.** `read`에서는 위임하지 않고, 위임 판정이 나면 "읽기 전용이라 위임하지 않았다"는 짧은 답과 입력창 옆 모드 안내로 대신한다. `project`와 `full`에서는 커널 승인 없이 바로 위임하고, 승인 기록은 메시지의 `delegation.approvedBy`(`mode:project` | `mode:full` | `user`)와 turn update에 남긴다. 자동 모드에서는 요약이 권하는 하네스와 하네스 기본 작업 설정을 쓰고, `amend` 경로는 승인이 있을 때만 그대로 둔다.
+- **자동 적용은 `full`에서만 한다.** gjc-head가 `task.delegate`에 `autoApply: true`를 싣고, brgr는 봉인된 성공 결과(`candidate`)를 수동 수락과 같은 accept→apply→commit 경로로 바로 적용한다. 실패 결과는 절대 자동 적용하지 않고, 적용 실패는 `apply-failed`에 에러와 함께 남긴다. 저장소가 더러우면 기존 검사가 그대로 막고 봉인 상태로 둔다.
+- **웹은 값만 넘긴다.** `head.defaults.set`, `head.thread.set`, `chat.send`가 `access`/`confirm`을 그대로 전달하고, 화면은 다른 워커가 고친다. bootstrap은 기존 `headSettings`와 스레드 엔티티로 모드를 노출한다.
+- **E2E도 계약에 맞췄다.** 승인 대기 흐름 대신 자동 위임 → 수락 → 커밋, 읽기 전용 안내, `full`의 confirm·`autoApply` 전달을 확인한다.

@@ -21,6 +21,8 @@ export interface Task {
   model?: string;
   effort?: string;
   origin: Record<string, unknown> | null;
+  /** Full access mode: when the sealed result succeeds it is accepted and committed without review. */
+  autoApply: boolean;
   state: TaskState;
   outcome: string | null;
   resultText: string | null;
@@ -79,11 +81,13 @@ export interface NewTask {
   project: string;
   criterion: string;
   origin: Record<string, unknown> | null;
+  autoApply?: boolean;
 }
 
 export function createTask(p: NewTask, at: string): Task {
   return {
     ...p,
+    autoApply: p.autoApply ?? false,
     state: "running",
     outcome: null,
     resultText: null,

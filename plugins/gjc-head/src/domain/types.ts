@@ -9,9 +9,14 @@ export interface Thread {
   /** The head's model and effort for this thread; unset means the defaults in HeadSettings. */
   model?: string | null;
   effort?: Effort | null;
+  /** Access mode of this conversation; unset means the default in HeadSettings. */
+  access?: AccessMode | null;
   createdAt: string;
   updatedAt: string;
 }
+
+/** How far the head may go on its own in one conversation. */
+export type AccessMode = "read" | "project" | "full";
 
 /** GJC's thinking levels, used as the head's effort. */
 export type Effort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -28,6 +33,8 @@ export interface HeadSettings {
   /** Defaults for new threads and threads without their own choice. */
   model: string;
   effort: Effort;
+  /** Default access mode for new threads; "project" means delegate at once, apply after review. */
+  access: AccessMode;
   /** Models shown first in pickers: config favourites plus the user's own, plus the default model. */
   favorites: string[];
   /** Models the user starred in the picker; persisted here. */
@@ -78,6 +85,8 @@ export interface Delegation {
   criterion?: string;
   approvalId?: string;
   note?: string;
+  /** How the delegation was approved: by the conversation mode or by the user at the approval card. */
+  approvedBy?: "mode:project" | "mode:full" | "user";
   /** Worker model and effort picked at approval; unset means the harness's own default. */
   model?: string;
   effort?: string;

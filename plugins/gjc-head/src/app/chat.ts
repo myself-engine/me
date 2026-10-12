@@ -4,8 +4,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { chooseHarness, decideRoute, fastPathJudgement, isFastPath } from "../domain/routing.ts";
 import { describeFailure, friendlyError, type AlertCause } from "../domain/alerts.ts";
-import { brainChoice, checkHeadChoice, checkWorkerChoice, EFFORTS, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
-import type { DelegationState, Effort, HeadSettings, Message, Thread } from "../domain/types.ts";
+import { accessOf, brainChoice, checkAccess, checkHeadChoice, checkWorkerChoice, DEFAULT_ACCESS, EFFORTS, isAccessMode, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
+import type { AccessMode, DelegationState, Effort, HeadSettings, Message, Thread } from "../domain/types.ts";
 import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, ModelCatalog, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
 
 export interface HeadConfig {
@@ -37,6 +37,9 @@ export interface HeadPorts {
 export interface Choice {
   model?: string | null;
   effort?: Effort | null;
+  /** Access mode change; "full" needs `confirm: true`. Null clears a thread back to the default. */
+  access?: AccessMode | null;
+  confirm?: boolean;
 }
 
 export interface SendParams extends Choice {
@@ -50,6 +53,8 @@ const TOOL_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex
 /** The tool's product name for people: local.claude-code → Claude Code. */
 const toolName = (harness: string) => TOOL_NAMES[harness.replace(/^local\./, "")] ?? harness.replace(/^local\./, "");
 const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
+/** Read-only conversations never delegate: the delegate judgement becomes this direct reply. */
+const READ_ONLY_REPLY = "이 대화는 읽기 전용이라 위임하지 않았어요. 코드를 바꾸려면 입력창 옆의 모드에서 '프로젝트 쓰기' 또는 '전부 알아서'로 바꾸고 다시 말해 주세요.";
 
 export function createHead(ports: HeadPorts, config: HeadConfig) {
   const { brain, normalizer, summarizer, judge, approvals, delegator, store, events, models } = ports;
@@ -86,6 +91,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       id: "default",
       model: saved?.model ?? config.model,
       effort: saved?.effort ?? config.effort,
+      access: isAccessMode(saved?.access) ? saved.access : DEFAULT_ACCESS,
       favorites: [...new Set([...configFavorites, ...userFavorites, config.model])],
       userFavorites,
       configFavorites,
@@ -97,9 +103,11 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   /** Changes the defaults for new threads (and threads without their own choice). */
   async function setDefaults(p: Choice) {
     checkHeadChoice(p);
+    const access = checkAccess(p);
     const s = await settings();
     if (p.model) s.model = p.model.trim();
     if (p.effort) s.effort = p.effort;
+    if (access.access) s.access = access.access;
     await store.saveSettings(s);
     return s;
   }
@@ -126,10 +134,17 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     if (p.effort !== undefined) thread.effort = p.effort ?? null;
   }
 
+  /** Applies an access change to a thread; null clears it back to the default. */
+  function applyAccess(thread: Thread, p: Choice) {
+    const access = checkAccess(p);
+    if (p.access !== undefined) thread.access = access.access ?? null;
+  }
+
   async function setThread(p: Choice & { threadId: string }) {
     const thread = await store.getThread(p.threadId);
     if (!thread) throw new Error(`unknown thread ${p.threadId}`);
     applyChoice(thread, p);
+    applyAccess(thread, p);
     await store.saveThread(thread);
     return thread;
   }
@@ -139,33 +154,39 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     await events.messageChanged(m);
   }
 
-  async function ensureThread(p: SendParams): Promise<Thread> {
+  async function ensureThread(p: SendParams, defaultAccess: AccessMode): Promise<{ thread: Thread; created: boolean }> {
     if (p.threadId) {
       const t = await store.getThread(p.threadId);
-      if (t) return t;
+      if (t) return { thread: t, created: false };
     }
     const t: Thread = {
       id: p.threadId ?? crypto.randomUUID(),
       title: p.text.slice(0, 40),
       project: expandHome(p.project ?? config.defaultProject),
       sessionId: null,
+      access: p.access ?? defaultAccess,
       createdAt: now(),
       updatedAt: now(),
     };
     await store.saveThread(t);
-    return t;
+    return { thread: t, created: true };
   }
 
   async function send(p: SendParams, turn: Turn) {
     if (!p.text?.trim()) throw new Error("text is required");
     checkHeadChoice(p);
+    checkAccess(p);
     const threshold = config.simpleThreshold;
+    const defaults = await settings();
 
-    const thread = await ensureThread(p);
+    const { thread, created } = await ensureThread(p, defaults.access);
+    // A thread keeps its mode: chat.send's access only applies to a new thread.
+    if (!created && p.access !== undefined) turn.update({ kind: "access", mode: accessOf(thread, defaults), kept: true });
     if (p.project && expandHome(p.project) !== thread.project) thread.project = expandHome(p.project);
     applyChoice(thread, p);
-    const choice = brainChoice(thread, await settings());
-    turn.update({ kind: "thread", threadId: thread.id, project: thread.project });
+    const choice = brainChoice(thread, defaults);
+    const access = accessOf(thread, defaults);
+    turn.update({ kind: "thread", threadId: thread.id, project: thread.project, access });
 
     const user: Message = { id: crypto.randomUUID(), threadId: thread.id, role: "user", text: p.text, ts: now(), traceId: turn.traceId, status: "done" };
     await saveMessage(user);
@@ -192,7 +213,15 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         reply.route = decideRoute({ needsCodeChange: false, simpleProb: reply.judgement.simpleProb, threshold });
       }
       turn.update({ kind: "judgement", ...reply.judgement, route: reply.route, threshold });
-      if (reply.route === "delegate") {
+      // Read-only conversations never delegate: the delegate verdict becomes a direct reply instead.
+      const readOnly = reply.route === "delegate" && access === "read";
+      if (readOnly) {
+        warm?.cancel();
+        warm = null;
+        reply.route = "direct";
+        reply.text = READ_ONLY_REPLY;
+        turn.update({ kind: "access", mode: access, delegated: false });
+      } else if (reply.route === "delegate") {
         turn.phase?.("summarizing", "지시서 작성 중");
         const summary = await summarizer.summarize({ original: p.text, normalized: understood.normalized, harnesses: config.harnesses, project: thread.project });
         reply.summary = summary;
@@ -200,17 +229,17 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       }
       await saveMessage(reply);
 
-      if (reply.route === "direct") {
+      if (reply.route === "direct" && !readOnly) {
         turn.phase?.("answering", "답변 작성 중");
         const w = warm;
         warm = null;
         await answerDirectly(thread, reply, p.text, turn, w, choice);
       }
-      else {
+      else if (!readOnly) {
         // Delegated: the warm brain will never get a prompt.
         warm?.cancel();
         warm = null;
-        await delegate(thread, reply, turn);
+        await delegate(thread, reply, turn, access);
       }
       turn.phase?.("done", "완료", 1);
 
@@ -249,12 +278,32 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     if (res.sessionId) thread.sessionId = res.sessionId;
   }
 
-  async function delegate(thread: Thread, reply: Message, turn: Turn) {
+  async function delegate(thread: Thread, reply: Message, turn: Turn, access: AccessMode) {
     const s = reply.summary!;
     const brief = s.brief || s.summaryEn;
     const criterion = s.criterion?.trim() || undefined;
     reply.delegation = { state: "awaiting-approval", harness: s.harness, brief, ...(criterion ? { criterion } : {}) };
     await saveMessage(reply);
+
+    // Project and full modes start at once without a kernel approval; the record keeps how it was approved.
+    if (access === "project" || access === "full") {
+      const approvedBy = `mode:${access}` as const;
+      reply.delegation.approvedBy = approvedBy;
+      turn.phase?.("delegating", "위임 중");
+      const task = await delegator.delegate({
+        harness: s.harness,
+        objective: brief,
+        criterion,
+        project: thread.project,
+        origin: { plugin: "gjc-head", messageId: reply.id, threadId: thread.id },
+        ...(access === "full" ? { autoApply: true } : {}),
+      });
+      reply.taskId = task.taskId;
+      reply.delegation.state = "delegated";
+      reply.text = `${toolName(s.harness)}에 맡겼어요. 결과가 나오면 여기서 확인할 수 있어요.`;
+      turn.update({ kind: "delegation", state: "delegated", taskId: task.taskId, harness: s.harness, approvedBy });
+      return;
+    }
 
     turn.phase?.("awaiting-approval", "승인 대기");
     const decisionPromise = approvals.request({
@@ -275,6 +324,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     turn.update({ kind: "delegation", state: "awaiting-approval", harness: s.harness, brief });
     const decision = await decisionPromise;
     reply.delegation.approvalId = decision.approvalId;
+    reply.delegation.approvedBy = "user";
 
     if (decision.decision !== "approve") {
       reply.delegation.state = "rejected";

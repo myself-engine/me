@@ -239,3 +239,62 @@ describe("other methods", () => {
     expect(brgr.calls).toEqual([]);
   });
 });
+
+describe("autoApply (full access mode)", () => {
+  const settle = async (store: MemoryStore, taskId: string, want: TaskState) => {
+    for (let i = 0; i < 100 && store.tasks.get(taskId)?.state !== want; i++) await Bun.sleep(10);
+    return store.tasks.get(taskId)!;
+  };
+
+  test("a successful sealed result applies itself through the dirty-checked path", async () => {
+    const { brgr, git, store, events, service } = setup();
+    const { taskId } = await service.delegate({ harness: "local.codex", objective: "obj", project: "/repo", autoApply: true });
+    expect(store.tasks.get(taskId)).toMatchObject({ autoApply: true });
+    const t = await settle(store, taskId, "applied");
+    expect(t).toMatchObject({ state: "applied", commitSha: "deadbeef", decisionReason: "자동 적용 (전부 알아서)", error: null });
+    expect(brgr.names()).toEqual(["run", "wait", "result", "diff", "accept", "apply"]);
+    expect(brgr.calls.find((c) => c[0] === "accept")).toEqual(["accept", taskId, "자동 적용 (전부 알아서)"]);
+    expect(git.calls.map((c) => c[0])).toEqual(["status", "add", "commit", "headSha"]);
+    expect(events.names()).toEqual(["task.running", "task.sealed", "task.accepted", "task.applied"]);
+  });
+
+  test("without autoApply a sealed task waits for review", async () => {
+    const { brgr, store, service } = setup();
+    const { taskId } = await service.delegate({ harness: "local.codex", objective: "obj", project: "/repo" });
+    const t = await settle(store, taskId, "sealed");
+    expect(t).toMatchObject({ state: "sealed", autoApply: false });
+    expect(brgr.names()).toEqual(["run", "wait", "result"]);
+  });
+
+  test("a failed result never auto-applies", async () => {
+    const { brgr, store, events, service } = setup();
+    brgr.responses.wait = ok(JSON.stringify({ state: "complete", outcome: "error" }));
+    const { taskId } = await service.delegate({ harness: "local.codex", objective: "obj", project: "/repo", autoApply: true });
+    const t = await settle(store, taskId, "failed");
+    expect(t.state).toBe("failed");
+    expect(brgr.names()).toEqual(["run", "wait", "result"]);
+    expect(events.names()).toEqual(["task.running", "task.failed"]);
+  });
+
+  test("an auto-apply failure lands in apply-failed with the error on the task", async () => {
+    const { brgr, store, events, service } = setup();
+    brgr.responses.apply = fail("patch does not apply");
+    const { taskId } = await service.delegate({ harness: "local.codex", objective: "obj", project: "/repo", autoApply: true });
+    const t = await settle(store, taskId, "apply-failed");
+    expect(t.error).toContain("patch does not apply");
+    expect(brgr.names()).toEqual(["run", "wait", "result", "diff", "accept", "apply"]);
+    expect(events.names()).toEqual(["task.running", "task.sealed", "task.accepted", "task.apply-failed"]);
+  });
+
+  test("a dirty tree never auto-applies: the task stays sealed with a Korean error", async () => {
+    const { brgr, git, store, service } = setup();
+    git.dirty = [" M src/a.ts"];
+    const { taskId } = await service.delegate({ harness: "local.codex", objective: "obj", project: "/repo", autoApply: true });
+    await settle(store, taskId, "sealed");
+    for (let i = 0; i < 100 && !store.tasks.get(taskId)?.error; i++) await Bun.sleep(10);
+    const t = store.tasks.get(taskId)!;
+    expect(t.state).toBe("sealed");
+    expect(t.error).toContain("커밋되지 않은 변경");
+    expect(brgr.names()).toEqual(["run", "wait", "result"]);
+  });
+});

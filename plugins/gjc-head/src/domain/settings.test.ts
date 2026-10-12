@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { brainChoice, checkWorkerChoice, parseModelList } from "./settings.ts";
+import { accessOf, brainChoice, checkAccess, checkWorkerChoice, DEFAULT_ACCESS, parseModelList } from "./settings.ts";
 
 const LIST = `Canonical models
 canonical            selected                       variants  context  max-out
@@ -35,5 +35,27 @@ describe("choices", () => {
     expect(() => checkWorkerChoice({ harness: "local.gjc", model: "claude-sonnet-5-5" })).toThrow();
     expect(checkWorkerChoice({ harness: "local.codex", model: " ", effort: "" })).toEqual({});
     expect(() => checkWorkerChoice({ harness: "local.codex", effort: "max" })).toThrow();
+  });
+});
+
+describe("access", () => {
+  test("read and project pass without confirm, full needs confirm: true", () => {
+    expect(checkAccess({})).toEqual({});
+    expect(checkAccess({ access: null })).toEqual({});
+    expect(checkAccess({ access: "read" })).toEqual({ access: "read" });
+    expect(checkAccess({ access: "project" })).toEqual({ access: "project" });
+    expect(() => checkAccess({ access: "full" })).toThrow("확인");
+    expect(() => checkAccess({ access: "full", confirm: false })).toThrow("확인");
+    expect(checkAccess({ access: "full", confirm: true })).toEqual({ access: "full" });
+  });
+  test("unknown modes are refused", () => {
+    expect(() => checkAccess({ access: "admin" })).toThrow("모드");
+    expect(() => checkAccess({ access: "" })).toThrow("모드");
+  });
+  test("a thread's own access wins, otherwise the default (project) applies", () => {
+    expect(DEFAULT_ACCESS).toBe("project");
+    expect(accessOf({}, { access: "project" })).toBe("project");
+    expect(accessOf({ access: null }, { access: "full" })).toBe("full");
+    expect(accessOf({ access: "read" }, { access: "project" })).toBe("read");
   });
 });

@@ -111,7 +111,7 @@ describe("chat.send", () => {
     expect(direct.phases).toEqual(["understanding", "judging", "answering", "done"]);
     const del = setup({ simpleProb: 0.05 });
     await del.head.send({ text: "gjc-head 플러그인에 타임아웃 설정 추가하고 테스트도 써 줘" }, del.turn);
-    expect(del.phases).toEqual(["understanding", "judging", "summarizing", "awaiting-approval", "delegating", "done"]);
+    expect(del.phases).toEqual(["understanding", "judging", "summarizing", "delegating", "done"]);
   });
 
   test("summarizes only after a delegate judgement, then delegates with the brief", async () => {
@@ -132,50 +132,66 @@ describe("chat.send", () => {
     expect(updates.find((u) => u.kind === "judgement")).toMatchObject({ source: "fast-path", simpleProb: 1, route: "direct" });
   });
 
-  test("delegation passes criterion and harness list, keeps suggestion without amend", async () => {
-    const { head, turn, calls, messages } = setup();
+  test("project mode delegates at once: no approval, suggested harness, audit trail", async () => {
+    const { head, turn, calls, messages, updates } = setup();
     const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
     expect(r.route).toBe("delegate");
-    expect(calls.approval[0].payload).toMatchObject({ harness: "local.codex", harnesses: ["local.claude-code", "local.codex"] });
+    expect(calls.approval).toHaveLength(0);
     expect(calls.delegate[0]).toMatchObject({ harness: "local.codex", criterion: "bun test passes." });
-    expect(messages.get(r.messageId)!.delegation).toMatchObject({ harness: "local.codex", state: "delegated" });
+    expect(calls.delegate[0].autoApply).toBeUndefined();
+    expect(calls.delegate[0]).not.toHaveProperty("model");
+    expect(calls.delegate[0]).not.toHaveProperty("effort");
+    expect(messages.get(r.messageId)!.delegation).toMatchObject({ harness: "local.codex", state: "delegated", approvedBy: "mode:project" });
+    expect(updates.find((u) => u.kind === "delegation" && u.state === "delegated")).toMatchObject({ approvedBy: "mode:project", harness: "local.codex" });
   });
 
-  test("amend.harness overrides the suggestion and is recorded", async () => {
-    const { head, turn, calls, messages } = setup({ decision: { decision: "approve", amend: { harness: "local.claude-code" } } });
+  test("auto modes use the suggested harness and the harness defaults, never an amend", async () => {
+    const { head, turn, calls, messages } = setup();
     const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
-    expect(calls.delegate[0].harness).toBe("local.claude-code");
-    expect(messages.get(r.messageId)!.delegation).toMatchObject({ harness: "local.claude-code", suggestedHarness: "local.codex" });
+    expect(calls.delegate[0].harness).toBe("local.codex");
+    expect(messages.get(r.messageId)!.delegation).toMatchObject({ harness: "local.codex" });
+    expect(messages.get(r.messageId)!.delegation!.suggestedHarness).toBeUndefined();
   });
 
-  test("rejected approval does not delegate", async () => {
-    const { head, turn, calls } = setup({ decision: { decision: "reject" } });
+  test("project mode never asks for an approval", async () => {
+    const { head, turn, calls } = setup();
     await head.send({ text: "README 오타 고쳐줘" }, turn);
+    expect(calls.approval).toHaveLength(0);
+    expect(calls.delegate).toHaveLength(1);
+  });
+
+  test("full mode delegates with autoApply and records it", async () => {
+    const { head, turn, calls, messages } = setup();
+    await head.setDefaults({ access: "full", confirm: true });
+    const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
+    expect(calls.approval).toHaveLength(0);
+    expect(calls.delegate[0]).toMatchObject({ harness: "local.codex", autoApply: true });
+    expect(messages.get(r.messageId)!.delegation).toMatchObject({ state: "delegated", approvedBy: "mode:full" });
+  });
+
+  test("read mode never delegates: a delegate verdict becomes a read-only reply", async () => {
+    const { head, turn, calls, messages, updates } = setup();
+    await head.setDefaults({ access: "read" });
+    const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
+    expect(r.route).toBe("direct");
+    expect(r.status).toBe("done");
+    expect(calls.summarize).toHaveLength(0);
+    expect(calls.approval).toHaveLength(0);
     expect(calls.delegate).toHaveLength(0);
+    expect(calls.brain).toHaveLength(0);
+    const reply = messages.get(r.messageId)!;
+    expect(reply.text).toContain("읽기 전용");
+    expect(reply.text).toContain("입력창 옆의 모드");
+    expect(reply.delegation).toBeUndefined();
+    expect(updates.find((u) => u.kind === "access")).toMatchObject({ mode: "read", delegated: false });
   });
 
-  test("worker model and effort from the approval reach brgr and the message", async () => {
-    const { head, turn, calls, messages } = setup({ decision: { decision: "approve", amend: { harness: "local.codex", model: "gpt-6.1-sol", effort: "high" } } });
-    const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
-    expect(calls.approval[0].payload.workers).toEqual({ models: { "local.codex": ["gpt-6.1-sol"] }, efforts: ["low", "medium", "high", "xhigh"] });
-    expect(calls.delegate[0]).toMatchObject({ harness: "local.codex", model: "gpt-6.1-sol", effort: "high" });
-    expect(messages.get(r.messageId)!.delegation).toMatchObject({ model: "gpt-6.1-sol", effort: "high" });
-  });
-
-  test("an Anthropic worker model outside Claude Code is refused", async () => {
-    const { head, turn, calls, messages } = setup({ decision: { decision: "approve", amend: { harness: "local.codex", model: "claude-opus-5-5" } } });
-    const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
-    expect(r.status).toBe("error");
-    expect(calls.delegate).toHaveLength(0);
-    expect(messages.get(r.messageId)!.error).toContain("다른 모델을 고르세요");
-  });
-
-  test("a refused worker model records a model alert with the fix", async () => {
-    const { head, turn, messages, alerts } = setup({ decision: { decision: "approve", amend: { harness: "local.codex", model: "claude-opus-5-5" } } });
-    const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
-    expect(r.status).toBe("error");
-    expect(messages.get(r.messageId)!.error).toContain("다른 모델을 고르세요");
-    expect(alerts.get("model-refused")).toMatchObject({ active: true, title: "모델을 쓸 수 없어요" });
+  test("read mode still answers simple chat through the brain", async () => {
+    const { head, turn, calls } = setup({ simpleProb: 0.97 });
+    await head.setDefaults({ access: "read" });
+    const r = await head.send({ text: "뮤텍스랑 세마포어 차이를 실제 예시 하나씩 들어서 두세 문장으로 비교 설명해 줄 수 있어?" }, turn);
+    expect(r.route).toBe("direct");
+    expect(calls.brain).toHaveLength(1);
   });
 
   test("a Herdr pane refusal records an alert and a retry clears it", async () => {
@@ -246,6 +262,7 @@ describe("model and effort", () => {
     expect(await head.settings()).toMatchObject({
       model: "openai-codex/gpt-5.6-luna",
       effort: "off",
+      access: "project",
       favorites: ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-5.6-luna"],
       userFavorites: [],
       configFavorites: ["openai-codex/gpt-6.1-sol"],
@@ -270,5 +287,55 @@ describe("model and effort", () => {
     expect((await head.settings()).favorites).toContain("openai-codex/gpt-6.1-sol");
     await expect(head.setFavorite({ model: "anthropic/claude-opus-5-5", on: true })).rejects.toThrow("Claude Code에서만");
     await expect(head.setFavorite({ model: "  ", on: true })).rejects.toThrow("비어");
+  });
+});
+
+describe("access mode", () => {
+  test("full needs an explicit confirm on every entry point", async () => {
+    const { head, turn, calls } = setup();
+    await expect(head.setDefaults({ access: "full" })).rejects.toThrow("확인");
+    await expect(head.send({ text: "README 오타 고쳐줘", access: "full" }, turn)).rejects.toThrow("확인");
+    expect(calls.delegate).toHaveLength(0);
+    const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
+    await expect(head.setThread({ threadId: r.threadId, access: "full" })).rejects.toThrow("확인");
+    await head.setDefaults({ access: "full", confirm: true });
+    expect((await head.settings()).access).toBe("full");
+  });
+
+  test("unknown modes are refused before anything runs", async () => {
+    const { head, turn, calls } = setup();
+    await expect(head.setDefaults({ access: "admin" as never })).rejects.toThrow("모드");
+    await expect(head.send({ text: "ㅎㅇ", access: "admin" as never }, turn)).rejects.toThrow("모드");
+    expect(calls.brain).toHaveLength(0);
+    expect(calls.delegate).toHaveLength(0);
+  });
+
+  test("a new thread takes the default, or the access sent with it", async () => {
+    const { head, turn, threads } = setup();
+    const a = await head.send({ text: "README 오타 고쳐줘" }, turn);
+    expect(threads.get(a.threadId)).toMatchObject({ access: "project" });
+    const b = await head.send({ text: "README 오타 고쳐줘", access: "read" }, turn);
+    expect(threads.get(b.threadId)).toMatchObject({ access: "read" });
+  });
+
+  test("an existing thread keeps its mode when chat.send carries another one", async () => {
+    const { head, turn, threads, updates } = setup();
+    const a = await head.send({ text: "README 오타 고쳐줘", access: "read" }, turn);
+    await head.send({ threadId: a.threadId, text: "README 오타 고쳐줘", access: "project" }, turn);
+    expect(threads.get(a.threadId)).toMatchObject({ access: "read" });
+    expect(updates.filter((u) => u.kind === "access").find((u) => u.kept)).toMatchObject({ mode: "read", kept: true });
+  });
+
+  test("setThread switches a thread's mode, null clears it back to the default", async () => {
+    const { head, turn, calls, threads } = setup();
+    const a = await head.send({ text: "README 오타 고쳐줘" }, turn);
+    expect(calls.delegate).toHaveLength(1);
+    await head.setThread({ threadId: a.threadId, access: "read" });
+    expect(threads.get(a.threadId)).toMatchObject({ access: "read" });
+    await head.send({ threadId: a.threadId, text: "README 오타 고쳐줘" }, turn);
+    expect(calls.delegate).toHaveLength(1);
+    await head.setThread({ threadId: a.threadId, access: null });
+    await head.send({ threadId: a.threadId, text: "README 오타 고쳐줘" }, turn);
+    expect(calls.delegate).toHaveLength(2);
   });
 });

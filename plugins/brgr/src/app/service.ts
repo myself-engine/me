@@ -21,6 +21,8 @@ export interface DelegateParams {
   project: string;
   criterion?: string;
   origin?: Record<string, unknown>;
+  /** Full access mode: a successful sealed result is accepted and committed without review. */
+  autoApply?: boolean;
 }
 
 const DEFAULT_CRITERION = "The objective is satisfied and the result explains what changed.";
@@ -73,7 +75,7 @@ export function createService(deps: ServiceDeps) {
     }
     const receipt = JSON.parse(r.stdout);
     const task = createTask(
-      { taskId: receipt.task_id, harness: p.harness, ...worker, objective: p.objective, project: p.project, criterion, origin: p.origin ?? null },
+      { taskId: receipt.task_id, harness: p.harness, ...worker, objective: p.objective, project: p.project, criterion, origin: p.origin ?? null, ...(p.autoApply ? { autoApply: true } : {}) },
       now(),
     );
     await store.put(task);
@@ -106,7 +108,16 @@ export function createService(deps: ServiceDeps) {
           resultText = (body.artifacts ?? []).map((a: { text?: string }) => a.text ?? "").join("\n").trim() || null;
           error = body.result?.error ? JSON.stringify(body.result.error).slice(0, 500) : null;
         }
-        await setState(taskId, w.outcome === "candidate" ? "sealed" : "failed", { outcome: w.outcome ?? null, resultText, error });
+        const sealed = await setState(taskId, w.outcome === "candidate" ? "sealed" : "failed", { outcome: w.outcome ?? null, resultText, error });
+        // Full access mode: a successful result applies itself through the same dirty-checked path as a manual accept.
+        // A failure already ended in failed above, so it never auto-applies; accept's own failure lands in apply-failed.
+        if (sealed.state === "sealed" && (sealed.autoApply ?? false)) {
+          try {
+            await accept({ taskId, reason: "자동 적용 (전부 알아서)" });
+          } catch {
+            // accept already recorded the outcome (apply-failed, or sealed with a Korean error to fix and retry).
+          }
+        }
         return;
       }
     } catch (err) {

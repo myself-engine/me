@@ -191,7 +191,7 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
     case "chat.send": {
       const traceId = crypto.randomUUID();
       const { opId, done } = await plugin.withTrace(traceId, () =>
-        plugin.invokeStream("gjc-head", "chat.send", { threadId: m.threadId, text: m.text, project: m.project, model: m.model, effort: m.effort }, {
+        plugin.invokeStream("gjc-head", "chat.send", { threadId: m.threadId, text: m.text, project: m.project, model: m.model, effort: m.effort, access: m.access, confirm: m.confirm }, {
           timeoutMs: 600_000,
           onUpdate: (update) => broadcast({ type: "op.update", opId, update, traceId }),
         }),
@@ -204,9 +204,9 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
     case "head.models":
       return plugin.invoke("gjc-head", "chat.models", {}, { timeoutMs: 90_000 });
     case "head.defaults.set":
-      return plugin.invoke("gjc-head", "chat.settings.set", { model: m.model, effort: m.effort });
+      return plugin.invoke("gjc-head", "chat.settings.set", { model: m.model, effort: m.effort, access: m.access, confirm: m.confirm });
     case "head.thread.set":
-      return plugin.invoke("gjc-head", "chat.thread.set", { threadId: m.threadId, model: m.model, effort: m.effort });
+      return plugin.invoke("gjc-head", "chat.thread.set", { threadId: m.threadId, model: m.model, effort: m.effort, access: m.access, confirm: m.confirm });
     case "head.favorites.set":
       return plugin.invoke("gjc-head", "chat.favorites.set", { model: m.model, on: m.on });
     case "approval.decide":

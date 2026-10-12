@@ -1,5 +1,5 @@
-// Model and effort choices for the head and for delegated workers. Pure functions only; no I/O.
-import type { Effort, ModelInfo } from "./types.ts";
+// Access mode and model/effort choices for the head and for delegated workers. Pure functions only; no I/O.
+import type { AccessMode, Effort, ModelInfo } from "./types.ts";
 
 export const EFFORTS: Effort[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 /** Levels offered for workers; each harness maps them onto its own flag. */
@@ -9,6 +9,28 @@ const ANTHROPIC_RE = /(anthropic|claude|opus|sonnet|haiku|fable)/i;
 /** Claude may only run inside Claude Code (ToS), never inside GJC or another harness. */
 export const isAnthropic = (model: string) => ANTHROPIC_RE.test(model);
 export const isEffort = (e: unknown): e is Effort => EFFORTS.includes(e as Effort);
+
+/** Access modes: "read" never delegates, "project" delegates at once and waits for review, "full" also auto-applies. */
+export const ACCESS_MODES: AccessMode[] = ["read", "project", "full"];
+/** The mode new threads and fresh settings start with: delegate at once, apply after review. */
+export const DEFAULT_ACCESS: AccessMode = "project";
+export const isAccessMode = (e: unknown): e is AccessMode => ACCESS_MODES.includes(e as AccessMode);
+
+/**
+ * Validates an access change before it is stored. Unset access is allowed.
+ * Switching to "full" needs an explicit confirm, so a stray tap cannot arm auto-apply.
+ */
+export function checkAccess(p: { access?: unknown; confirm?: unknown }): { access?: AccessMode } {
+  if (p.access === undefined || p.access === null) return {};
+  if (!isAccessMode(p.access)) throw new Error(`모드는 ${ACCESS_MODES.join(", ")} 중 하나예요`);
+  if (p.access === "full" && p.confirm !== true) throw new Error("전부 알아서 모드로 바꾸려면 확인이 필요해요");
+  return { access: p.access };
+}
+
+/** The access mode a thread runs with: its own choice, else the default. */
+export function accessOf(thread: { access?: AccessMode | null }, defaults: { access: AccessMode }): AccessMode {
+  return thread.access ?? defaults.access;
+}
 
 /** The model and effort a thread replies with: its own choice, else the defaults. */
 export function brainChoice(thread: { model?: string | null; effort?: Effort | null }, defaults: { model: string; effort: Effort }) {
