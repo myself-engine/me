@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v0.8.0 (2026-10-12)
+
+- web: explain access modes inline; failed replies read 실패 with the fix; glued bold renders; sidebar shows a reply preview and clock times (f9c1aaf)
+- web: settings closes back to the conversation; device checks in plain words; model pick is per conversation; plain labels in settings (9404d7a)
+
 ## v0.7.0 (2026-10-12)
 
 - web: one sidebar and the conversation; settings in one modal; approvals in the composer slot; developer view (ef35436)
