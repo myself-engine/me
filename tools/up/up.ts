@@ -74,7 +74,7 @@ export function helpText(): string {
     "  config plan|import|apply      하네스 설정을 한 곳에서 관리",
     "  tailscale status|on|off       폰에서 쓰기 (테일넷만, 공개 아님)",
     "  doctor [--json]               외부 도구·심링크·플러그인 점검",
-    "  release [--patch]             검사·태그·재시작까지 한 번에 반영",
+    "  release [--minor]             검사·태그·재시작까지 한 번에 반영",
     "",
     "도움",
     "  help (-h, --help)             이 도움말 보기",

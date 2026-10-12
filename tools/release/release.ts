@@ -7,6 +7,11 @@ import { join } from "node:path";
 export type Remote = { host: string; dir: string; service: string; pluginId?: string };
 export type ReleaseOptions = { root: string; bump: "minor" | "patch"; dryRun: boolean; skipE2e: boolean; log?: (line: string) => void };
 
+/** No flag means patch; --minor opts into minor; --patch is accepted and changes nothing. */
+export function parseBump(args: string[]): "minor" | "patch" {
+  return args.includes("--minor") ? "minor" : "patch";
+}
+
 /** vX.Y.Z → next version. No tag yet → v0.1.0. */
 export function nextVersion(last: string | null, bump: "minor" | "patch"): string {
   const m = last?.match(/^v(\d+)\.(\d+)\.(\d+)$/);

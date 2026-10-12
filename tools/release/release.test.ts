@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { changelogEntry, findKernelPane, nextVersion } from "./release.ts";
+import { changelogEntry, findKernelPane, nextVersion, parseBump } from "./release.ts";
 
 describe("release", () => {
+  test("parseBump defaults to patch", () => {
+    expect(parseBump([])).toBe("patch");
+    expect(parseBump(["--patch"])).toBe("patch");
+    expect(parseBump(["--dry-run"])).toBe("patch");
+    expect(parseBump(["--minor"])).toBe("minor");
+    expect(parseBump(["--minor", "--dry-run"])).toBe("minor");
+  });
+
   test("version bumps", () => {
     expect(nextVersion(null, "minor")).toBe("v0.1.0");
     expect(nextVersion("v0.3.2", "minor")).toBe("v0.4.0");
