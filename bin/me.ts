@@ -12,6 +12,8 @@
 //   me tailscale status|on|off [--https-port N]   phone access over the tailnet (never public)
 //   me doctor [--json]                     tool versions, symlinks, plugin conformance
 //   me release [--patch] [--dry-run] [--skip-e2e]   checks, tag, restart the running me, refresh remote copies
+//   me autostart install|uninstall|run [--config me.config.json]   start me in a Herdr pane at login
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const root = join(dirname(import.meta.path), "..");
@@ -220,6 +222,34 @@ switch (cmd) {
     } catch (err: any) {
       console.error(`✗ release failed: ${err.message}`);
       process.exit(1);
+    }
+    break;
+  }
+  case "autostart": {
+    const a = await import("../tools/autostart/autostart.ts");
+    const [action, ...args] = rest;
+    const flag = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+    const config = flag("--config") ?? "me.config.json";
+    if (action === "install") a.install({ root, config });
+    else if (action === "uninstall") a.uninstall();
+    else if (action === "run") {
+      const read = (f: string) => {
+        try {
+          return JSON.parse(readFileSync(join(root, f), "utf8"));
+        } catch {
+          return null;
+        }
+      };
+      const port = Number(flag("--port") ?? read("me.local.json")?.pluginConfig?.web?.port ?? read(config)?.pluginConfig?.web?.port ?? 7420);
+      try {
+        await a.run({ root, config, port });
+      } catch (err: any) {
+        console.error(`✗ autostart failed: ${err.message}`);
+        process.exit(1);
+      }
+    } else {
+      console.log("usage: me autostart install|uninstall|run [--config me.config.json] [--port N]");
+      process.exit(action === "--help" || action === "-h" ? 0 : 2);
     }
     break;
   }

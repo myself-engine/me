@@ -19,6 +19,15 @@ bun start            # = bun kernel/src/main.ts me.config.json
 
 **커널은 에이전트가 없는 Herdr pane에서 실행한다.** brgr는 위임할 때 워커 pane을 이 pane 옆에 연다. 에이전트가 실행 중인 pane에서 띄우면 위임이 실패한다.
 
+### 로그인할 때 자동으로 띄우기
+
+```sh
+bun bin/me.ts autostart install     # ~/Library/LaunchAgents/dev.me.autostart.plist
+bun bin/me.ts autostart uninstall
+```
+
+로그인하면 `me autostart run`이 한 번 돈다. Herdr 서버(자체 LaunchAgent로 뜸)를 기다린 뒤, me가 이미 응답하면 아무것도 하지 않는다. 아니면 "me kernel"이라는 이름의 빈 pane을 다시 쓰거나, 없으면 같은 이름의 Herdr 작업 공간을 새로 열어 그 안에서 커널을 띄운다. 이미 돌고 있는 커널을 멈추거나 다시 시작하지 않는다. 기록은 `~/.me/autostart.log`.
+
 ## 바깥 것 붙이기
 
 ```sh
