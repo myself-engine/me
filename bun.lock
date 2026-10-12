@@ -91,6 +91,13 @@
         "@me/sdk": "workspace:*",
       },
     },
+    "plugins/budget": {
+      "name": "@me/plugin-budget",
+      "dependencies": {
+        "@me/protocol": "workspace:*",
+        "@me/sdk": "workspace:*",
+      },
+    },
     "plugins/discord": {
       "name": "@me/plugin-discord",
       "dependencies": {
@@ -214,6 +221,8 @@
     "@me/plugin-approval-policy": ["@me/plugin-approval-policy@workspace:plugins/approval-policy"],
 
     "@me/plugin-brgr": ["@me/plugin-brgr@workspace:plugins/brgr"],
+
+    "@me/plugin-budget": ["@me/plugin-budget@workspace:plugins/budget"],
 
     "@me/plugin-discord": ["@me/plugin-discord@workspace:plugins/discord"],
 

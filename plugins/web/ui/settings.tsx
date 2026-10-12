@@ -1,6 +1,7 @@
 // 설정: one modal (full screen on phones) with sections 일반 / 모델 / 실행 도구 /
 // 프로젝트 / 기기 점검. Reuses the existing components; no logic is deleted.
 import { useEffect, useState } from "react";
+import { useApp } from "./context.ts";
 import type { HeadChoice } from "./state.ts";
 import { DefaultAccess } from "./access.tsx";
 import { useDevView } from "./dev.ts";
@@ -96,8 +97,54 @@ function GeneralSection() {
         <DefaultAccess />
         <p className="pick-note muted">새 대화가 이 모드로 시작해요. 전부 알아서는 확인 후 바로 적용돼요.</p>
       </div>
+      <BudgetLine />
     </div>
   );
+}
+
+interface BudgetMeter {
+  provider: string;
+  bucket: string;
+  remainingPercent: number;
+}
+interface BudgetStatus {
+  delegations: number;
+  dailyCap: number;
+  autoApplied: number;
+  autoApplyCap: number;
+  meters: BudgetMeter[];
+  problem: string | null;
+}
+
+/** Read-only one-liner: today's delegations and the tightest provider quota. Hidden when budget is missing. */
+function BudgetLine() {
+  const { conn } = useApp();
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!conn) return;
+    let live = true;
+    conn
+      .request<BudgetStatus>("budget.status", {})
+      .then((s) => {
+        if (!live) return;
+        setText(formatBudget(s));
+      })
+      .catch(() => {
+        if (live) setText(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [conn]);
+  if (!text) return null;
+  return <p className="muted">{text}</p>;
+}
+
+function formatBudget(s: BudgetStatus): string {
+  const head = `오늘 위임 ${s.delegations}/${s.dailyCap}`;
+  if (s.meters.length === 0) return s.problem ? `${head} · 한도를 확인하지 못했어요` : head;
+  const tightest = s.meters.reduce((a, b) => (b.remainingPercent < a.remainingPercent ? b : a));
+  return `${head} · ${tightest.provider} ${tightest.bucket} ${Math.floor(tightest.remainingPercent)}% 남음`;
 }
 
 function ModelSection() {

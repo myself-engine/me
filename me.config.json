@@ -6,6 +6,7 @@
     "plugins/jev",
     "plugins/gjc-head",
     "plugins/brgr",
+    "plugins/budget",
     "plugins/web",
     "plugins/approval-policy",
     "plugins/ops",
@@ -61,6 +62,17 @@
           }
         }
       ]
+    },
+    "budget": {
+      "dailyCap": 30,
+      "autoApplyCap": 10,
+      "minRemainingPercent": 10,
+      "hardStopPercent": 3,
+      "providers": { "local.codex": "codex", "local.claude-code": "claude" },
+      "opencodeModelPrefix": "opencode-go",
+      "opencodeProvider": "opencode-go",
+      "meterTimeoutMs": 5000,
+      "cacheSec": 60
     },
     "ops": {
       "intervalSec": 60,
