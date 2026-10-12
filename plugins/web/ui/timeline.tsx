@@ -83,7 +83,7 @@ export function TraceDrawer({ traceId, messageId, onClose }: { traceId: string; 
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" ref={panel}>
+      <div className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" ref={panel}>
         <header className="drawer-head">
           <div>
             <h2 className="drawer-title" id="drawer-title">
@@ -112,7 +112,7 @@ export function TraceDrawer({ traceId, messageId, onClose }: { traceId: string; 
             문제 신고
           </button>
         </footer>
-      </aside>
+      </div>
     </>
   );
 }

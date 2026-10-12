@@ -4,7 +4,7 @@
 // Usage: bun run shots [outDir]   (default .shots/<timestamp>)
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { READY, SMALL_TARGETS, VIEWPORTS, launchChrome, screens, startSeededMe } from "./lib/browser.ts";
+import { SMALL_TARGETS, VIEWPORTS, launchChrome, screens, show, startSeededMe } from "./lib/browser.ts";
 
 const out = process.argv[2] ?? join(import.meta.dir, "..", ".shots", new Date().toISOString().replace(/[:.]/g, "-"));
 mkdirSync(out, { recursive: true });
@@ -20,7 +20,7 @@ try {
     for (const scheme of ["light", "dark"] as const) {
       await page.scheme(scheme);
       for (const s of screens(me)) {
-        await page.open(me.url + s.hash, READY);
+        await show(page, me.url, s);
         const wide = await page.eval<number>("document.documentElement.scrollWidth - window.innerWidth");
         if (wide > 0) overflow.push(`${vp.name} ${s.name}: ${wide}px wider than the viewport`);
         if (vp.mobile) for (const t of await page.eval<string[]>(SMALL_TARGETS)) small.push(`${vp.name} ${s.name}: ${t}`);

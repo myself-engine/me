@@ -163,7 +163,7 @@ const FOCUSABLE = 'a[href], button:not(:disabled), select:not(:disabled), textar
  * Escape closes, and focus returns to whatever opened it.
  */
 export function useFocusTrap(onClose: () => void) {
-  const ref = useRef<HTMLElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     const items = () => [...(ref.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])].filter((el) => el.offsetParent !== null);

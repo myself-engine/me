@@ -1,7 +1,7 @@
 // Accessibility check of every screen with axe-core at phone and desktop widths (DONE.md item 8).
 // Exit code 0 = no violations. Usage: bun run a11y [--json]
 import { readFileSync } from "node:fs";
-import { READY, VIEWPORTS, launchChrome, screens, startSeededMe } from "./lib/browser.ts";
+import { VIEWPORTS, launchChrome, screens, show, startSeededMe } from "./lib/browser.ts";
 
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 const me = await startSeededMe();
@@ -14,7 +14,7 @@ try {
     for (const scheme of ["light", "dark"] as const) {
       await page.scheme(scheme);
       for (const s of screens(me)) {
-        await page.open(me.url + s.hash, READY);
+        await show(page, me.url, s);
         await page.eval(axe);
         const violations = await page.eval<any[]>(
           "axe.run(document, { resultTypes: ['violations'] }).then(r => r.violations.map(v => ({ id: v.id, impact: v.impact, help: v.help, targets: v.nodes.slice(0, 5).map(n => n.target.join(' ')) })))",

@@ -103,7 +103,7 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="drawer head-sheet" role="dialog" aria-modal="true" aria-labelledby="head-title" ref={panel}>
+      <div className="drawer head-sheet" role="dialog" aria-modal="true" aria-labelledby="head-title" ref={panel}>
         <header className="drawer-head">
           <div>
             <h2 className="drawer-title" id="head-title">
@@ -164,7 +164,7 @@ function HeadSheet({ thread, draft, setDraft, onClose }: { thread: Thread | null
             </button>
           )}
         </footer>
-      </aside>
+      </div>
     </>
   );
 }

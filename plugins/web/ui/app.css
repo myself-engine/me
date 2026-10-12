@@ -1852,3 +1852,12 @@ a.dline:hover {
     min-height: var(--tap);
   }
 }
+/* The project picker and the head chip share one row and wrap rather than squeeze each other. */
+.composer-top select {
+  flex: 1 1 10em;
+  min-width: 10em;
+  max-width: 100%;
+}
+.composer-top .head-chip {
+  flex: 0 1 auto;
+}

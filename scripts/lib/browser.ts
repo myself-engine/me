@@ -118,10 +118,24 @@ export async function launchChrome(): Promise<Page> {
   };
 }
 
+/** A screen to check: a hash route, optionally with a control clicked open (a sheet or dialog). */
+export type Screen = { name: string; hash: string; open?: string };
+
+/** Opens a screen and, when it has one, clicks its control and waits for the dialog it opens. */
+export async function show(page: Page, url: string, s: Screen) {
+  await page.open(url + s.hash, READY);
+  if (!s.open) return;
+  await page.eval(`document.querySelector(${JSON.stringify(s.open)}).click()`);
+  // Visible, not merely in the DOM: a dialog inside a hidden pane would pass a presence check.
+  await page.until("(document.querySelector('[role=dialog]')?.getBoundingClientRect().height ?? 0) > 0");
+  await Bun.sleep(300); // the model list arrives over the socket
+}
+
 /** The screens every visual check walks, as hash routes. */
-export function screens(s: Seeded): { name: string; hash: string }[] {
+export function screens(s: Seeded): Screen[] {
   return [
     { name: "chat-new", hash: "#/chat" },
+    { name: "head-picker", hash: "#/chat/new", open: ".head-chip" },
     ...(s.threadId ? [{ name: "chat-thread", hash: `#/chat/${encodeURIComponent(s.threadId)}` }] : []),
     ...(s.resultThreadId ? [{ name: "chat-result", hash: `#/chat/${encodeURIComponent(s.resultThreadId)}` }] : []),
     { name: "tasks", hash: "#/tasks" },
