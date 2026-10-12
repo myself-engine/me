@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v0.5.0 (2026-10-12)
+
+- web: say what is blocked and how to fix it; add projects from the screen (a2a31fe)
+- web: fewer choices by default — folded worker options, compact head chip, ★ favourites (773ba7e)
+- cli: `me` alone starts me and opens it; `me help` lists everything (c18a80e)
+
 ## v0.4.1 (2026-10-12)
 
 - ops: a failing command check shows all its output lines (b307be3)
