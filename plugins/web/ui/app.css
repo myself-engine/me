@@ -1983,7 +1983,6 @@ a.dline:hover {
   margin: 8px 12px 0;
 }
 .proj-row {
-.proj-row {
   display: flex;
   align-items: center;
   gap: 4px 8px;
@@ -2093,4 +2092,24 @@ a.dline:hover {
 }
 .drawer-foot {
   gap: 8px;
+}
+
+/* Project picker rows: a long name or path is cut with an ellipsis instead of leaving the row. */
+.project-pick-row {
+  width: 100%;
+  overflow: hidden;
+}
+.project-pick-row .pick-name,
+.project-pick-row .pick-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.project-pick-row .pick-name {
+  flex: 0 1 auto;
+}
+.project-pick-row .pick-sub {
+  flex: 1 1 0;
 }

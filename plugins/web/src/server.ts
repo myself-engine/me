@@ -9,6 +9,7 @@ import type { KernelOpEntity } from "@me/protocol";
 import { definePlugin } from "@me/sdk";
 import { type Access, type AccessConfig, classify, hostnameFromStatus, needsHostnameDetection, originOk, tailnetOrigin, tailscaleConfig, viewerOf } from "./access.ts";
 import { pwaResponse } from "./pwa.ts";
+import { stashSecrets } from "./secrets.ts";
 import { DEFAULT_PROJECT_ROOTS, completeProjectPath, discoverProjects } from "./projects.ts";
 import index from "../ui/index.html";
 
@@ -231,6 +232,8 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
     case "harness.source.get":
       return plugin.invoke("harness-config", "source.get", {});
     case "harness.source.update":
+      // Secret values never travel in call params: the kernel journals them.
+      if (m.op === "upsert" && typeof m.name === "string") m.server = stashSecrets(m.name, m.server);
       return plugin.invoke("harness-config", "source.update", {
         op: m.op,
         name: m.name,

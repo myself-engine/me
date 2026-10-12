@@ -174,3 +174,16 @@ describe("head choice", () => {
     expect(shortModel("bare")).toBe("bare");
   });
 });
+
+describe("app.css", () => {
+  test("braces balance, so no rule swallows the rest of the file", async () => {
+    const css = (await Bun.file(new URL("./app.css", import.meta.url)).text()).replace(/\/\*[\s\S]*?\*\//g, "");
+    let depth = 0;
+    for (const ch of css) {
+      if (ch === "{") depth++;
+      if (ch === "}") depth--;
+      expect(depth).toBeGreaterThanOrEqual(0);
+    }
+    expect(depth).toBe(0);
+  });
+});
