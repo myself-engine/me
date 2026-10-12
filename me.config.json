@@ -15,10 +15,10 @@
   ],
   "pluginConfig": {
     "gjc-head": {
-      "harness": "gjc",
+      "harness": "omp",
       "model": "openai-codex/gpt-5.6-luna",
       "models": { "gjc": "openai-codex/gpt-5.6-luna", "omp": "openai-codex/gpt-5.6-luna" },
-      "fallbackModels": ["opencode-go/deepseek-v4.1-flash"],
+      "fallbackModels": ["gjc:opencode-go/deepseek-v4.1-flash"],
       "favoriteModels": ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-6-luna"],
       "workerModels": {
         "local.claude-code": ["opus", "sonnet"],
@@ -35,11 +35,11 @@
       "defaultProject": "~/dev/me"
     },
     "summarize": {
-      "harness": "gjc",
+      "harness": "omp",
       "model": "openai-codex/gpt-5.6-luna"
     },
     "jev": {
-      "harness": "gjc",
+      "harness": "omp",
       "fallbackModel": "openai-codex/gpt-5.6-luna",
       "openrouterKeyFile": "~/.config/me/secrets/openrouter.key", "jevModel": "~typesafe/jev-latest"
     },
