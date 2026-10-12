@@ -1,0 +1,8 @@
+{
+  "name": "connect-my-world",
+  "kind": "cli",
+  "description": "connect-my-world-in-herdr의 ConnectionCheck로 Herdr에 등록된 서버의 SSH·연결 상태를 조회 (읽기 전용; ConnectionCheck가 PATH에 있어야 함)",
+  "commands": {
+    "status": { "argv": ["ConnectionCheck"], "parse": "text" }
+  }
+}

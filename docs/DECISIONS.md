@@ -333,9 +333,9 @@
 |---|---|
 | meter | 비용과 계정 라우팅 — 🟡 1차: `meter` 레시피로 사용량 조회 가능 (`me adapt --yes meter`) |
 | agent-progress (ap) | 관제 화면과 주의력 신호 — 🟡 1차: `ap` 레시피로 계획 조회 가능 (`me adapt --yes ap`) |
-| connect-my-world-in-herdr | Herdr 연결 감시 |
+| connect-my-world-in-herdr | Herdr 연결 감시 — 🟡 1차: `connect-my-world` 레시피(`ConnectionCheck`, 읽기 전용). 이 Mac에서는 ops 점검 `herdr-machines`(command)로 상태 탭에 뜬다 (`me.local.json`) |
 | 라피 | Discord 창구 — 🟡 me 쪽 Discord 플러그인은 준비됐다. 라피(rapi-agent)와 어떻게 합칠지는 아직 정하지 않았다 |
-| CodeAgora | 판정과 리뷰 단계 |
+| CodeAgora | 판정과 리뷰 단계 — 🟡 1차: `codeagora` MCP 레시피(`@codeagora/mcp@0.1.2`, Codex에서 쓰던 것과 같은 버전). `me adapt --yes codeagora` |
 
 - 서버마다 역할별 데몬을 둔다(테스트, 디코 봇, 배포, DB).
 

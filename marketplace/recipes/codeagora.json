@@ -1,0 +1,6 @@
+{
+  "name": "codeagora",
+  "kind": "mcp",
+  "description": "CodeAgora MCP: 여러 모델이 먼저 논쟁한 뒤 내리는 코드 리뷰 (판정·리뷰 단계)",
+  "command": ["npx", "-y", "@codeagora/mcp@0.1.2"]
+}
