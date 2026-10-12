@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v0.9.1 (2026-10-12)
+
+- me release: patch bump by default, --minor to opt in (b42e80b)
+- brgr trust: skip paths Codex already defines, never write unparseable TOML, keep file mode (947df52)
+- brgr: Codex trust for worker worktrees, .worktreeinclude snapshots, setup line, and task revert (a00976e)
+- schedule plugin: timed runs into their own conversation, with messenger notify delivery (4856c54)
+- web: phone push notifications for approvals, task results, failures, and down checks (3a1a3a8)
+- gjc-head: fall back to configured models on quota, auth, availability, or provider failures (1cd7ba3)
+
 ## v0.9.0 (2026-10-12)
 
 - brgr verify: read worktree and base commit from the real status shape (e956700)
