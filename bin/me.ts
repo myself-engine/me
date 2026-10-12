@@ -205,6 +205,15 @@ switch (cmd) {
     break;
   }
   case "release": {
+    // A release restarts the running me, so anything but the known flags (even --help) only prints usage.
+    const RELEASE_FLAGS = ["--patch", "--dry-run", "--skip-e2e"];
+    const unknown = rest.filter((a) => !RELEASE_FLAGS.includes(a));
+    if (unknown.length) {
+      console.log("usage: me release [--patch] [--dry-run] [--skip-e2e]");
+      console.log("  checks, bumps the version (minor, or patch), tags, pushes, and restarts the running me");
+      if (!unknown.every((a) => a === "--help" || a === "-h")) console.error(`unknown argument: ${unknown.join(" ")}`);
+      process.exit(unknown.every((a) => a === "--help" || a === "-h") ? 0 : 2);
+    }
     const { release } = await import("../tools/release/release.ts");
     try {
       await release({ root, bump: rest.includes("--patch") ? "patch" : "minor", dryRun: rest.includes("--dry-run"), skipE2e: rest.includes("--skip-e2e") });
