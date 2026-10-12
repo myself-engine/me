@@ -59,12 +59,103 @@ const stripBlock = (text: string): string => {
  * Ensures the managed block lists exactly `paths` (plus nothing else),
  * preserving all other config text. Pass the worktree root so every future
  * worker worktree is covered, plus exact worktree paths when known.
+ *
+ * Paths already defined by a `[projects.<path>]` table outside the managed
+ * block are omitted from the block: Codex itself adds such tables when the
+ * user accepts a trust prompt, and a second definition (even an identical
+ * one) makes Codex refuse the whole config. Entries the user left untrusted
+ * stay exactly as they are; an untrusted outside table is never overridden.
+ * When the existing text (or the rebuilt text) does not parse as TOML, the
+ * input is returned unchanged so callers skip the write.
  */
 export function ensureCodexTrust(configText: string, paths: string[]): string {
+  if (configText.length > 0 && !isTomlParseable(configText)) return configText;
+  const outside = new Set(outsideProjectPaths(configText));
+  const filtered = [...new Set(paths)].filter((p) => !outside.has(p));
   const base = stripBlock(configText);
   const prefix = base.length > 0 && !base.endsWith("\n") ? "\n" : "";
-  return `${base}${prefix}${codexTrustBlock(paths)}`;
+  const next = `${base}${prefix}${codexTrustBlock(filtered)}`;
+  if (!isTomlParseable(next)) return configText;
+  return next;
 }
+
+/** True when `text` parses as TOML (empty counts as parseable). */
+export function isTomlParseable(text: string): boolean {
+  try {
+    Bun.TOML.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Split a TOML table header's dotted key into unquoted segments. Null when malformed. */
+const splitDottedKey = (inner: string): string[] | null => {
+  const raw: string[] = [];
+  let cur = "";
+  let quote: '"' | "'" | null = null;
+  let i = 0;
+  while (i < inner.length) {
+    const c = inner[i]!;
+    if (quote === '"') {
+      cur += c;
+      if (c === "\\" && i + 1 < inner.length) cur += inner[++i]!;
+      else if (c === '"') quote = null;
+      i++;
+      continue;
+    }
+    if (quote === "'") {
+      cur += c;
+      if (c === "'") quote = null;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      cur += c;
+      i++;
+      continue;
+    }
+    if (c === ".") {
+      raw.push(cur);
+      cur = "";
+      i++;
+      continue;
+    }
+    cur += c;
+    i++;
+  }
+  if (quote !== null) return null;
+  raw.push(cur);
+  return raw.map((seg) => {
+    const s = seg.trim();
+    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) return s.slice(1, -1).replace(/\\(.)/g, "$1");
+    if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) return s.slice(1, -1);
+    return s;
+  });
+};
+
+/** The project path of a `[projects.<path>]` table header line, or null. Ignores `[[array]]` headers. */
+const projectsHeaderPath = (line: string): string | null => {
+  const m = line.match(/^\s*\[(?!\[)(.+?)\]\s*(?:#.*)?$/);
+  if (!m) return null;
+  const segs = splitDottedKey(m[1]!);
+  if (!segs || segs[0] !== "projects" || segs.length < 2) return null;
+  return segs[1]!;
+};
+
+/**
+ * Project paths with a `[projects.<path>]` table outside the managed block.
+ * Handles quoted (`"x"`, `'x'`), bare, and whitespace-padded headers.
+ */
+export function outsideProjectPaths(configText: string): string[] {
+  const out = new Set<string>();
+  for (const line of stripBlock(configText).split("\n")) {
+    const p = projectsHeaderPath(line);
+    if (p !== null) out.add(p);
+  }
+  return [...out];
+};
 
 /** Paths named in the managed block, for pruning entries whose worktree is gone. */
 export function managedTrustPaths(configText: string): string[] {

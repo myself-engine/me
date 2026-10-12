@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { codexTrustBlock, ensureCodexTrust, managedTrustPaths, underWorktreeRoot } from "./trust.ts";
+import { codexTrustBlock, ensureCodexTrust, isTomlParseable, managedTrustPaths, outsideProjectPaths, underWorktreeRoot } from "./trust.ts";
 
 const ROOT = "/Users/me/Library/Application Support/brgr/worktrees";
 
@@ -23,6 +23,48 @@ describe("codex trust", () => {
 
   test("is idempotent", () => {
     const once = ensureCodexTrust('[x]\na = 1\n', [ROOT]);
+    expect(ensureCodexTrust(once, [ROOT])).toBe(once);
+  });
+
+  test("omits a path already defined outside the block (no duplicate table)", () => {
+    const before = `[projects."${ROOT}"]\ntrust_level = "trusted"\n`;
+    const out = ensureCodexTrust(before, [ROOT]);
+    expect(out).toContain(`[projects."${ROOT}"]`);
+    expect(out.split(`[projects."${ROOT}"]`).length - 1).toBe(1);
+    expect(isTomlParseable(out)).toBe(true);
+  });
+
+  test("single-quoted outside key is also deduplicated", () => {
+    const before = `[projects.'${ROOT}']\ntrust_level = "trusted"\n`;
+    expect(outsideProjectPaths(before)).toEqual([ROOT]);
+    const out = ensureCodexTrust(before, [ROOT]);
+    expect(out.match(/# me:brgr-trust begin/g)).toHaveLength(1);
+    expect(isTomlParseable(out)).toBe(true);
+  });
+
+  test("whitespace-padded outside header is deduplicated", () => {
+    const before = `[  projects  .  "${ROOT}"  ]\ntrust_level = "trusted"\n`;
+    expect(outsideProjectPaths(before)).toEqual([ROOT]);
+    expect(isTomlParseable(ensureCodexTrust(before, [ROOT]))).toBe(true);
+  });
+
+  test("untrusted outside entry is left alone, never overridden", () => {
+    const before = `[projects."${ROOT}"]\ntrust_level = "untrusted"\n`;
+    const out = ensureCodexTrust(before, [ROOT]);
+    expect(out).toContain('trust_level = "untrusted"');
+    expect(out).not.toContain(`[projects."${ROOT}"]\ntrust_level = "trusted"`);
+    expect(isTomlParseable(out)).toBe(true);
+  });
+
+  test("unparseable input is returned untouched", () => {
+    const before = `[projects."${ROOT}"\ntrust_level = "trusted"\n`;
+    expect(isTomlParseable(before)).toBe(false);
+    expect(ensureCodexTrust(before, [ROOT])).toBe(before);
+  });
+
+  test("re-run over an outside duplicate stays idempotent", () => {
+    const before = `[projects."${ROOT}"]\ntrust_level = "trusted"\n`;
+    const once = ensureCodexTrust(before, [ROOT]);
     expect(ensureCodexTrust(once, [ROOT])).toBe(once);
   });
 
