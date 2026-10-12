@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
 import { diffTotals, parseDiffStat, splitDiff } from "./diff.ts";
 import { fenceLanguage, highlight } from "./highlight.ts";
 import { isDeep, parseRoute, settingsCloseHref, taskHref } from "./routes.ts";
 import { GENERIC_HINT, checkHint, checkImpact, checkName } from "./ops.tsx";
-import { accessOf, activeAlerts, headChoice, initial, reducer, shortModel, taskTitle, threadApproval, threadTone, threadWait, toneOf, unlinkedApprovals, workItems, type State } from "./state.ts";
+import { Markdown, threadTime } from "./shared.tsx";
+import { accessOf, activeAlerts, headChoice, initial, reducer, shortModel, taskTitle, threadApproval, threadPreview, threadTone, threadWait, toneOf, unlinkedApprovals, workItems, type State } from "./state.ts";
 import type { Effort, HeadSettings } from "./api.ts";
 
 const headDefaults = (): HeadSettings => ({ model: "openai-codex/gpt-5.6-luna", effort: "off" as Effort, favorites: [], efforts: [], workers: { models: {}, efforts: [] } });
@@ -261,5 +264,59 @@ describe("app.css", () => {
       expect(depth).toBeGreaterThanOrEqual(0);
     }
     expect(depth).toBe(0);
+  });
+});
+describe("markdown bold", () => {
+  const html = (text: string) => renderToStaticMarkup(createElement(Markdown, { text }));
+  test("renders bold when closing ** is directly followed by Hangul", () => {
+    const out = html("**미( me )**입니다");
+    expect(out).toContain("<strong>미( me )</strong>입니다");
+    expect(out).not.toContain("**");
+  });
+  test("leaves normal emphasis, code spans and lone runs alone", () => {
+    expect(html("a **bold** c")).toContain("<strong>bold</strong>");
+    expect(html("**굵게** 다음")).toContain("<strong>굵게</strong>");
+    expect(html("어제 **작업**과 **오늘**일정")).toContain("<strong>오늘</strong>일정");
+    expect(html("2 ** 3은 거듭제곱")).toContain("**");
+    expect(html("`**코드**`입니다")).not.toContain("<strong>");
+  });
+});
+
+describe("sidebar rows", () => {
+  const at = (y: number, mo: number, d: number, h: number, mi: number) => new Date(y, mo, d, h, mi).toISOString();
+  test("threadTime shows clock times inside the week", () => {
+    // Wednesday noon.
+    const now = new Date(2026, 9, 14, 12, 0).getTime();
+    expect(threadTime(at(2026, 9, 14, 11, 50), now)).toBe("10분 전");
+    expect(threadTime(at(2026, 9, 13, 14, 2), now)).toBe("어제 14:02");
+    // Three days back is Sunday.
+    expect(threadTime(at(2026, 9, 11, 9, 10), now)).toBe("일 09:10");
+    expect(threadTime(at(2026, 9, 1, 9, 10), now)).toBe("13일 전");
+  });
+  const previewState = (): State => {
+    const day = "2026-10-14T12:00:00.000Z";
+    return reducer(initial, {
+      type: "bootstrap",
+      data: {
+        token: "t",
+        viewer: null,
+        threads: [{ id: "th", title: "같은 제목", project: "/p", createdAt: day, updatedAt: day }],
+        messages: [
+          { id: "m1", threadId: "th", role: "assistant", text: "# 제목\n**첫 답변**입니다", ts: day, traceId: "tr1", status: "done" },
+          { id: "m2", threadId: "th", role: "assistant", text: "", ts: day, traceId: "tr2", status: "error", error: "gjc error: Your authentication token has expired." },
+        ],
+        tasks: [],
+        plugins: [],
+        ops: [],
+        checks: [],
+        approvals: [],
+        config: { projects: [], defaultProject: "", githubRepo: null },
+      },
+    });
+  };
+  test("threadPreview shows the latest reply text, never the raw error", () => {
+    const s = previewState();
+    expect(threadPreview(s, "th")).toBe("첫 답변입니다");
+    expect(threadPreview(s, "missing")).toBeNull();
   });
 });

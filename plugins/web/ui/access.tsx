@@ -16,6 +16,13 @@ export const ACCESS_LABEL: Record<Access, string> = {
   full: "전부 알아서",
 };
 
+/** Always-visible one line under the segment: what the picked mode does. */
+export const ACCESS_DESC: Record<Access, string> = {
+  read: "질문에만 답해요 · 파일은 바꾸지 않아요",
+  project: "선택한 프로젝트에서 바로 작업해요 · 결과는 확인 후 반영해요",
+  full: "작업을 끝내면 확인 없이 바로 커밋해요",
+};
+
 const ORDER: Access[] = ["read", "project", "full"];
 
 /** Segmented control next to the input. For a new thread the pick rides on the draft; for an open thread it is saved at once. */
@@ -48,19 +55,24 @@ export function AccessControl({ thread, draft, setDraft }: { thread: Thread | nu
 
   return (
     <>
-      <div className="access" role="group" aria-label="접근 모드">
-        {ORDER.map((a) => (
-          <button
-            key={a}
-            type="button"
-            className={`access-btn${a === cur ? " on" : ""}`}
-            aria-pressed={a === cur}
-            disabled={busy || !conn}
-            onClick={() => pick(a)}
-          >
-            {ACCESS_LABEL[a]}
-          </button>
-        ))}
+      <div className="access-block">
+        <div className="access" role="group" aria-label="접근 모드" aria-describedby="access-desc">
+          {ORDER.map((a) => (
+            <button
+              key={a}
+              type="button"
+              className={`access-btn${a === cur ? " on" : ""}`}
+              aria-pressed={a === cur}
+              disabled={busy || !conn}
+              onClick={() => pick(a)}
+            >
+              {ACCESS_LABEL[a]}
+            </button>
+          ))}
+        </div>
+        <p className="access-desc" id="access-desc">
+          {ACCESS_DESC[cur]}
+        </p>
       </div>
       {confirming && <FullConfirm busy={busy} onCancel={() => setConfirming(false)} onOk={() => (setConfirming(false), save("full", true))} />}
     </>
@@ -102,19 +114,24 @@ export function DefaultAccess() {
   const [busy, act] = useBusy(notify);
   const cur = accessOf(null, s.headSettings);
   return (
-    <div className="access" role="group" aria-label="기본 접근 모드">
-      {ORDER.map((a) => (
-        <button
-          key={a}
-          type="button"
-          className={`access-btn${a === cur ? " on" : ""}`}
-          aria-pressed={a === cur}
-          disabled={busy || !conn}
-          onClick={() => act(() => conn!.request("head.defaults.set", { access: a, ...(a === "full" ? { confirm: true } : {}) }).catch((err: Error) => notify(err.message)))}
-        >
-          {ACCESS_LABEL[a]}
-        </button>
-      ))}
+    <div className="access-block">
+      <div className="access" role="group" aria-label="기본 접근 모드" aria-describedby="default-access-desc">
+        {ORDER.map((a) => (
+          <button
+            key={a}
+            type="button"
+            className={`access-btn${a === cur ? " on" : ""}`}
+            aria-pressed={a === cur}
+            disabled={busy || !conn}
+            onClick={() => act(() => conn!.request("head.defaults.set", { access: a, ...(a === "full" ? { confirm: true } : {}) }).catch((err: Error) => notify(err.message)))}
+          >
+            {ACCESS_LABEL[a]}
+          </button>
+        ))}
+      </div>
+      <p className="access-desc" id="default-access-desc">
+        {ACCESS_DESC[cur]}
+      </p>
     </div>
   );
 }

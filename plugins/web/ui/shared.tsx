@@ -14,10 +14,55 @@ const MD_COMPONENTS: Components = {
   },
 };
 
+/** mdast node shape, just enough to repair literal bold runs without new deps. */
+interface MdNode {
+  type: string;
+  value?: string;
+  children?: MdNode[];
+}
+
+/**
+ * A closing ** directly followed by a letter (Korean routinely has no space
+ * after, e.g. "**미( me )**입니다") is not a right-flanking run in CommonMark,
+ * so the asterisks render literally. Repair those runs after parsing: turn the
+ * leftover **…** into a strong node. Already-parsed emphasis, code spans and
+ * lone ** (e.g. "2 ** 3") are untouched.
+ */
+export const remarkBoldGlued = () => (tree: MdNode) => {
+  const walk = (node: MdNode): void => {
+    if (!node.children) return;
+    const out: MdNode[] = [];
+    for (const child of node.children) {
+      if (child.type === "text" && typeof child.value === "string") {
+        const re = /\*\*([^*]+?)\*\*(?=\p{L})/gu;
+        let m: RegExpExecArray | null;
+        let last = 0;
+        const parts: MdNode[] = [];
+        while ((m = re.exec(child.value)) !== null) {
+          if (m.index > last) parts.push({ type: "text", value: child.value.slice(last, m.index) });
+          parts.push({ type: "strong", children: [{ type: "text", value: m[1] }] });
+          last = m.index + m[0].length;
+        }
+        if (parts.length === 0) {
+          out.push(child);
+          continue;
+        }
+        if (last < child.value.length) parts.push({ type: "text", value: child.value.slice(last) });
+        out.push(...parts);
+      } else {
+        walk(child);
+        out.push(child);
+      }
+    }
+    node.children = out;
+  };
+  walk(tree);
+};
+
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBoldGlued]} components={MD_COMPONENTS}>
         {text}
       </ReactMarkdown>
     </div>
@@ -113,6 +158,24 @@ export function timeAgo(iso: string, now = Date.now()) {
   if (d < 3600) return `${Math.floor(d / 60)}분 전`;
   if (d < 86400) return `${Math.floor(d / 3600)}시간 전`;
   return `${Math.floor(d / 86400)}일 전`;
+}
+const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+
+/**
+ * Sidebar time: today keeps the relative form (방금, 3분 전), older days in
+ * the week show a clock time (어제 14:02, 월 09:10) so same-title rows differ,
+ * and anything older falls back to 일 전.
+ */
+export function threadTime(iso: string, now = Date.now()) {
+  const d = new Date(iso);
+  const n = new Date(now);
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(n) - day(d)) / 86400000);
+  if (diff <= 0) return timeAgo(iso, now);
+  const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  if (diff === 1) return `어제 ${hhmm}`;
+  if (diff < 7) return `${WEEKDAY[d.getDay()]} ${hhmm}`;
+  return timeAgo(iso, now);
 }
 
 /** Compact duration: 0.4초, 12초, 3분 5초, 1시간 2분. */

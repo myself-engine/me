@@ -11,6 +11,13 @@ describe("describeFailure", () => {
   test("Korean login-expiry text maps too", () => {
     expect(describeFailure("GJC의 OpenAI 로그인이 만료됐어요")?.cause).toBe("gjc-login");
   });
+  test("English token-expiry and refresh wording maps to the /login fix", () => {
+    expect(describeFailure(new Error("gjc error: Your authentication token has expired. Please try refreshing it."))?.cause).toBe("gjc-login");
+    expect(describeFailure(new Error("gjc: token expired"))?.cause).toBe("gjc-login");
+    expect(describeFailure("openai authentication token expired, please refresh")?.cause).toBe("gjc-login");
+    // Without a login context a stray token error stays unknown.
+    expect(describeFailure(new Error("token expired"))).toBeNull();
+  });
   test("Herdr pane refusal maps to restarting with me", () => {
     const a = describeFailure(new Error("커널이 에이전트 없는 Herdr pane에서 실행돼야 brgr로 위임할 수 있어요"));
     expect(a?.cause).toBe("herdr-pane");

@@ -299,6 +299,23 @@ export function threadWait(s: State, threadId: string): "승인" | "검토" | "�
   if (threadTone(s, threadId) === "failed") return "실패";
   return null;
 }
+/**
+ * Sidebar preview: the latest reply's first line, markdown marks dropped and
+ * capped at 80 characters. Null when no reply text exists yet (a failed reply
+ * shows its 실패 wait word instead of raw error text).
+ */
+export function threadPreview(s: State, threadId: string): string | null {
+  let best: Message | null = null;
+  for (const m of Object.values(s.messages)) {
+    if (m.threadId !== threadId || m.role !== "assistant" || !m.text.trim()) continue;
+    if (!best || m.ts > best.ts) best = m;
+  }
+  if (!best) return null;
+  const lines = best.text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const line = lines.find((l) => !l.startsWith("#") && !l.startsWith("```")) ?? lines[0];
+  const clean = line?.replace(/^[#>*\-\s]+/, "").replace(/[`*_]/g, "").trim() ?? "";
+  return clean ? clean.slice(0, 80) : null;
+}
 
 /** Approvals not tied to a conversation (harness settings apply, ops actions): one sidebar entry opens them as a sheet. */
 export const unlinkedApprovals = (s: State): Approval[] =>

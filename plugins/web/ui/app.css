@@ -620,7 +620,9 @@ select {
   text-overflow: ellipsis;
 }
 .row-sub,
-.row-note {
+.row-sub,
+.row-note,
+.row-preview {
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
@@ -2267,6 +2269,24 @@ a.dline:hover {
 
 .composer-top .access {
   flex: 0 1 auto;
+}
+.composer-top .access-block {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.access-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+/* The picked mode's meaning, always visible: wraps instead of overflowing a phone. */
+.access-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .confirm-sheet {

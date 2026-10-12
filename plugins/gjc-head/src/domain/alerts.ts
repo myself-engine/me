@@ -46,7 +46,8 @@ export function describeFailure(err: unknown): FailureAlert | null {
       fix: "대화 설정에서 다른 모델을 고르세요",
     };
   }
-  if (/로그인.*만료|만료.*로그인|인증.*만료|만료.*인증|login[\s\S]{0,40}expir|expir[\s\S]{0,40}login|unauthorized|401/.test(text) && /gjc|openai|login|로그인|인증|auth|401|unauthorized/i.test(text)) {
+  // Token-expiry English ("authentication token has expired", "token expired") and refresh prompts only count with a login context (gjc/openai/auth/…). The gate below keeps stray token errors out.
+  if (/로그인.*만료|만료.*로그인|인증.*만료|만료.*인증|login[\s\S]{0,40}expir|expir[\s\S]{0,40}login|token[\s\S]{0,40}expir|expir[\s\S]{0,40}token|authentication[\s\S]{0,40}token|refresh|unauthorized|401/i.test(text) && /gjc|openai|login|로그인|인증|auth|401|unauthorized/i.test(text)) {
     return {
       cause: "gjc-login",
       title: "GJC의 OpenAI 로그인이 만료됐어요",

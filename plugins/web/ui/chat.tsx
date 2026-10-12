@@ -8,10 +8,13 @@ import { useApp } from "./context.ts";
 import { useDevView } from "./dev.ts";
 import { diffTotals, parseDiffStat } from "./diff.ts";
 import { chatHref, settingsHref, taskHref } from "./routes.ts";
-import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, timeAgo, toolName, useBusy, useFocusTrap, useNow } from "./shared.tsx";
+import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, threadTime, timeAgo, toolName, useBusy, useFocusTrap, useNow } from "./shared.tsx";
 import { effortLabel, HeadChip } from "./head.tsx";
 import { ProjectButton } from "./picker.tsx";
-import { TONE_LABEL, activeAlerts, taskTitle, threadApproval, threadTone, threadWait, toneOf, turnOp, unlinkedApprovals, type HeadChoice, type Live } from "./state.ts";
+import { TONE_LABEL, activeAlerts, taskTitle, threadApproval, threadPreview, threadTone, threadWait, toneOf, turnOp, unlinkedApprovals, type HeadChoice, type Live } from "./state.ts";
+// One mapping source of truth for failure text: the head's describeFailure also
+// runs over stored errors, so old messages saved with raw English render friendly.
+import { describeFailure } from "../../gjc-head/src/domain/alerts.ts";
 
 export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
   const { s } = useApp();
@@ -86,12 +89,14 @@ function ThreadRow({ t, active }: { t: Thread; active: boolean }) {
   const { s } = useApp();
   const tone = threadTone(s, t.id);
   const wait = threadWait(s, t.id);
+  const preview = threadPreview(s, t.id);
   return (
     <li>
       <a className={`row-link${active ? " on" : ""}`} href={chatHref(t.id)}>
         <StatusDot tone={tone} hideLabel />
         <span className="row-main">
           <span className="row-title">{t.title || "(제목 없음)"}</span>
+          {preview && <span className="row-preview">{preview}</span>}
           <span className="row-sub">
             {/* Waiting work takes the time's place; the project shows in the group header or the conversation bar. */}
             {wait ? (
@@ -99,7 +104,7 @@ function ThreadRow({ t, active }: { t: Thread; active: boolean }) {
             ) : (
               <>
                 {tone !== "none" && <span className={`tone-text tone-${tone}`}>{TONE_LABEL[tone]} · </span>}
-                {timeAgo(t.updatedAt)}
+                {threadTime(t.updatedAt)}
               </>
             )}
           </span>
@@ -248,6 +253,9 @@ function AssistantMessage({ m }: { m: Message }) {
   const working = m.status === "pending" || m.status === "streaming";
   const [showThoughts, setShowThoughts] = useState(false);
   const error = m.error ?? live?.error;
+  // Old messages were stored with raw English; run them through the same mapping so they read friendly too.
+  const failure = error ? describeFailure(error) : null;
+  const friendly = error ? (failure ? `${failure.title} · ${failure.fix}` : error) : null;
 
   const routeLabel = m.judgement ? (m.route === "direct" ? "직접 답변" : "작업 맡기기") : "기록";
   const routeTitle = m.judgement
@@ -259,7 +267,8 @@ function AssistantMessage({ m }: { m: Message }) {
   return (
     <div className="msg assistant">
       <div className="meta-row">
-        {/* Developer view only: the timeline behind a turn. */}
+        {/* A failed reply is a 실패, never a 직접 답변; the developer view keeps the timeline chip. */}
+        {error && <StatusDot tone="failed" label="실패" />}
         {dev ? (
           (m.judgement || !working) && (
             <button className={`chip route ${m.route ?? ""}`} onClick={() => openTrace(m.traceId, m.id)} title={routeTitle}>
@@ -276,7 +285,7 @@ function AssistantMessage({ m }: { m: Message }) {
             </button>
           )
         ) : (
-          m.judgement && <span className="chip route plain">{routeLabel}</span>
+          !error && m.judgement && <span className="chip route plain">{routeLabel}</span>
         )}
         {m.understood && m.understood.replaced.length > 0 && (
           <span className="chip soft" title={m.understood.replaced.map((r) => `${r.from}→${r.to}`).join(", ")}>
@@ -317,7 +326,12 @@ function AssistantMessage({ m }: { m: Message }) {
 
       {m.delegation && <DelegationLine m={m} />}
 
-      {error && <div className="card error">⚠️ {error}</div>}
+      {friendly && (
+        <div className="card error" role="alert">
+          ⚠️ {friendly}
+        </div>
+      )}
+      {dev && error && friendly !== error && <pre className="thoughts">{error}</pre>}
     </div>
   );
 }
