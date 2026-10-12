@@ -87,6 +87,22 @@ export interface Target {
   scope: Scope;
 }
 
+/**
+ * Harnesses that expand environment references in their own config files. For these, `${env:X}` is
+ * written back in their syntax instead of being resolved, so the file stays as the user wrote it.
+ */
+// Only OpenCode for now: its `{env:X}` is documented for every config value. Claude Code's `${X}`
+// expansion is documented for .mcp.json; whether ~/.claude.json expands it too is unverified.
+export const NATIVE_ENV: Partial<Record<HarnessId, (name: string) => string>> = {
+  opencode: (name) => `{env:${name}}`,
+};
+
+/** Rewrites `${env:X}` references into the harness's own syntax when it has one. */
+export function nativeEnvRefs(value: string, harness: HarnessId): string {
+  const native = NATIVE_ENV[harness];
+  return native ? value.replace(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name: string) => native(name)) : value;
+}
+
 export const isHarness = (h: unknown): h is HarnessId => typeof h === "string" && (HARNESSES as readonly string[]).includes(h);
 
 export function sharedWith(share: Share, harness: HarnessId): boolean {

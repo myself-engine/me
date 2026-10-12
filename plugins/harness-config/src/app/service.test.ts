@@ -129,7 +129,8 @@ describe("apply", () => {
     const oc = json(".config/opencode/opencode.json");
     expect(oc.mcp.pencil).toBeUndefined();
     expect(oc.mcp.figma).toEqual({ type: "local", command: ["figma-mcp"], environment: { FIGMA_API_KEY: SECRETS.opencodeFigma }, enabled: false, timeout: 5000 });
-    expect(oc.mcp.notion).toEqual({ type: "remote", url: "https://mcp.notion.com/mcp", headers: { Authorization: `Bearer ${SECRETS.notionToken}` } });
+    // OpenCode expands {env:X} itself, so the reference is written in its syntax and the token never lands in the file.
+    expect(oc.mcp.notion).toEqual({ type: "remote", url: "https://mcp.notion.com/mcp", headers: { Authorization: "Bearer {env:NOTION_TOKEN}" } });
     expect(oc.permission).toEqual({ edit: "ask" });
 
     // GJC: owned fields replaced, harness-only fields (sharing, timeout, oauth) kept.

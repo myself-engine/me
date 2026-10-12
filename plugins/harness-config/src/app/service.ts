@@ -29,6 +29,7 @@ import {
 } from "../domain/diff.ts";
 import {
   isHarness,
+  nativeEnvRefs,
   routes,
   sharedWith,
   toHook,
@@ -139,12 +140,12 @@ export function createService(deps: ServiceDeps) {
   const sourceRelative = (p: string) =>
     p.startsWith("~/") ? join(deps.home, p.slice(2)) : isAbsolute(p) ? p : join(dirname(deps.sourcePath), p);
 
-  async function resolveMap(m: Record<string, string> | undefined, where: string, errors: string[]) {
+  async function resolveMap(m: Record<string, string> | undefined, where: string, errors: string[], harness: HarnessId) {
     if (!m) return undefined;
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(m)) {
       try {
-        out[k] = await deps.secrets.resolve(v);
+        out[k] = await deps.secrets.resolve(nativeEnvRefs(v, harness));
       } catch (err) {
         errors.push(`${where}.${k}: ${message(err)}`);
       }
@@ -158,8 +159,8 @@ export function createService(deps: ServiceDeps) {
       if (!routes(s, file.target)) continue;
       const display = toServer(s);
       const resolved: McpServer = { ...display };
-      if (display.env) resolved.env = await resolveMap(display.env, `${name}.env`, errors);
-      if (display.headers) resolved.headers = await resolveMap(display.headers, `${name}.headers`, errors);
+      if (display.env) resolved.env = await resolveMap(display.env, `${name}.env`, errors, file.target.harness);
+      if (display.headers) resolved.headers = await resolveMap(display.headers, `${name}.headers`, errors, file.target.harness);
       desired[name] = { display, resolved };
     }
     return desired;

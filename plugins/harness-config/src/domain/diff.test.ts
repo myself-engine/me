@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { diffHooks, diffInstructions, diffServers, diffSkills, importServers, placeholderize, redactUrl } from "./diff.ts";
+import { nativeEnvRefs } from "./model.ts";
 import { routes, validateSource, type McpServer, type Target } from "./model.ts";
 
 const T = (harness: Target["harness"], scope: Target["scope"] = "user", section: Target["section"] = "mcpServers"): Target => ({
@@ -139,5 +140,13 @@ describe("import", () => {
     expect(r.mcpServers.proj).toEqual({ type: "stdio", command: "p", share: ["claude-code"], scope: "project" });
     expect(r.mcpServers.diff).toBeUndefined();
     expect(r.conflicts.diff).toEqual({ targets: ["claude-code:user", "codex:user"], fields: ["command"] });
+  });
+});
+
+describe("native env references", () => {
+  test("OpenCode keeps {env:X}; other harnesses get the value resolved", () => {
+    expect(nativeEnvRefs("Bearer ${env:FIGMA_API_KEY}", "opencode")).toBe("Bearer {env:FIGMA_API_KEY}");
+    expect(nativeEnvRefs("${file:~/k}", "opencode")).toBe("${file:~/k}");
+    expect(nativeEnvRefs("${env:X}", "codex")).toBe("${env:X}");
   });
 });
