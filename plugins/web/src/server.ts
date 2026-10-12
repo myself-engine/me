@@ -228,7 +228,7 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       const path = await checkedProject(m.path);
       const next = [...new Set([...(await storedProjects()), path])];
       await saveStoredProjects(next);
-      return { projects: next };
+      return { path, projects: next };
     }
     case "projects.remove": {
       if (typeof m.path !== "string" || !m.path) throw new Error("path is required");

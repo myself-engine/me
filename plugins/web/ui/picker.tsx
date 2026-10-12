@@ -180,9 +180,9 @@ function ManualFolder({ onPick, busy }: { onPick: (path: string, registered: boo
   const submit = () =>
     act(async () => {
       if (!conn || !path.trim()) return;
-      await conn.request("projects.add", { path });
+      const r = await conn.request<{ path: string }>("projects.add", { path });
       notify("프로젝트를 추가했어요");
-      onPick(path, true);
+      onPick(r.path, true);
     });
 
   return (
@@ -215,12 +215,12 @@ function ManualFolder({ onPick, busy }: { onPick: (path: string, registered: boo
         <ul className="pick-list manual-suggest">
           {suggestions.map((m) => (
             <li key={m.path}>
-              <button type="button" className="pick-row project-pick-row" disabled={busy || !conn} onClick={() => onPick(m.path, false)}>
+              <button type="button" className="pick-row project-pick-row" disabled={busy || !conn} onClick={() => (m.isRepo ? onPick(m.path, false) : setPath(`${m.path}/`))}>
                 <span className="pick-label">
                   <span className="pick-name">{m.isRepo ? `📁 ${m.name}` : m.name}</span>
                   <span className="pick-sub muted" title={m.path}>
                     {shortPath(m.path)}
-                    {m.isRepo ? "" : " · 폴더"}
+                    {m.isRepo ? "" : " · 폴더 열기"}
                   </span>
                 </span>
               </button>
