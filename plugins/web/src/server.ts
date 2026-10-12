@@ -8,6 +8,25 @@ import type { ServerWebSocket } from "bun";
 import type { KernelOpEntity } from "@me/protocol";
 import { definePlugin } from "@me/sdk";
 import { type Access, type AccessConfig, classify, hostnameFromStatus, needsHostnameDetection, originOk, tailnetOrigin, tailscaleConfig, viewerOf } from "./access.ts";
+import {
+  Coalescer,
+  addSub,
+  approvalPayload,
+  ensureVapid,
+  fanout,
+  loadSubs,
+  opsDownPayload,
+  parseSubscription,
+  removeSub,
+  swResponse,
+  swText,
+  taskFailedPayload,
+  taskResultPayload,
+  testPayload,
+  webPushTransport,
+  type PushKind,
+  type PushPayload,
+} from "./push.ts";
 import { pwaResponse } from "./pwa.ts";
 import { stashSecrets } from "./secrets.ts";
 import { redactValue } from "@me/redact";
@@ -27,6 +46,10 @@ const OPS_KIND = /^(ops(?:-[a-z0-9-]+)?)\.check$/;
 const isOpsPlugin = (id: string) => id === "ops" || id.startsWith("ops-");
 const withSource = (kind: string, data: any) => ({ ...data, source: kind.match(OPS_KIND)?.[1] ?? "ops" });
 const clients = new Set<ServerWebSocket<unknown>>();
+/** Burst gate for pushes: at most one per kind per 30s. */
+const coalescer = new Coalescer();
+/** Last seen ops status per check; the first sighting is the baseline, never a push. */
+const opsStatus = new Map<string, string>();
 
 const broadcast = (msg: unknown) => {
   const s = JSON.stringify(msg);
@@ -45,11 +68,23 @@ const plugin = definePlugin({
     }
     if (name === "kernel.entity.changed" && OPS_KIND.test(data.kind)) {
       const doc = await plugin.entity.get(data.kind, data.id);
-      if (doc) broadcast({ type: "entity", kind: "ops.check", id: `${withSource(doc.kind, doc.data).source}/${doc.id}`, data: withSource(doc.kind, doc.data) });
+      if (doc) {
+        broadcast({ type: "entity", kind: "ops.check", id: `${withSource(doc.kind, doc.data).source}/${doc.id}`, data: withSource(doc.kind, doc.data) });
+        void notifyOpsDown(doc.kind, doc.id, doc.data);
+      }
       return;
     }
     if (name === "kernel.approval.pending" || name === "kernel.approval.decided") {
       broadcast({ type: "approval", event: name, data, traceId: ctx.traceId });
+      if (name === "kernel.approval.pending") void notifyApproval(data);
+      return;
+    }
+    if (name === "brgr.task.sealed" || name === "brgr.task.verified") {
+      void notifyTaskResult(String(data?.taskId ?? ""));
+      return;
+    }
+    if (name === "brgr.task.failed") {
+      void notifyTaskFailed(String(data?.taskId ?? ""));
       return;
     }
     if (name === "gjc-head.guard.violation" || name === "kernel.plugin.quarantined") {
@@ -119,6 +154,80 @@ async function storedProjects(): Promise<string[]> {
 
 async function saveStoredProjects(projects: string[]) {
   await plugin.entity.upsert(SETTINGS_KIND, SETTINGS_ID, { id: SETTINGS_ID, projects });
+}
+/** Sends one payload to every subscribed device; drops vendor-rejected ones. Never logs endpoints or keys. */
+async function sendPush(kind: PushKind, payload: PushPayload) {
+  if (!coalescer.allow(kind)) return;
+  const subs = loadSubs(dataDir);
+  if (subs.length === 0) return;
+  try {
+    const vapid = ensureVapid(dataDir);
+    const { gone, failed } = await fanout(subs, JSON.stringify(payload), vapid, webPushTransport);
+    for (const endpoint of gone) removeSub(dataDir, endpoint);
+    if (failed > 0) console.error(`[web] push ${kind}: ${failed} send(s) failed`);
+  } catch (err) {
+    console.error(`[web] push ${kind} failed: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+  }
+}
+
+/** Chat hash for a delegation approval's thread; settings otherwise. */
+async function approvalUrl(messageId: unknown): Promise<string> {
+  if (typeof messageId === "string" && messageId) {
+    const msg = await plugin.entity.get<{ threadId?: string }>("gjc-head.message", messageId).catch(() => null);
+    if (typeof msg?.data.threadId === "string" && msg.data.threadId) return `#/chat/${encodeURIComponent(msg.data.threadId)}`;
+  }
+  return "#/settings/device";
+}
+
+async function notifyApproval(data: any) {
+  try {
+    await sendPush("approval", approvalPayload(data?.summary, await approvalUrl(data?.payload?.messageId)));
+  } catch (err) {
+    console.error(`[web] push approval failed: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+  }
+}
+
+/** Chat hash for a task's origin thread; settings when the task has none. */
+async function taskUrl(taskId: string): Promise<{ objective: unknown; url: string }> {
+  const task = await plugin.entity.get<{ objective?: string; origin?: { threadId?: string } }>("brgr.task", taskId).catch(() => null);
+  const threadId = task?.data.origin?.threadId;
+  return {
+    objective: task?.data.objective,
+    url: typeof threadId === "string" && threadId ? `#/chat/${encodeURIComponent(threadId)}` : "#/settings/device",
+  };
+}
+
+async function notifyTaskResult(taskId: string) {
+  if (!taskId) return;
+  try {
+    const { objective, url } = await taskUrl(taskId);
+    await sendPush("task-result", taskResultPayload(objective, url));
+  } catch (err) {
+    console.error(`[web] push task-result failed: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+  }
+}
+
+async function notifyTaskFailed(taskId: string) {
+  if (!taskId) return;
+  try {
+    const { objective, url } = await taskUrl(taskId);
+    await sendPush("task-failed", taskFailedPayload(objective, url));
+  } catch (err) {
+    console.error(`[web] push task-failed failed: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+  }
+}
+
+/** Pushes only when a check turns down; the first sighting sets the baseline. */
+async function notifyOpsDown(kind: string, id: string, data: any) {
+  try {
+    const key = `${kind}/${id}`;
+    const prev = opsStatus.get(key);
+    opsStatus.set(key, String(data?.status ?? ""));
+    if (prev === undefined || prev === "down" || data?.status !== "down") return;
+    await sendPush("ops-down", opsDownPayload(data?.name ?? id, data?.detail ?? "", "#/settings/device"));
+  } catch (err) {
+    console.error(`[web] push ops-down failed: ${String((err as Error)?.message ?? err).slice(0, 120)}`);
+  }
 }
 
 /** True when git itself recognises the directory as a repository (worktrees included). */
@@ -272,6 +381,32 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
     }
     case "trace.get":
       return plugin.getTrace(String(m.traceId ?? ""));
+    case "push.publicKey": {
+      // Only the public key leaves the server; the private key never does.
+      return { publicKey: ensureVapid(dataDir).publicKey };
+    }
+    case "push.subscribe": {
+      const sub = parseSubscription({ endpoint: m.endpoint, keys: m.keys });
+      addSub(dataDir, sub);
+      return { ok: true };
+    }
+    case "push.unsubscribe": {
+      if (typeof m.endpoint !== "string" || !m.endpoint) throw new Error("endpoint is required");
+      return { removed: removeSub(dataDir, m.endpoint) };
+    }
+    case "push.test": {
+      // Manual test from settings: immediate, skips coalescing.
+      if (typeof m.endpoint !== "string" || !m.endpoint) throw new Error("endpoint is required");
+      const target = loadSubs(dataDir).find((s) => s.endpoint === m.endpoint);
+      if (!target) throw new Error("먼저 이 기기에서 알림 받기를 켜 주세요");
+      const { gone, failed } = await fanout([target], JSON.stringify(testPayload()), ensureVapid(dataDir), webPushTransport);
+      if (gone.length > 0) {
+        removeSub(dataDir, m.endpoint);
+        throw new Error("구독이 만료됐어요. 다시 켜 주세요");
+      }
+      if (failed > 0) throw new Error("보내지 못했어요. 잠시 뒤 다시 해보세요");
+      return { ok: true };
+    }
     case "issue.create":
       return createIssue(m.traceId, m.note, m.messageId);
     default:
@@ -328,6 +463,9 @@ const server = Bun.serve({
       return srv.upgrade(req) ? undefined : new Response("upgrade failed", { status: 400 });
     }
     if (url.pathname === "/api/bootstrap" && req.method === "GET") return json(await bootstrap(who));
+    // The service worker is served verbatim, never bundled or cached.
+    const sw = url.pathname === "/sw.js" && req.method === "GET" ? swResponse(url.pathname, await swText()) : null;
+    if (sw) return sw;
     const pwa = req.method === "GET" ? pwaResponse(url.pathname) : null;
     if (pwa) return pwa;
     return new Response("not found", { status: 404 });

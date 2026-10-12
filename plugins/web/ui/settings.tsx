@@ -2,6 +2,7 @@
 // 프로젝트 / 기기 점검. Reuses the existing components; no logic is deleted.
 import { useEffect, useState } from "react";
 import { useApp } from "./context.ts";
+import { pushSupport, urlBase64ToUint8Array } from "./push.ts";
 import type { HeadChoice } from "./state.ts";
 import { DefaultAccess } from "./access.tsx";
 import { useDevView } from "./dev.ts";
@@ -97,7 +98,111 @@ function GeneralSection() {
         <DefaultAccess />
         <p className="pick-note muted">새 대화가 이 모드로 시작해요. 전부 알아서는 확인 후 바로 적용돼요.</p>
       </div>
+      <PushRow />
       <BudgetLine />
+    </div>
+  );
+}
+
+/** Phone notifications: one row that subscribes this device, tests, or turns off. */
+function PushRow() {
+  const { conn } = useApp();
+  const [support] = useState(() => pushSupport());
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (support !== "supported") return;
+    let live = true;
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        if (live) setSubscribed(sub !== null);
+      })
+      .catch(() => {
+        if (live) setSubscribed(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [support]);
+  if (support === "unsupported") return <p className="muted">이 브라우저는 알림을 지원하지 않아요</p>;
+  if (support === "insecure") return <p className="muted">알림은 https(예: tailscale serve) 또는 이 Mac의 localhost에서만 돼요</p>;
+  if (subscribed === null) return <p className="muted">알림 상태를 확인하는 중…</p>;
+  const fail = (err: unknown) => {
+    setNote(err instanceof Error ? err.message : "실패했어요. 다시 해보세요");
+    setBusy(false);
+  };
+  const endpointOf = async () => (await navigator.serviceWorker.ready).pushManager.getSubscription().then((s) => s?.endpoint ?? null);
+  const turnOn = async () => {
+    if (!conn) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      if ((await Notification.requestPermission()) !== "granted") {
+        setNote("브라우저 설정에서 알림을 켜 주세요");
+        setBusy(false);
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const { publicKey } = await conn.request<{ publicKey: string }>("push.publicKey", {});
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+      const keys = sub.toJSON().keys!;
+      await conn.request("push.subscribe", { endpoint: sub.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } });
+      setSubscribed(true);
+      setBusy(false);
+    } catch (err) {
+      fail(err);
+    }
+  };
+  const turnOff = async () => {
+    if (!conn) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      const endpoint = sub?.endpoint ?? (await endpointOf());
+      if (sub) await sub.unsubscribe();
+      if (endpoint) await conn.request("push.unsubscribe", { endpoint });
+      setSubscribed(false);
+      setBusy(false);
+    } catch (err) {
+      fail(err);
+    }
+  };
+  const test = async () => {
+    if (!conn) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const endpoint = await endpointOf();
+      if (!endpoint) throw new Error("먼저 이 기기에서 알림 받기를 켜 주세요");
+      await conn.request("push.test", { endpoint });
+      setNote("시험 알림을 보냈어요");
+      setBusy(false);
+    } catch (err) {
+      fail(err);
+    }
+  };
+  return (
+    <div>
+      {subscribed ? (
+        <div className="actions-row">
+          <span>이 기기에서 받는 중</span>
+          <button type="button" className="btn small" disabled={busy} onClick={test}>
+            시험 알림
+          </button>
+          <button type="button" className="btn small" disabled={busy} onClick={turnOff}>
+            끄기
+          </button>
+        </div>
+      ) : (
+        <button type="button" disabled={busy || !conn} onClick={turnOn}>
+          이 기기에서 알림 받기
+        </button>
+      )}
+      {note && <p className="muted">{note}</p>}
     </div>
   );
 }

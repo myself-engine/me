@@ -164,6 +164,9 @@ for (const [rel, href] of [["manifest", "/manifest.webmanifest"], ["icon", "/ico
   document.head.append(link);
 }
 
+// Push notifications need a worker at the root scope; /sw.js is served verbatim by server.ts, never bundled.
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
