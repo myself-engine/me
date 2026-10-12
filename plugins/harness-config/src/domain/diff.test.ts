@@ -105,15 +105,26 @@ describe("diffServers", () => {
 });
 
 describe("import", () => {
-  test("placeholderize never keeps a literal secret", () => {
+  test("placeholderize moves secrets to file references and keeps plain values", () => {
     const p = placeholderize("my server", {
       type: "http",
       url: "https://x",
-      headers: { Authorization: "Bearer abc", "X-Ref": "${env:KEEP}" },
-      env: { A: "secret", B: "{env:OC}", C: "${CLAUDE_VAR}", D: "${file:~/k}" },
+      headers: { Authorization: "Bearer abc", "X-Ref": "${env:KEEP}", Accept: "application/json" },
+      env: { API_KEY: "short", B: "{env:OC}", C: "${CLAUDE_VAR}", D: "${file:~/k}", NODE_PATH: "/opt/x/node_modules", MODE: "acp", OPAQUE: "a8f3k29dk3l2m4n5b6v7c8x9z0q1w2e3r4" },
     });
-    expect(p.headers).toEqual({ Authorization: "${env:MY_SERVER_AUTHORIZATION}", "X-Ref": "${env:KEEP}" });
-    expect(p.env).toEqual({ A: "${env:A}", B: "${env:OC}", C: "${env:CLAUDE_VAR}", D: "${file:~/k}" });
+    expect(p.server.headers).toEqual({ Authorization: "${file:~/.config/me/secrets/mcp/my_server-AUTHORIZATION}", "X-Ref": "${env:KEEP}", Accept: "application/json" });
+    expect(p.server.env).toEqual({
+      API_KEY: "${file:~/.config/me/secrets/mcp/my_server-API_KEY}",
+      B: "${env:OC}",
+      C: "${env:CLAUDE_VAR}",
+      D: "${file:~/k}",
+      NODE_PATH: "/opt/x/node_modules",
+      MODE: "acp",
+      OPAQUE: "${file:~/.config/me/secrets/mcp/my_server-OPAQUE}",
+    });
+    expect(p.secrets.map((x) => x.path).sort()).toEqual([".config/me/secrets/mcp/my_server-API_KEY", ".config/me/secrets/mcp/my_server-AUTHORIZATION", ".config/me/secrets/mcp/my_server-OPAQUE"]);
+    // The secret values never reach the server that goes into source.json.
+    expect(JSON.stringify(p.server)).not.toContain("Bearer abc");
   });
 
   test("identical entries merge into one share list; differing ones become conflicts", () => {

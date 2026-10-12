@@ -373,21 +373,30 @@ export function createService(deps: ServiceDeps) {
     const draft = {
       _import: {
         at: deps.clock.now().toISOString(),
-        note: "Draft. env/header values are ${env:NAME} references, not the original values; conflicting names are left out. Skills and hooks are not imported; declare them by hand.",
+        note: "Draft. Secret-looking env/header values are ${file:~/.config/me/secrets/mcp/...} references (written 0600 with --write), other values are kept as they are; conflicting names are left out. Skills and hooks are not imported; declare them by hand.",
         conflicts,
       },
       mcpServers: servers.mcpServers,
       instructions: Object.fromEntries(Object.entries(instr.instructions).map(([n, i]) => [n, { file: `instructions/${n}.md`, share: i.share }])),
     };
     let written: string | null = null;
+    const secretsKept: string[] = [];
     if (p.write === true) {
       // Never overwrites source.json itself; the user reviews and renames the draft.
       const dir = dirname(deps.sourcePath);
       written = join(dir, "source.draft.json");
       for (const [n, i] of Object.entries(instr.instructions)) await fs.write(join(dir, "instructions", `${n}.md`), `${i.content}\n`);
+      // New files are created 0600 by the FileSystem port. A different existing secret is kept, not overwritten.
+      for (const sec of servers.secrets) {
+        const path = join(deps.home, sec.path);
+        const cur = await fs.read(path);
+        if (cur === null) await fs.write(path, `${sec.value}\n`);
+        else if (cur.replace(/\r?\n$/, "") !== sec.value) secretsKept.push(`~/${sec.path}`);
+      }
       await fs.write(written, `${JSON.stringify(draft, null, 2)}\n`);
     }
-    return { draft, conflicts, counts, written };
+    // Paths only: secret values never leave this function.
+    return { draft, conflicts, counts, written, secrets: servers.secrets.map((x) => `~/${x.path}`), ...(secretsKept.length ? { secretsKept } : {}) };
   }
 
   async function list() {

@@ -397,14 +397,15 @@ describe("import", () => {
     expect(res.conflicts.pencil!.fields).toContain("command");
     expect(res.draft.mcpServers.pencil).toBeUndefined();
 
-    // Secrets become references.
+    // Secrets become file references (stored only with write: true); the result lists paths, never values.
     expect(res.draft.mcpServers["private-claude"]).toEqual({
       type: "http",
       url: "https://private.example/mcp",
-      headers: { Authorization: "${env:PRIVATE_CLAUDE_AUTHORIZATION}" },
+      headers: { Authorization: "${file:~/.config/me/secrets/mcp/private-claude-AUTHORIZATION}" },
       share: ["claude-code"],
     });
-    expect(res.draft.mcpServers.figma).toMatchObject({ env: { FIGMA_API_KEY: "${env:FIGMA_API_KEY}" }, share: ["opencode"] });
+    expect(res.draft.mcpServers.figma).toMatchObject({ env: { FIGMA_API_KEY: "${file:~/.config/me/secrets/mcp/figma-FIGMA_API_KEY}" }, share: ["opencode"] });
+    expect(res.secrets).toContain("~/.config/me/secrets/mcp/figma-FIGMA_API_KEY");
     expect(res.draft.mcpServers.notion).toMatchObject({ url: "https://mcp.notion.com/mcp", share: ["gjc"] });
   });
 
@@ -417,6 +418,13 @@ describe("import", () => {
     const draft = readFileSync(res.written!, "utf8");
     for (const secret of Object.values(SECRETS)) expect(draft).not.toContain(secret);
     expect(JSON.parse(draft)._import.conflicts.pencil).toBeDefined();
+    // Each secret lands in its own 0600 file under home, so the draft renders back to the same values.
+    for (const ref of res.secrets) {
+      const file = join(fx.home, ref.slice(2));
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(Object.values(SECRETS)).toContain(readFileSync(file, "utf8").trim());
+    }
+    expect(res.secrets.length).toBeGreaterThan(0);
   });
 });
 

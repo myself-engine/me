@@ -265,26 +265,53 @@ export interface ImportConflict {
 
 const envName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
+/** Where import keeps a secret it found in a harness file, relative to home (`${file:~/...}`). */
+export const SECRET_DIR = ".config/me/secrets/mcp";
+
+const SECRET_KEY = /(key|token|secret|passw|auth|credential|cookie|session|private|bearer)/i;
+const SECRET_VALUE = /^(sk-|ghp_|gho_|ghs_|github_pat_|xox[abpr]-|glpat-|AIza|Bearer\s|Basic\s)/;
 /**
- * Replaces every env/header value with a reference, so import never copies a secret into
- * source.json. Values that already are references are kept; OpenCode's `{env:X}` and Claude's
- * `${X}` become `${env:X}`.
+ * A value worth hiding: a secret-sounding name, a known token shape, or a long opaque string.
+ * Paths, flags, URLs and short words stay literal so a re-render reproduces them exactly.
  */
-export function placeholderize(name: string, s: McpServer): McpServer {
+export function looksSecret(key: string, value: string): boolean {
+  if (SECRET_KEY.test(key) || SECRET_VALUE.test(value)) return true;
+  return value.length >= 32 && !/[\s/:.]/.test(value) && /[A-Za-z]/.test(value) && /\d/.test(value);
+}
+
+export interface FoundSecret {
+  /** Path under home, e.g. `.config/me/secrets/mcp/lazyweb-AUTHORIZATION`. */
+  path: string;
+  value: string;
+}
+
+/**
+ * Makes a server safe to store in source.json. References stay references (OpenCode's `{env:X}` and
+ * Claude's `${X}` become `${env:X}`); secrets become `${file:~/...}` references and are returned
+ * separately so the caller can store them 0600; plain values stay literal.
+ */
+export function placeholderize(name: string, s: McpServer): { server: McpServer; secrets: FoundSecret[] } {
   const out: McpServer = { ...s };
-  const ref = (v: string, fallback: string) => {
+  const secrets: FoundSecret[] = [];
+  const ref = (key: string, v: string) => {
     if (/^\$\{(env|file):[^}]+\}$/.test(v)) return v;
     const m = /^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(v) ?? /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(v);
-    return m ? `\${env:${m[1]}}` : `\${env:${fallback}}`;
+    if (m) return `\${env:${m[1]}}`;
+    if (!looksSecret(key, v)) return v;
+    const path = `${SECRET_DIR}/${name.replace(/[^\w.-]+/g, "_")}-${envName(key)}`;
+    secrets.push({ path, value: v });
+    return `\${file:~/${path}}`;
   };
-  if (s.env) out.env = Object.fromEntries(Object.entries(s.env).map(([k, v]) => [k, ref(v, k)]));
-  if (s.headers) out.headers = Object.fromEntries(Object.entries(s.headers).map(([k, v]) => [k, ref(v, envName(`${name}_${k}`))]));
-  return out;
+  if (s.env) out.env = Object.fromEntries(Object.entries(s.env).map(([k, v]) => [k, ref(k, v)]));
+  if (s.headers) out.headers = Object.fromEntries(Object.entries(s.headers).map(([k, v]) => [k, ref(k, v)]));
+  return { server: out, secrets };
 }
 
 export interface ImportResult {
   mcpServers: Record<string, Record<string, unknown>>;
   conflicts: Record<string, ImportConflict>;
+  /** Secret values to store; never part of the draft or of any printed result. */
+  secrets: FoundSecret[];
 }
 
 /**
@@ -300,7 +327,7 @@ export function importServers(found: Found[]): ImportResult {
       list.push({ target: `${f.harness}:${f.scope}`, harness: f.harness, scope: f.scope, server });
       byName.set(name, list);
     }
-  const result: ImportResult = { mcpServers: {}, conflicts: {} };
+  const result: ImportResult = { mcpServers: {}, conflicts: {}, secrets: [] };
   const allHarnesses = new Set(found.map((f) => f.harness));
   for (const name of [...byName.keys()].sort()) {
     const variants = byName.get(name)!;
@@ -314,7 +341,9 @@ export function importServers(found: Found[]): ImportResult {
     }
     const harnesses = [...new Set(variants.map((v) => v.harness))];
     const share = harnesses.length === allHarnesses.size && allHarnesses.size === 4 ? "all" : harnesses;
-    const item: Record<string, unknown> = { ...placeholderize(name, first.server), share };
+    const safe = placeholderize(name, first.server);
+    result.secrets.push(...safe.secrets);
+    const item: Record<string, unknown> = { ...safe.server, share };
     if (first.scope === "project") item.scope = "project";
     result.mcpServers[name] = item;
   }
