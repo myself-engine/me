@@ -125,6 +125,9 @@ export type Screen = { name: string; hash: string; open?: string };
 export async function show(page: Page, url: string, s: Screen) {
   await page.open(url + s.hash, READY);
   if (!s.open) return;
+  // Same-hash navigation does not reload, so a dialog left open by the previous screen stays mounted.
+  await page.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+  await page.until("!(document.querySelector('[role=dialog]')?.getBoundingClientRect().height > 0)");
   await page.eval(`document.querySelector(${JSON.stringify(s.open)}).click()`);
   // Visible, not merely in the DOM: a dialog inside a hidden pane would pass a presence check.
   if (s.open.includes("summary")) return; // a fold opens in place
@@ -137,6 +140,7 @@ export function screens(s: Seeded): Screen[] {
   return [
     { name: "chat-new", hash: "#/chat" },
     { name: "head-picker", hash: "#/chat/new", open: ".head-chip" },
+    { name: "project-picker", hash: "#/chat/new", open: ".project-button" },
     ...(s.threadId ? [{ name: "chat-thread", hash: `#/chat/${encodeURIComponent(s.threadId)}` }] : []),
     ...(s.resultThreadId ? [{ name: "chat-result", hash: `#/chat/${encodeURIComponent(s.resultThreadId)}` }] : []),
     { name: "tasks", hash: "#/tasks" },

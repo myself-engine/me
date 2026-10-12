@@ -9,6 +9,7 @@ import type { KernelOpEntity } from "@me/protocol";
 import { definePlugin } from "@me/sdk";
 import { type Access, type AccessConfig, classify, hostnameFromStatus, needsHostnameDetection, originOk, tailnetOrigin, tailscaleConfig, viewerOf } from "./access.ts";
 import { pwaResponse } from "./pwa.ts";
+import { DEFAULT_PROJECT_ROOTS, completeProjectPath, discoverProjects } from "./projects.ts";
 import index from "../ui/index.html";
 
 const dataDir = process.env.ME_DATA_DIR ?? ".";
@@ -234,6 +235,15 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       const path = expand(m.path);
       await saveStoredProjects((await storedProjects()).filter((p) => p !== path));
       return { removed: path };
+    }
+    case "projects.discover": {
+      const roots = Array.isArray(plugin.config.projectRoots) ? (plugin.config.projectRoots as string[]) : DEFAULT_PROJECT_ROOTS;
+      const registered = new Set([...((plugin.config.projects as string[]) ?? []).map(expand), ...(await storedProjects())]);
+      return { projects: discoverProjects({ roots, registered }) };
+    }
+    case "projects.complete": {
+      if (typeof m.path !== "string") throw new Error("path is required");
+      return { matches: completeProjectPath(m.path) };
     }
     case "trace.get":
       return plugin.getTrace(String(m.traceId ?? ""));

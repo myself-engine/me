@@ -1,8 +1,9 @@
 // 상태 › 프로젝트: configured repositories plus every project a task ran in, with task counts by status.
-// Extra repositories are added here without editing files: stored as the web-owned
-// web.settings entity, validated server-side (must exist and be a git repo).
+// Extra repositories are added through the shared ProjectPicker sheet (no typed paths needed);
+// stored as the web-owned web.settings entity, validated server-side (must exist and be a git repo).
 import { useMemo, useState } from "react";
 import { useApp } from "./context.ts";
+import { ProjectPicker } from "./picker.tsx";
 import { taskHref } from "./routes.ts";
 import { Section, StatusDot, repoName, shortPath, useBusy } from "./shared.tsx";
 import { TONE_LABEL, toneOf, workItems, type Tone } from "./state.ts";
@@ -26,9 +27,9 @@ export function ProjectsSection() {
 
   return (
     <Section label="프로젝트" count={repos.length || undefined}>
-      <ProjectForm />
+      <ProjectAddButton paths={repos.map((r) => r.path)} />
       {repos.length === 0 ? (
-        <p className="muted pad">등록된 저장소가 없어요. 아래에 경로를 넣거나 작업을 맡기면 생겨요.</p>
+        <p className="muted pad">등록된 저장소가 없어요. 위 버튼으로 고르거나 작업을 맡기면 생겨요.</p>
       ) : (
         <ul className="rows boxed">
           {repos.map((r) => (
@@ -64,42 +65,16 @@ export function ProjectsSection() {
   );
 }
 
-/** Adds a repository path: the server checks it exists and is a git repo. */
-function ProjectForm() {
-  const { conn, notify } = useApp();
-  const [path, setPath] = useState("");
-  const [busy, act] = useBusy(notify);
-  const submit = () =>
-    act(async () => {
-      if (!conn) return;
-      await conn.request("projects.add", { path });
-      setPath("");
-      notify("프로젝트를 추가했어요");
-    });
+/** Opens the shared sheet to add a repository; the server validates the pick. */
+function ProjectAddButton({ paths }: { paths: string[] }) {
+  const [open, setOpen] = useState(false);
   return (
-    <form
-      className="field-row proj-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      <label className="sr" htmlFor="proj-add">
-        저장소 경로
-      </label>
-      <input
-        id="proj-add"
-        className="field-input"
-        value={path}
-        onChange={(e) => setPath(e.target.value)}
-        placeholder="~/dev/저장소"
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <button type="submit" disabled={busy || !conn || !path.trim()}>
-        추가
+    <>
+      <button type="button" className="proj-add-btn" onClick={() => setOpen(true)} aria-haspopup="dialog">
+        + 프로젝트 추가
       </button>
-    </form>
+      {open && <ProjectPicker current="" recent={paths} onPick={() => {}} onClose={() => setOpen(false)} />}
+    </>
   );
 }
 

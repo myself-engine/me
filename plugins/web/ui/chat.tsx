@@ -7,6 +7,7 @@ import { diffTotals, parseDiffStat } from "./diff.ts";
 import { chatHref, NEW_THREAD, taskHref } from "./routes.ts";
 import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, timeAgo, toolName, useBusy, useNow } from "./shared.tsx";
 import { effortLabel, HeadChip } from "./head.tsx";
+import { ProjectButton } from "./picker.tsx";
 import { TONE_LABEL, activeAlerts, taskTitle, threadTone, toneOf, turnOp, type HeadChoice, type Live } from "./state.ts";
 
 export function ChatScreen(props: { threadId: string | null; project: string; setProject: (p: string) => void; onSend: (text: string, choice?: HeadChoice) => void }) {
@@ -419,17 +420,10 @@ function Composer(props: {
   return (
     <div className="composer">
       <div className="composer-top">
-        {/* No registered project: nothing to choose, the head uses its default project. */}
         {props.lockProject ? (
           props.project && <span className="project">📁 {repoName(props.project)}</span>
-        ) : props.projects.length === 0 ? null : (
-          <select value={props.project} onChange={(e) => props.setProject(e.target.value)} aria-label="프로젝트">
-            {props.projects.map((p) => (
-              <option key={p} value={p}>
-                📁 {repoName(p)}
-              </option>
-            ))}
-          </select>
+        ) : (
+          <ProjectButton project={props.project} projects={props.projects} setProject={props.setProject} />
         )}
         <HeadChip thread={props.thread} draft={draft} setDraft={setDraft} />
       </div>
