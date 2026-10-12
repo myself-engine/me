@@ -455,3 +455,11 @@
 - **meter가 죽어도 위임을 막지 않는다.** 5초 타임아웃·60초 캐시, 실패는 `budget.status`의 문제점으로만 남긴다. 모르는 하네스(대응 제공자 없음)도 확인을 건너뛴다.
 - **기준은 부드럽게 두 단계다.** 남은 양이 `minRemainingPercent`(기본 10) 밑이면 승인 요청, `hardStopPercent`(기본 3) 밑이면 중단. 하루 횟수(기본 30건, 자동 적용 10건)는 넘으면 바로 막는다.
 - **버린 대안**: 커널에 예산 검사 내장(도메인을 아는 커널이 된다), 위임 횟수를 메모리에만 두기(재시작하면 리셋된다), meter 실패 시 위임 중단(오프라인에서 me가 멈춘다).
+
+## 25. 자식 환경 allowlist와 비밀 마스킹 (2026-10-12)
+
+- **자식은 부모 환경을 통째로 받지 않는다.** 커널 플러그인 프로세스, MCP/ACP/CLI 브리지 자식, brgr의 `git`·`brgr` 실행이 `lib/env`의 `childEnv`를 쓴다. 기본값은 `PATH, HOME, USER, LOGNAME, SHELL, LANG, LC_*, TZ, TMPDIR, TERM, COLORTERM, XDG_*, SSH_AUTH_SOCK, HERDR_*, ME_*`와 커널이 붙이는 `ME_PLUGIN_ID/ME_DATA_DIR`뿐이다. 감사 결과 기존 플러그인·브리지·레시피가 파일 경로로 키를 읽어서 기본값으로 충분했고, 추가로 선언한 곳은 없다. 모자라면 매니페스트 `run.envPass`·브리지 `envPass`(정확한 이름이나 `PREFIX_*`, `"*"` 금지)나 사용자 탈출구 최상위 `env.pass`에 적는다.
+- **저널에는 비밀이 닿기 전에 가린다.** `lib/redact`가 `Store.append`에서 한 번의 정규식 통과로 걸러내고, 걸린 것만 가린다. 키 이름(`token/secret/password/api key/authorization/cookie/private key`)과 토큰 모양(`sk-…`, `ghp_/gho_/github_pat_…`, `xox…-…`, `Bearer …`, `AKIA…`, JWT, PEM 개인키)을 `[REDACTED]`로 바꾸고, 경로(`~/.config/me/secrets/…`)는 남긴다. UUID·짧은 SHA·한국어 평문은 그대로 둔다. `harness-config`의 `looksSecret`과 정규식을 한 곳(`@me/redact`)에서 공유한다.
+- **이슈·메신저도 같은 모듈로 가린다.** 웹 "이슈 올리기"는 저널·엔티티 첨부 전에, Discord/Slack 발신은 `lib/messenger`에 넣을 때 가린다. 엔티티 원본은 동작에 필요해서 그대로 둔다.
+- **버린 대안**: 자식마다 셸 래퍼로 환경 가리기(규칙이 흩어짐), 긴 불투명 문자열까지 전부 가리기(저널에서 UUID·SHA까지 사라져 디버깅이 어려움).
+- **수치**: `scripts/journal-bench.ts` 전후 동일(123행 17.0KB, ops 13행 2.8KB, 스트림 80행 12.5KB).

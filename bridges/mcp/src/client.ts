@@ -1,11 +1,14 @@
 // Thin MCP client used by the bridge: connects to one MCP server over stdio and reconnects on demand.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { childEnv, validateEnvPass } from "@me/env";
 
 export interface McpServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  /** Extra parent env names kept for the server process: exact names or PREFIX_* globs. No "*" wildcard. */
+  envPass?: string[];
   cwd?: string;
 }
 
@@ -16,7 +19,15 @@ export class McpConnection {
   constructor(
     private config: McpServerConfig,
     private name = "me-mcp-bridge",
-  ) {}
+  ) {
+    if (config.envPass !== undefined) {
+      try {
+        validateEnvPass(config.envPass);
+      } catch (err) {
+        throw new Error(`mcp server envPass: ${(err as Error).message}`);
+      }
+    }
+  }
 
   async get(): Promise<Client> {
     if (this.client) return this.client;
@@ -28,7 +39,7 @@ export class McpConnection {
     const transport = new StdioClientTransport({
       command: this.config.command,
       args: this.config.args ?? [],
-      env: { ...(process.env as Record<string, string>), ...(this.config.env ?? {}) },
+      env: childEnv(this.config.envPass ?? [], this.config.env ?? {}),
       cwd: this.config.cwd,
       stderr: "inherit",
     });

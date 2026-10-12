@@ -127,6 +127,7 @@ funnel(공개 노출)은 거부한다. 이미 쓰이는 포트는 덮어쓰지 �
   }
 }
 ```
+- 자식 환경: 플러그인과 브리지 자식은 부모 환경을 통째로 받지 않고 기본값(`PATH`, `HOME`, `LC_*`, `XDG_*` 등)만 받는다. 자식이 꼭 봐야 하는 변수는 `me.config.json`의 `env.pass: ["GH_TOKEN", "MYAPP_*"]`에 적는다(`"*"` 통째 와일드카드는 안 된다). 비밀 값 자체는 파일(`~/.config/me/secrets/…`)로만 넘긴다.
 
 - 데이터: `~/.me`. 저널과 엔티티는 `me.sqlite`, 플러그인 로그는 `logs/`에 남는다. `ME_HOME`으로 바꿀 수 있다.
 - Jev: `~/.config/me/secrets/openrouter.key`에 OpenRouter 키를 두면 Jev(`typesafe/jev-router`)로 판정한다. 키가 없으면 head 모델로 같은 형식의 대체 판정을 한다.

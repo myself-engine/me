@@ -6,6 +6,7 @@
   "dependencies": {
     "@me/sdk": "workspace:*",
     "@me/protocol": "workspace:*",
+    "@me/env": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.1"
   },
   "devDependencies": { "@me/kernel": "workspace:*", "zod": "3.25.76" }

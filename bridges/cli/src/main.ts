@@ -23,6 +23,7 @@ const plugin = definePlugin({
           baseCwd: config.cwd,
           signal: ctx.signal,
           onLine: (line) => ctx.update({ line }),
+          envPass: config.envPass,
         });
     }
   },

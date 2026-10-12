@@ -2,6 +2,7 @@
 // Implements the checklist from DECISIONS §15: ledgered delivery, per-conversation sessions,
 // serialized handling per conversation, and inbound policy. No platform SDK is imported here.
 import { Database } from "bun:sqlite";
+import { redactString } from "@me/redact";
 
 // ---------------------------------------------------------------------------
 // Origins: every conversation is platform/kind/conversationId. A DM is never a channel.
@@ -149,14 +150,14 @@ export class Ledger {
     return next;
   }
 
-  /** Step 1: record the reply before any network call. */
+  /** Step 1: record the reply before any network call. Secrets are masked here, so neither the ledger nor the platform ever sees them. */
   enqueue(origin: Origin, text: string, replyTo: string | null = null): Delivery {
     const { epoch } = this.conversation(origin);
     const id = crypto.randomUUID();
     const t = this.now();
     this.db
       .prepare("INSERT INTO deliveries VALUES (?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, NULL, ?, ?)")
-      .run(id, originKey(origin), epoch, replyTo, text, t, t);
+      .run(id, originKey(origin), epoch, replyTo, redactString(text), t, t);
     return this.get(id)!;
   }
 

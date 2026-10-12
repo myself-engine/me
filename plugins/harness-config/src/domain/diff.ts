@@ -10,6 +10,7 @@
 // The same rules apply to hooks (identified by a marker the adapter appends to the command) and
 // to skills (identified by their entry name in a harness's skills directory).
 import type { HarnessId, Hook, McpServer, Scope, SkillMode } from "./model.ts";
+import { SECRET_KEY_RE, SECRET_VALUE_RE } from "@me/redact";
 
 export const REF_RE = /\$\{(env|file):([^}]+)\}/g;
 export const hasRef = (v: string) => new RegExp(REF_RE.source).test(v);
@@ -268,8 +269,8 @@ const envName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]+/g, "_").repla
 /** Where import keeps a secret it found in a harness file, relative to home (`${file:~/...}`). */
 export const SECRET_DIR = ".config/me/secrets/mcp";
 
-const SECRET_KEY = /(key|token|secret|passw|auth|credential|cookie|session|private|bearer)/i;
-const SECRET_VALUE = /^(sk-|ghp_|gho_|ghs_|github_pat_|xox[abpr]-|glpat-|AIza|Bearer\s|Basic\s)/;
+const SECRET_KEY = SECRET_KEY_RE;
+const SECRET_VALUE = SECRET_VALUE_RE;
 /**
  * A value worth hiding: a secret-sounding name, a known token shape, or a long opaque string.
  * Paths, flags, URLs and short words stay literal so a re-render reproduces them exactly.

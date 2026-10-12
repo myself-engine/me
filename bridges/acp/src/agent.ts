@@ -3,6 +3,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { ErrorCode, Peer, RpcError, pumpLines, type LineTransport } from "@me/protocol";
+import { childEnv } from "@me/env";
 import {
   ACP_PROTOCOL_VERSION,
   DEFAULT_CANCEL_GRACE_MS,
@@ -113,7 +114,7 @@ export class AgentConnection {
 
   private async connect(): Promise<Live> {
     const a = this.config.agent;
-    const env = { ...(process.env as Record<string, string>), ...(a.env ?? {}), ...(await readEnvFiles(a.envFiles)) };
+    const env = childEnv(a.envPass ?? [], { ...(a.env ?? {}), ...(await readEnvFiles(a.envFiles)) });
     let proc: Live["proc"];
     try {
       // stderr is inherited so the agent's logs land in this plugin's log; stdout carries only ACP frames.

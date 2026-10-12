@@ -257,6 +257,13 @@
               "additionalProperties": {
                 "type": "string"
               }
+            },
+            "envPass": {
+              "description": "Extra parent env names kept for the plugin process: exact names or PREFIX_* globs. No \"*\" wildcard.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         },

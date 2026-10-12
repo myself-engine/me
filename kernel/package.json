@@ -6,7 +6,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@me/protocol": "workspace:*"
+    "@me/protocol": "workspace:*",
+    "@me/env": "workspace:*",
+    "@me/redact": "workspace:*"
   },
   "devDependencies": {
     "@me/sdk": "workspace:*"

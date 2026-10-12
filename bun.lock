@@ -16,6 +16,7 @@
     "bridges/acp": {
       "name": "@me/bridge-acp",
       "dependencies": {
+        "@me/env": "workspace:*",
         "@me/protocol": "workspace:*",
         "@me/sdk": "workspace:*",
       },
@@ -26,6 +27,7 @@
     "bridges/cli": {
       "name": "@me/bridge-cli",
       "dependencies": {
+        "@me/env": "workspace:*",
         "@me/protocol": "workspace:*",
         "@me/sdk": "workspace:*",
       },
@@ -47,6 +49,7 @@
     "bridges/mcp": {
       "name": "@me/bridge-mcp",
       "dependencies": {
+        "@me/env": "workspace:*",
         "@me/protocol": "workspace:*",
         "@me/sdk": "workspace:*",
         "@modelcontextprotocol/sdk": "1.30.1",
@@ -59,11 +62,16 @@
     "kernel": {
       "name": "@me/kernel",
       "dependencies": {
+        "@me/env": "workspace:*",
         "@me/protocol": "workspace:*",
+        "@me/redact": "workspace:*",
       },
       "devDependencies": {
         "@me/sdk": "workspace:*",
       },
+    },
+    "lib/env": {
+      "name": "@me/env",
     },
     "lib/gjc": {
       "name": "@me/gjc",
@@ -73,6 +81,12 @@
     },
     "lib/messenger": {
       "name": "@me/messenger",
+      "dependencies": {
+        "@me/redact": "workspace:*",
+      },
+    },
+    "lib/redact": {
+      "name": "@me/redact",
     },
     "plugins/approval-policy": {
       "name": "@me/plugin-approval-policy",
@@ -87,6 +101,7 @@
     "plugins/brgr": {
       "name": "@me/plugin-brgr",
       "dependencies": {
+        "@me/env": "workspace:*",
         "@me/protocol": "workspace:*",
         "@me/sdk": "workspace:*",
       },
@@ -119,6 +134,7 @@
       "name": "@me/plugin-harness-config",
       "dependencies": {
         "@me/protocol": "workspace:*",
+        "@me/redact": "workspace:*",
         "@me/sdk": "workspace:*",
       },
     },
@@ -167,6 +183,7 @@
       "name": "@me/plugin-web",
       "dependencies": {
         "@me/protocol": "workspace:*",
+        "@me/redact": "workspace:*",
         "@me/sdk": "workspace:*",
         "highlight.js": "11.10.0",
         "react": "18.3.1",
@@ -212,6 +229,8 @@
 
     "@me/bridge-mcp": ["@me/bridge-mcp@workspace:bridges/mcp"],
 
+    "@me/env": ["@me/env@workspace:lib/env"],
+
     "@me/gjc": ["@me/gjc@workspace:lib/gjc"],
 
     "@me/kernel": ["@me/kernel@workspace:kernel"],
@@ -243,6 +262,8 @@
     "@me/plugin-web": ["@me/plugin-web@workspace:plugins/web"],
 
     "@me/protocol": ["@me/protocol@workspace:protocol"],
+
+    "@me/redact": ["@me/redact@workspace:lib/redact"],
 
     "@me/sdk": ["@me/sdk@workspace:sdk"],
 

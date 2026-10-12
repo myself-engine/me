@@ -1,6 +1,7 @@
 // Runs one configured command as a child process: argv only, never a shell.
 import { resolve } from "node:path";
 import { ErrorCode, RpcError } from "@me/protocol";
+import { childEnv } from "@me/env";
 import {
   DEFAULT_TIMEOUT_MS,
   STDERR_LIMIT,
@@ -25,6 +26,8 @@ export interface RunOptions {
   onLine?: (line: string) => void;
   /** Grace period between SIGTERM and SIGKILL. */
   killGraceMs?: number;
+  /** Extra parent env names kept for the child (config `envPass`). */
+  envPass?: string[];
 }
 
 /** Children still running, so shutdown can kill them. */
@@ -105,7 +108,7 @@ export async function runCommand(name: string, cmd: CommandSpec, rawParams: unkn
   let proc: ReturnType<typeof Bun.spawn<"ignore", "pipe", "pipe">>;
   try {
     // stdin is ignored: the plugin's own stdin is the protocol pipe and must never reach the child.
-    proc = Bun.spawn(argv, { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    proc = Bun.spawn(argv, { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env: childEnv(opts.envPass ?? [], {}) });
   } catch (err) {
     throw new RpcError(-32603, `${name}: cannot start ${argv[0]}: ${(err as Error).message}`);
   }

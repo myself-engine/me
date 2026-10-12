@@ -5,7 +5,8 @@
   "exports": { ".": "./src/config.ts" },
   "dependencies": {
     "@me/sdk": "workspace:*",
-    "@me/protocol": "workspace:*"
+    "@me/protocol": "workspace:*",
+    "@me/env": "workspace:*"
   },
   "devDependencies": { "@me/kernel": "workspace:*" }
 }

@@ -68,6 +68,8 @@ export interface Manifest {
     command: string[];
     cwd?: string;
     env?: { [key: string]: string };
+    /** Extra parent env names kept for the plugin process: exact names or PREFIX_* globs. No "*" wildcard. */
+    envPass?: string[];
   };
   permissions: Permission[];
   provides?: {

@@ -1,6 +1,7 @@
 // Manifest loading and permission helpers (PROTOCOL §2, §8).
 import { dirname, resolve } from "node:path";
 import type { Manifest, Permission } from "@me/protocol";
+import { validateEnvPass } from "@me/env";
 
 const ID_RE = /^[a-z][a-z0-9-]*$/;
 
@@ -25,6 +26,13 @@ export function validateManifest(raw: any, dir: string): LoadedManifest {
   if (typeof raw.version !== "string") fail("version is required");
   if (!raw.protocol || typeof raw.protocol.min !== "number" || typeof raw.protocol.max !== "number") fail("protocol {min,max} is required");
   if (!raw.run || !Array.isArray(raw.run.command) || raw.run.command.length === 0) fail("run.command is required");
+  if (raw.run.envPass !== undefined) {
+    try {
+      validateEnvPass(raw.run.envPass);
+    } catch (err) {
+      fail(`run.envPass: ${(err as Error).message}`);
+    }
+  }
   if (!Array.isArray(raw.permissions)) fail("permissions must be an array");
   for (const p of raw.permissions) if (!isPermission(p)) fail(`unknown permission: ${p}`);
   return { ...raw, dir };

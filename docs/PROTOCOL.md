@@ -57,6 +57,12 @@
 
 **버린 대안**: 핸드셰이크에서 권한을 선언하는 방식. 이 방식은 플러그인 코드가 이미 실행된 뒤에야 권한을 알 수 있다.
 
+**자식 환경 allowlist** (2026-10-12): 자식 프로세스는 부모 환경을 통째로 물려받지 않는다. 커널이 띄우는 플러그인, MCP/ACP/CLI 브리지가 띄우는 자식, brgr가 띄우는 `git`·하네스 CLI는 `lib/env`의 `childEnv`로 만든 환경만 받는다. 항상 남는 것은 `PATH, HOME, USER, LOGNAME, SHELL, LANG, LC_*, TZ, TMPDIR, TERM, COLORTERM, XDG_*, SSH_AUTH_SOCK, HERDR_*, ME_*`와 커널이 정하는 `ME_PLUGIN_ID/ME_DATA_DIR`뿐이다. 토큰은 파일 경로(`~/.config/me/secrets/…`)로만 넘기고, 명시 값(`run.env`, 브리지 `env/envFiles`)은 allowlist보다 항상 우선한다.
+- 플러그인 매니페스트 `run`에 `envPass: ["GH_TOKEN", "MYAPP_*"]`를 두면 그 이름(정확한 이름이나 `PREFIX_*`)이 추가로 남는다. `"*"`는 거부한다.
+- 브리지 설정에도 같은 `envPass`가 있다(MCP 서버별, ACP `agent`, CLI 공용).
+- 사용자 전용 탈출구는 최상위 설정 `env.pass` 배열로, 모든 자식에 더해진다. `me.local.json`의 `env`로 덮어쓸 수 있다. 모자란 값은 여기에 적고, 커밋되는 파일에는 비밀 값을 절대 적지 않는다.
+- 버린 대안: 부모 환경 전체 상속(밤새 도는 위임에 비밀 유출), 자식마다 셸 래퍼로 가리기(규칙이 흩어지고 감사할 수 없음).
+
 ## 3. 생명주기
 
 ```
@@ -213,6 +219,7 @@ head → 커널:  approval.request {summary, risk: "low"|"medium"|"high", payloa
   - 0을 주면 그 제한을 끈다. `me.local.json`의 `journal`로 덮어쓸 수 있다.
   - 지워진 trace는 `trace.get`에서 빈 트리로 나온다. 엔티티는 지우지 않는다(`updatedSeq`가 지워진 항목을 가리킬 수 있다).
   - 비운 페이지는 SQLite가 다시 쓴다. 비운 공간이 4MB 이상이고 파일의 절반 이상이면 VACUUM으로 파일을 줄인다.
+- 비밀 마스킹 (2026-10-12): 저널에 쓰기 직전 `lib/redact`가 값을 가린다. 비밀스러운 이름의 키(`token/secret/password/api key/authorization/cookie/private key`, 대소문자 무시)의 값과 알려진 토큰 모양(`sk-…`, `ghp_/gho_/github_pat_…`, `xox…-…`, `Bearer …`, `AKIA…`, JWT, PEM 개인키)이 `[REDACTED]`가 된다. 파일 경로(`~/.config/me/secrets/…`)는 경로만 남으므로 그대로 둔다. 비밀 없는 본문은 정규식 한 번으로 통과해서 비용이 없다(`scripts/journal-bench.ts` 전후 수치 동일). 웹 "이슈 올리기"는 저널·엔티티를 첨부하기 전에 한 번 더 가리고, Discord/Slack 발신은 `lib/messenger`에 넣을 때 가린다.
 
 ## 11. 오류 코드
 

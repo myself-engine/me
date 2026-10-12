@@ -5,6 +5,7 @@
 // splits or joins elements and nothing runs through a shell, so a value is always exactly one
 // argument. argv[0] cannot contain placeholders.
 
+import { validateEnvPass } from "@me/env";
 export type ParamType = "string" | "number" | "boolean";
 export type ParseMode = "text" | "json" | "lines";
 
@@ -36,6 +37,8 @@ export interface CliConfig {
   commands: Record<string, CommandSpec>;
   /** Base directory for commands' relative `cwd`; defaults to the plugin's working directory. */
   cwd?: string;
+  /** Extra parent env names kept for every command: exact names or PREFIX_* globs. No "*" wildcard. */
+  envPass?: string[];
 }
 
 export type ParamValue = string | number | boolean;
@@ -92,6 +95,13 @@ export function validateConfig(raw: unknown): CliConfig {
     throw new Error("config.commands must be an object of { <method>: { argv, ... } }");
   }
   if (cfg.cwd !== undefined && typeof cfg.cwd !== "string") errs.push("cwd must be a string");
+  if (cfg.envPass !== undefined) {
+    try {
+      validateEnvPass(cfg.envPass);
+    } catch (err) {
+      errs.push(`envPass: ${(err as Error).message}`);
+    }
+  }
   const names = Object.keys(cfg.commands);
   if (names.length === 0) errs.push("config.commands is empty");
   for (const name of names) {

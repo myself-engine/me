@@ -4,6 +4,7 @@
 // Wire shapes follow Agent Client Protocol v1 as published in @agentclientprotocol/sdk 1.3.0
 // (schema/schema.json). Only the fields this bridge reads or writes are typed here.
 import { isAbsolute } from "node:path";
+import { validateEnvPass } from "@me/env";
 
 export const ACP_PROTOCOL_VERSION = 1;
 export const DEFAULT_INIT_TIMEOUT_MS = 30_000;
@@ -20,6 +21,8 @@ export interface AgentCommand {
   env?: Record<string, string>;
   /** Environment variables read from files by path at spawn time (for API keys). `~/` expands to home. */
   envFiles?: Record<string, string>;
+  /** Extra parent env names kept for the agent process: exact names or PREFIX_* globs. No "*" wildcard. */
+  envPass?: string[];
   cwd?: string;
 }
 
@@ -68,6 +71,13 @@ export function validateConfig(raw: unknown): AcpConfig {
     else for (const k of Object.keys(a.envFiles)) if (!ENV_RE.test(k)) errs.push(`agent.envFiles: invalid variable name ${k}`);
   }
   if (a.cwd !== undefined && typeof a.cwd !== "string") errs.push("agent.cwd must be a string");
+  if (a.envPass !== undefined) {
+    try {
+      validateEnvPass(a.envPass);
+    } catch (err) {
+      errs.push(`agent.envPass: ${(err as Error).message}`);
+    }
+  }
   if (cfg.cwd !== undefined && (typeof cfg.cwd !== "string" || !isAbsolute(cfg.cwd))) errs.push("cwd must be an absolute path");
   if (cfg.permission !== undefined && !POLICIES.has(cfg.permission)) errs.push("permission must be reject or allow");
   const ms = (k: "initTimeoutMs" | "promptTimeoutMs" | "cancelGraceMs", zeroOk: boolean) => {

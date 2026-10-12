@@ -10,6 +10,7 @@ import { definePlugin } from "@me/sdk";
 import { type Access, type AccessConfig, classify, hostnameFromStatus, needsHostnameDetection, originOk, tailnetOrigin, tailscaleConfig, viewerOf } from "./access.ts";
 import { pwaResponse } from "./pwa.ts";
 import { stashSecrets } from "./secrets.ts";
+import { redactValue } from "@me/redact";
 import { DEFAULT_PROJECT_ROOTS, completeProjectPath, discoverProjects } from "./projects.ts";
 import index from "../ui/index.html";
 
@@ -280,10 +281,15 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
 
 async function createIssue(traceId: string | undefined, note: string, messageId?: string) {
   const repo = plugin.config.githubRepo as string | undefined;
-  const entries = traceId ? await plugin.journal({ traceId, limit: 500 }) : [];
-  const message = messageId ? (await plugin.entity.get("gjc-head.message", messageId))?.data : null;
+  // Entities hold live secrets (token files' contents never, but values in
+  // transit can); the journal is already masked at write time. Mask both
+  // again here so the GitHub issue never carries one.
+  const entries: { seq: number; ts: string; source: string; type: string; body: unknown }[] = traceId
+    ? redactValue(await plugin.journal({ traceId, limit: 500 }))
+    : [];
+  const message = messageId ? redactValue((await plugin.entity.get("gjc-head.message", messageId))?.data) : null;
   const taskId = (message as any)?.taskId;
-  const task = taskId ? (await plugin.entity.get("brgr.task", taskId))?.data : null;
+  const task = taskId ? redactValue((await plugin.entity.get("brgr.task", taskId))?.data) : null;
   const lines = entries
     .filter((e) => e.type !== "op.update" || !String(JSON.stringify(e.body)).includes("_delta"))
     .map((e) => `${e.seq} ${e.ts} ${e.source} ${e.type} ${JSON.stringify(e.body).slice(0, 400)}`);

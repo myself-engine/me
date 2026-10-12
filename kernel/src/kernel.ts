@@ -30,6 +30,7 @@ import {
   type Permission,
 } from "@me/protocol";
 import { hasPermission, matchPattern, validateManifest, type LoadedManifest } from "./manifest.ts";
+import { childEnv } from "@me/env";
 import { Store, type JournalType } from "./store.ts";
 import { validateAgainstSchema } from "./schema.ts";
 
@@ -107,6 +108,8 @@ export interface KernelOptions {
   initializeTimeoutMs?: number;
   /** Per-plugin config passed in `initialize`. */
   pluginConfig?: Record<string, Record<string, JsonValue>>;
+  /** Extra parent env names kept for every plugin child (config `env.pass`); appended to each manifest's `run.envPass`. */
+  envPass?: string[];
   /** Journal retention and delta coalescing; see JournalOptions. */
   journal?: JournalOptions;
 }
@@ -552,7 +555,14 @@ export class Kernel {
     try {
       proc = Bun.spawn(m.run.command, {
         cwd: resolve(m.dir, m.run.cwd ?? "."),
-        env: { ...process.env, ...(m.run.env ?? {}), ME_PLUGIN_ID: m.id, ME_DATA_DIR: join(this.opts.dataDir, "plugins", m.id) },
+        env: {
+          // Children get the allowlist only: base names plus the global
+          // env.pass and this plugin's run.envPass. run.env values are set
+          // explicitly and always win.
+          ...childEnv([...(this.opts.envPass ?? []), ...(m.run.envPass ?? [])], m.run.env ?? {}),
+          ME_PLUGIN_ID: m.id,
+          ME_DATA_DIR: join(this.opts.dataDir, "plugins", m.id),
+        },
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",

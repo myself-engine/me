@@ -40,6 +40,7 @@ Agent Client Protocol(ACP)을 말하는 에이전트 하나를 플러그인으�
     "args": ["--mode", "acp"],
     "env": { "NO_COLOR": "1" },
     "envFiles": { "OPENAI_API_KEY": "~/.config/me/secrets/openai.key" },
+    "envPass": ["MYAPP_*"],
     "cwd": "/Users/me/dev/project"
   },
   "cwd": "/Users/me/dev/project",
@@ -55,6 +56,7 @@ Agent Client Protocol(ACP)을 말하는 에이전트 하나를 플러그인으�
 | `agent.command`, `args` | 에이전트 실행 명령. 셸을 거치지 않는다. |
 | `agent.env` | 비밀이 아닌 추가 환경 변수 |
 | `agent.envFiles` | 파일에서 읽어 넣는 환경 변수(API 키 등). 띄울 때 읽고 앞뒤 공백을 지운다. 값은 어디에도 남기지 않는다. |
+| `agent.envPass` | 부모 환경에서 추가로 물려주는 이름(정확한 이름이나 `PREFIX_*`). `"*"`는 거부한다. 명시된 `env`·`envFiles` 값은 항상 우선한다. |
 | `cwd` | 새 세션의 기본 작업 디렉터리. 절대 경로 |
 | `permission` | `reject`(기본) 또는 `allow`. 아래 참고 |
 | `initTimeoutMs` | `initialize`, `session/new` 제한 시간. 기본 30초 |

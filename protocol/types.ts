@@ -78,7 +78,7 @@ export interface Manifest {
   id: PluginId;
   version: string;
   protocol: { min: number; max: number };
-  run: { command: string[]; cwd?: string; env?: Record<string, string> };
+  run: { command: string[]; cwd?: string; env?: Record<string, string>; envPass?: string[] };
   permissions: Permission[];
   provides?: {
     methods?: string[];

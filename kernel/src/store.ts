@@ -1,6 +1,7 @@
 // SQLite-backed journal and entity store (DESIGN §4, PROTOCOL §7, §10).
 import { Database } from "bun:sqlite";
 import type { EntityDoc, JournalEntry, JournalQueryParams, JsonValue } from "@me/protocol";
+import { needsRedactPass, redactValue } from "@me/redact";
 
 export type JournalType = JournalEntry["type"];
 
@@ -60,14 +61,15 @@ export class Store {
 
   append(input: AppendInput): { seq: number; ts: string } {
     const ts = new Date().toISOString();
-    const row = this.appendStmt.get(
-      ts,
-      input.source,
-      input.traceId,
-      input.causationId,
-      input.type,
-      JSON.stringify(input.body ?? null),
-    ) as { seq: number; ts: string };
+    // Secrets never reach the journal: one regex gate keeps the hot path
+    // cheap, and only a hit pays for the masking traversal.
+    const body = input.body ?? null;
+    let text = JSON.stringify(body);
+    if (needsRedactPass(text)) text = JSON.stringify(redactValue(body));
+    const row = this.appendStmt.get(ts, input.source, input.traceId, input.causationId, input.type, text) as {
+      seq: number;
+      ts: string;
+    };
     return row;
   }
 
