@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.4.1 (2026-10-12)
+
+- ops: a failing command check shows all its output lines (b307be3)
+
 ## v0.4.0 (2026-10-12)
 
 - config: write ${env:X} back as OpenCode's {env:X} instead of resolving it (#18) (857fc0f)
