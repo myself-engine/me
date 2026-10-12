@@ -3,11 +3,16 @@
 // Owner identity is a fixed non-agent session name (config.ownerSession).
 // This file only wires ports to adapters; logic lives in domain/ and app/.
 import { hostname } from "node:os";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { definePlugin } from "@me/sdk";
 import { brgrCli } from "./adapters/brgr-cli.ts";
 import { gitCli } from "./adapters/git.ts";
-import { KIND, kernelEvents, kernelTaskStore } from "./adapters/kernel.ts";
+import { KIND, kernelApprovals, kernelBudget, kernelEvents, kernelTaskStore } from "./adapters/kernel.ts";
+import { createVerifier, execWithTimeout } from "./adapters/verify.ts";
 import { createService } from "./app/service.ts";
+import type { BrgrConfig } from "./ports/index.ts";
 
 export type { Task, TaskState } from "./domain/task.ts";
 
@@ -35,6 +40,18 @@ const service = createService({
   store: kernelTaskStore(plugin),
   events: kernelEvents(plugin),
   deadlineSeconds: () => Number(plugin.config.deadlineSeconds ?? 1800),
+  config: () => plugin.config as unknown as BrgrConfig,
+  verifier: createVerifier({
+    exec: execWithTimeout,
+    readFile: async (path) => readFile(path, "utf8").catch(() => null),
+    listDir: (dir) => readdir(dir),
+    mkTemp: (prefix) => mkdtemp(join(tmpdir(), prefix)),
+    writeFile: (path, text) => writeFile(path, text),
+    removeDir: (dir) => rm(dir, { recursive: true, force: true }),
+    config: () => plugin.config as unknown as BrgrConfig,
+  }),
+  budget: kernelBudget(plugin),
+  approvals: kernelApprovals(plugin),
 });
 
 await plugin.run();

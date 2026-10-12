@@ -167,6 +167,7 @@ export function toneOf(state: string): Tone {
     case "awaiting-approval":
       return "needs";
     case "running":
+    case "queued":
     case "delegated":
     case "starting":
     case "accepted":
@@ -291,7 +292,7 @@ export function threadWait(s: State, threadId: string): "승인" | "검토" | "�
     if (task && (task.state === "sealed" || task.state === "accepted" || task.state === "apply-failed")) review = true;
     else if (task && task.state === "failed") failed = true;
     else if (!task && (m.status === "pending" || m.status === "streaming")) answering = true;
-    else if (task && (task.state === "running" || task.state === "delegated")) answering = true;
+    else if (task && (task.state === "running" || task.state === "queued" || task.state === "delegated")) answering = true;
   }
   if (review) return "검토";
   if (answering) return "답변";

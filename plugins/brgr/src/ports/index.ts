@@ -1,5 +1,5 @@
-// Ports: what the brgr plugin needs from the outside world.
-import type { Task, TaskState } from "../domain/task.ts";
+import type { JsonValue } from "@me/protocol";
+import type { Task, TaskState, VerifyInfo } from "../domain/task.ts";
 
 export interface CliResult {
   code: number;
@@ -50,4 +50,50 @@ export interface TaskStore {
 export interface Events {
   /** `name` is relative to the plugin, e.g. `task.applied` becomes `brgr.task.applied`. */
   emit(name: string, data: unknown): Promise<void>;
+}
+
+
+/** Plugin config for brgr (from pluginConfig brgr). All fields optional. */
+export interface BrgrConfig {
+  /** At most this many running delegations globally. Default 3. */
+  maxRunning?: number;
+  /** Explicit verify commands per project path or repo name. */
+  verify?: Record<string, string[]>;
+  /** When true, a sealed task with no checks stays for review instead of auto-applying. Default false. */
+  verifyRequired?: boolean;
+  /** Per-command timeout in ms for verify runs. Default 600000 (10 min). */
+  verifyTimeoutMs?: number;
+}
+
+/** Runs a sealed diff's project checks in an isolated worktree. */
+export interface Verifier {
+  verify(p: { taskId: string; project: string; diff: string }): Promise<VerifyInfo>;
+}
+
+/** Reply of the optional budget plugin's `budget.check`. */
+export interface BudgetCheck {
+  ok: boolean;
+  needsApproval?: boolean;
+  reason?: string;
+}
+
+/** The optional budget plugin, called through the kernel before a delegation starts. */
+export interface Budget {
+  check(p: { harness: string; project: string; autoApply: boolean }): Promise<BudgetCheck>;
+}
+
+export interface BudgetApproval {
+  approvalId: string;
+  decision: "approve" | "reject";
+  note?: string;
+}
+
+/** Kernel approval gate, used when the budget plugin asks for a human decision. */
+export interface Approvals {
+  request(p: {
+    summary: string;
+    risk: "low" | "medium" | "high";
+    payload: Record<string, JsonValue>;
+    expiresInSec: number;
+  }): Promise<BudgetApproval>;
 }

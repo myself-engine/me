@@ -1,6 +1,7 @@
 // Task state machine: pure functions only, no I/O.
 
 export type TaskState =
+  | "queued"
   | "running"
   | "awaiting-input"
   | "sealed"
@@ -10,6 +11,22 @@ export type TaskState =
   | "apply-failed"
   | "rejected"
   | "cancelled";
+
+/** One project's check run, recorded when a sealed diff is verified. */
+export interface VerifyCommandResult {
+  cmd: string;
+  exitCode: number;
+  ms: number;
+  /** Last 4000 chars of the combined output. */
+  tail: string;
+}
+
+export type VerifyState = "passed" | "failed" | "skipped" | "error";
+
+export interface VerifyInfo {
+  state: VerifyState;
+  commands: VerifyCommandResult[];
+}
 
 export interface Task {
   taskId: string;
@@ -23,6 +40,10 @@ export interface Task {
   origin: Record<string, unknown> | null;
   /** Full access mode: when the sealed result succeeds it is accepted and committed without review. */
   autoApply: boolean;
+  /** brgr's own task id once the queued delegation has started; absent for old tasks. */
+  remoteId?: string | null;
+  /** Verify gate result for the sealed diff; null until the gate runs. */
+  verify?: VerifyInfo | null;
   state: TaskState;
   outcome: string | null;
   resultText: string | null;
@@ -37,6 +58,7 @@ export interface Task {
 
 // Self-transitions are allowed where the watcher re-reports the same state (awaiting-input polls every few seconds).
 const TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
+  queued: ["running", "failed", "cancelled"],
   running: ["running", "awaiting-input", "sealed", "failed", "cancelled"],
   "awaiting-input": ["awaiting-input", "running", "sealed", "failed", "cancelled"],
   // sealed -> apply-failed: the project tree was dirty, so accept never reached brgr.
@@ -88,6 +110,8 @@ export function createTask(p: NewTask, at: string): Task {
   return {
     ...p,
     autoApply: p.autoApply ?? false,
+    remoteId: null,
+    verify: null,
     state: "running",
     outcome: null,
     resultText: null,
@@ -98,4 +122,9 @@ export function createTask(p: NewTask, at: string): Task {
     createdAt: at,
     updatedAt: at,
   };
+}
+
+/** A delegation waiting for a free slot; brgr has not started it yet, so there is no remote id. */
+export function createQueuedTask(p: NewTask, at: string): Task {
+  return { ...createTask(p, at), state: "queued" };
 }

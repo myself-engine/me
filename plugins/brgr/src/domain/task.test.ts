@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canTransition, createTask, InvalidTransition, isTerminal, transition, type TaskState } from "./task.ts";
+import { canTransition, createQueuedTask, createTask, InvalidTransition, isTerminal, transition, type TaskState } from "./task.ts";
 
 const AT = "2026-10-10T00:00:00.000Z";
 const base = () => createTask({ taskId: "t1", harness: "local.codex", objective: "do it", project: "/p", criterion: "c", origin: null }, AT);
@@ -11,6 +11,25 @@ describe("task state machine", () => {
     expect(t.state).toBe("running");
     expect(t.commitSha).toBeNull();
     expect(t.appliedAt).toBeNull();
+  });
+
+  test.each([
+    ["queued", "running"],
+    ["queued", "failed"],
+    ["queued", "cancelled"],
+  ] as [TaskState, TaskState][])("allows %s -> %s", (from, to) => {
+    expect(canTransition(from, to)).toBe(true);
+    expect(transition(at(from), to, {}, "later").state).toBe(to);
+  });
+
+  test.each([
+    ["queued", "sealed"],
+    ["queued", "accepted"],
+    ["queued", "queued"],
+    ["running", "queued"],
+  ] as [TaskState, TaskState][])("rejects %s -> %s", (from, to) => {
+    expect(canTransition(from, to)).toBe(false);
+    expect(() => transition(at(from), to, {}, "later")).toThrow(InvalidTransition);
   });
 
   test.each([
@@ -51,7 +70,12 @@ describe("task state machine", () => {
 
   test("terminal states have no way out", () => {
     for (const s of ["failed", "applied", "apply-failed", "rejected", "cancelled"] as const) expect(isTerminal(s)).toBe(true);
-    for (const s of ["running", "awaiting-input", "sealed", "accepted"] as const) expect(isTerminal(s)).toBe(false);
+    for (const s of ["queued", "running", "awaiting-input", "sealed", "accepted"] as const) expect(isTerminal(s)).toBe(false);
+  });
+
+  test("queued tasks carry no remote id and no verify result yet", () => {
+    const t = createQueuedTask({ taskId: "q-1", harness: "local.codex", objective: "do it", project: "/p", criterion: "c", origin: null }, AT);
+    expect(t).toMatchObject({ state: "queued", remoteId: null, verify: null, autoApply: false });
   });
 
   test("transition applies the patch, stamps updatedAt, and does not mutate the input", () => {
