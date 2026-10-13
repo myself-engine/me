@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.9.5 (2026-10-13)
+
+- commit messages from a short subject and the user's request instead of the brief's first line (df0a862)
+
 ## v0.9.4 (2026-10-13)
 
 - config: drop GJC; OMP fallback devin/deepseek-v4-1-flash-high; Cline as a worker harness (ea7f873)
