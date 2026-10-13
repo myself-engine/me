@@ -33,6 +33,7 @@ const plugin = definePlugin({
       putFact: async (fact) => { await plugin.entity.upsert("recall.fact", fact.id, fact); },
     };
     service = createRecallService({ dbPath: `${process.env.ME_DATA_DIR ?? "."}/recall.sqlite`, store, config: plugin.config as any });
+    service.start();
   },
   methods: {
     "recall.search": (p) => service.search(p ?? {}),

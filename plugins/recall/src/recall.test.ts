@@ -43,6 +43,7 @@ describe("recall transcript indexing", () => {
     writeTranscript(home, "claude", "claude-session.jsonl", [JSON.stringify({ type: "user", cwd: "/Users/justn/dev/my-app", timestamp: "2026-10-13T01:00:00Z", message: { role: "user", content: "한국어 설정 검색" } }), JSON.stringify({ type: "assistant", cwd: "/Users/justn/dev/my-app", message: { role: "assistant", content: [{ type: "text", text: "Remember: sk-abc123456789012345 is private" }] } })]);
     writeTranscript(home, "codex", "codex-session.jsonl", [JSON.stringify({ type: "session_meta", payload: { cwd: "/Users/justn/dev/me" } }), JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Find a durable project ledger" }] } }), JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "Find a durable project ledger" } })]);
     const svc = createRecallService({ dbPath: join(home, "plugin", "index.sqlite"), home, store: memory.adapter });
+    await svc.index();
     const kr = await svc.search({ q: "한국어 설정" });
     const en = await svc.search({ q: "durable ledger" });
     const own = await svc.search({ q: "conversation context" });
@@ -66,13 +67,15 @@ describe("recall transcript indexing", () => {
     const memory = store();
     const file = writeTranscript(home, "claude", "session.jsonl", [JSON.stringify({ type: "user", message: { role: "user", content: "before phrase" } }), "not-json"]);
     const svc = createRecallService({ dbPath: join(home, "index.sqlite"), home, store: memory.adapter });
+    await svc.index();
     await svc.search({ q: "before" });
-    await svc.search({ q: "before" });
+    await svc.index();
     expect((await svc.status()).skipped).toBeGreaterThan(0);
     const changed = JSON.stringify({ type: "user", message: { role: "user", content: "after phrase is longer" } });
     writeFileSync(file, `${changed}\n`);
     const future = new Date(Date.now() + 3000);
     utimesSync(file, future, future);
+    await svc.index();
     expect(await svc.search({ q: "before" })).toHaveLength(0);
     expect((await svc.search({ q: "after" })).length).toBe(1);
     svc.close();
@@ -82,6 +85,7 @@ describe("recall transcript indexing", () => {
     const home = makeDir();
     const memory = store([], [{ id: "keep", updatedSeq: 1, data: { role: "user", text: "preserve previous state", threadId: "t" } }]);
     const svc = createRecallService({ dbPath: join(home, "index.sqlite"), home, store: memory.adapter });
+    await svc.index();
     expect(await svc.search({ q: "previous" })).toHaveLength(1);
     memory.adapter.messages = async () => { throw new Error("read-state unavailable"); };
     expect(await svc.search({ q: "previous" })).toHaveLength(1);
@@ -93,9 +97,72 @@ describe("recall transcript indexing", () => {
     const memory = store([], [{ id: "large", updatedSeq: 1, data: { role: "user", text: "m".repeat(150) } }]);
     writeTranscript(home, "claude", "session.jsonl", [JSON.stringify({ type: "user", message: { role: "user", content: "f".repeat(100) } })]);
     const svc = createRecallService({ dbPath: join(home, "index.sqlite"), home, store: memory.adapter, config: { maxIndexBytes: 200 } });
+    await svc.index();
     const status = await svc.status();
     expect(status.counts.total).toBe(1);
     expect(status.skipped).toBeGreaterThan(0);
+    svc.close();
+  });
+
+  test("search reads the current index and never starts indexing", async () => {
+    const home = makeDir();
+    writeTranscript(home, "claude", "session.jsonl", [JSON.stringify({ type: "user", message: { role: "user", content: "only indexed later" } })]);
+    const svc = createRecallService({ dbPath: join(home, "index.sqlite"), home, store: store().adapter });
+    expect(await svc.search({ q: "indexed" })).toHaveLength(0);
+    expect(await svc.status()).toMatchObject({ running: false, filesDone: 0, filesTotal: 0, bytes: 0 });
+    await svc.index();
+    expect(await svc.search({ q: "indexed" })).toHaveLength(1);
+    svc.close();
+  });
+
+  test("orders files by newest mtime and budgets redacted stored text bytes", async () => {
+    const home = makeDir();
+    const oldFile = writeTranscript(home, "claude", "old.jsonl", [JSON.stringify({ type: "user", message: { role: "user", content: "old " + "x".repeat(55) } })]);
+    const newFile = writeTranscript(home, "claude", "new.jsonl", [JSON.stringify({ type: "user", message: { role: "user", content: `sk-${"a".repeat(80)} newest` } })]);
+    const old = new Date(Date.now() - 60_000);
+    const recent = new Date(Date.now());
+    utimesSync(oldFile, old, old);
+    utimesSync(newFile, recent, recent);
+    const stored = "[REDACTED] newest";
+    const svc = createRecallService({ dbPath: join(home, "index.sqlite"), home, store: store().adapter, config: { maxIndexBytes: Buffer.byteLength(stored) } });
+    await svc.index();
+    expect(await svc.search({ q: "newest" })).toHaveLength(1);
+    expect(await svc.search({ q: "old" })).toHaveLength(0);
+    expect((await svc.status()).bytes).toBe(Buffer.byteLength(stored));
+    svc.close();
+  });
+
+  test("yields between small indexing batches and reports progress", async () => {
+    const home = makeDir();
+    for (let i = 0; i < 4; i++) writeTranscript(home, "claude", `session-${i}.jsonl`, [JSON.stringify({ type: "user", message: { role: "user", content: `batch${i}` } })]);
+    const svc = createRecallService({ dbPath: join(home, "index.sqlite"), home, store: store().adapter, config: { batchSize: 1 } });
+    const observed: number[] = [];
+    let sampling = true;
+    const sample = () => setImmediate(() => {
+      if (!sampling) return;
+      void svc.status().then((status) => {
+        if (status.running) { observed.push(status.filesDone); sample(); }
+      });
+    });
+    sample();
+    const indexing = svc.index();
+    await indexing;
+    sampling = false;
+    const status = await svc.status();
+    expect(status).toMatchObject({ running: false, filesDone: 4, filesTotal: 4, bytes: 24 });
+    expect(observed.some((done) => done > 0 && done < status.filesTotal)).toBe(true);
+    svc.close();
+  });
+
+  test("starts an initial index run in the background", async () => {
+    const home = makeDir();
+    writeTranscript(home, "claude", "startup.jsonl", [JSON.stringify({ type: "user", message: { role: "user", content: "startup indexing" } })]);
+    const svc = createRecallService({ dbPath: join(home, "index.sqlite"), home, store: store().adapter });
+    svc.start();
+    await svc.index();
+    expect(await svc.search({ q: "startup" })).toHaveLength(1);
+    expect(await svc.status()).toMatchObject({ running: false, filesDone: 1, filesTotal: 1 });
+    expect((await svc.status()).lastRun).toBeTruthy();
     svc.close();
   });
 });

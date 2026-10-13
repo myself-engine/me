@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
@@ -15,7 +16,7 @@ export interface RecallStore {
   fact(id: string): Promise<RecallFact | null>;
   putFact(fact: RecallFact): Promise<void>;
 }
-export interface RecallConfig { maxIndexBytes?: number; maxMessageChars?: number; maxResults?: number }
+export interface RecallConfig { maxIndexBytes?: number; maxMessageChars?: number; maxResults?: number; indexIntervalMinutes?: number; batchSize?: number }
 export interface RecallOptions { dbPath: string; store: RecallStore; config?: RecallConfig; home?: string; now?: () => Date }
 
 const textFromContent = (content: unknown): string => {
@@ -62,16 +63,29 @@ function walkJsonl(root: string): string[] {
   return files.sort();
 }
 
-function fileMessages(source: "claude" | "codex", file: string, maxChars: number): { messages: RecallMessage[]; skipped: number } {
+async function* readLines(file: string): AsyncGenerator<string> {
+  const input = createReadStream(file, { encoding: "utf8" });
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  try { for await (const line of lines) yield line; }
+  finally { lines.close(); input.destroy(); }
+}
+
+const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+async function fileMessages(source: "claude" | "codex", file: string, maxChars: number): Promise<{ messages: RecallMessage[]; skipped: number }> {
   const rows: RecallMessage[] = [];
   const seenBodies = new Set<string>();
   let skipped = 0;
   let lineNo = 0;
-  const lines = readFileSync(file, "utf8").split(/\r?\n/u);
-  const cwd = source === "codex" ? lines.flatMap((line) => {
-    try { const row = JSON.parse(line); return row.type === "session_meta" && typeof row.payload?.cwd === "string" ? [row.payload.cwd] : []; } catch { return []; }
-  })[0] : undefined;
-  for (const line of lines) {
+  let cwd: string | undefined;
+  if (source === "codex") {
+    let count = 0;
+    for await (const line of readLines(file)) {
+      try { const row = JSON.parse(line); if (row.type === "session_meta" && typeof row.payload?.cwd === "string") { cwd = row.payload.cwd; break; } } catch { /* malformed data is counted in the parsing pass */ }
+      if (++count % 100 === 0) await yieldToEventLoop();
+    }
+  }
+  for await (const line of readLines(file)) {
     lineNo++;
     let input = line;
     if (cwd) {
@@ -97,6 +111,7 @@ function fileMessages(source: "claude" | "codex", file: string, maxChars: number
       item.size = Buffer.byteLength(item.body);
       rows.push(item);
     }
+    if (lineNo % 100 === 0) await yieldToEventLoop();
   }
   return { messages: rows, skipped };
 }
@@ -112,17 +127,29 @@ export function createRecallService(options: RecallOptions) {
   const maxBytes = Math.max(1, Number(options.config?.maxIndexBytes ?? 200 * 1024 * 1024));
   const maxChars = Math.max(1, Number(options.config?.maxMessageChars ?? 20_000));
   const maxResults = Math.max(1, Math.min(100, Number(options.config?.maxResults ?? 50)));
+  const intervalMs = Math.max(1, Number(options.config?.indexIntervalMinutes ?? 10)) * 60_000;
+  const batchSize = Math.max(1, Math.floor(Number(options.config?.batchSize ?? 10)));
   mkdirSync(dirname(options.dbPath), { recursive: true });
   const db = new Database(options.dbPath, { create: true });
   db.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, source TEXT NOT NULL, project TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, at TEXT NOT NULL, ref TEXT NOT NULL, file TEXT NOT NULL, version TEXT NOT NULL, size INTEGER NOT NULL);
     CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(source UNINDEXED, project UNINDEXED, title, body, tokenize='unicode61');
-    CREATE TABLE IF NOT EXISTS indexed_files (file TEXT PRIMARY KEY, mtime REAL NOT NULL, bytes INTEGER NOT NULL, skipped INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS indexed_files (file TEXT PRIMARY KEY, mtime REAL NOT NULL, bytes INTEGER NOT NULL, skipped INTEGER NOT NULL DEFAULT 0, file_size INTEGER NOT NULL DEFAULT 0, candidate_bytes INTEGER NOT NULL DEFAULT 0, stored INTEGER NOT NULL DEFAULT 1);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `);
+  const columns = db.query("PRAGMA table_info(indexed_files)").all() as { name: string }[];
+  if (!columns.some((column) => column.name === "file_size")) db.exec("ALTER TABLE indexed_files ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0");
+  if (!columns.some((column) => column.name === "candidate_bytes")) db.exec("ALTER TABLE indexed_files ADD COLUMN candidate_bytes INTEGER NOT NULL DEFAULT 0");
+  if (!columns.some((column) => column.name === "stored")) db.exec("ALTER TABLE indexed_files ADD COLUMN stored INTEGER NOT NULL DEFAULT 1");
   let skipped = Number((db.query("SELECT value FROM settings WHERE key='skipped'").get() as { value: string } | null)?.value ?? 0);
   let lastIndexedAt: string | null = (db.query("SELECT value FROM settings WHERE key='lastIndexedAt'").get() as { value: string } | null)?.value ?? null;
+  let lastRunAt: string | null = (db.query("SELECT value FROM settings WHERE key='lastRunAt'").get() as { value: string } | null)?.value ?? null;
+  let running = false;
+  let filesDone = 0;
+  let filesTotal = 0;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let activeRun: Promise<void> | null = null;
 
   const removeFile = (file: string) => {
     const rows = db.query("SELECT rowid FROM messages WHERE file=?").all(file) as { rowid: number }[];
@@ -140,10 +167,16 @@ export function createRecallService(options: RecallOptions) {
   };
 
   async function refresh() {
+    const budgetVersion = (db.query("SELECT value FROM settings WHERE key='budgetVersion'").get() as { value: string } | null)?.value;
+    if (budgetVersion !== "3") {
+      const oldFiles = db.query("SELECT file FROM indexed_files WHERE file NOT LIKE 'entity:%'").all() as { file: string }[];
+      for (const { file } of oldFiles) removeFile(file);
+      db.query("INSERT OR REPLACE INTO settings(key,value) VALUES('budgetVersion','3')").run();
+    }
     let skippedNow = 0;
     let changed = false;
     const limit = maxBytes;
-    let indexed = Number((db.query("SELECT COALESCE(SUM(bytes),0) AS bytes FROM indexed_files").get() as { bytes: number }).bytes);
+    let indexed = 0;
     let entityBytes = Number((db.query("SELECT COALESCE(SUM(size),0) AS bytes FROM messages WHERE source='me'").get() as { bytes: number }).bytes);
     const threads = await options.store.threads().catch(() => []);
     const threadMap = new Map(threads.map((t) => [t.id, t.data]));
@@ -151,7 +184,9 @@ export function createRecallService(options: RecallOptions) {
     let messagesLoaded = false;
     try { messages = await options.store.messages(); messagesLoaded = true; } catch { skippedNow++; }
     const seen = new Set<string>();
+    let entityDone = 0;
     for (const doc of messages) {
+      if (++entityDone % batchSize === 0) await yieldToEventLoop();
       const data = doc.data;
       if ((data.role !== "user" && data.role !== "assistant") || typeof data.text !== "string" || !data.text.trim()) continue;
       const file = `entity:${doc.id}`;
@@ -179,7 +214,11 @@ export function createRecallService(options: RecallOptions) {
       }
     }
     const roots: ["claude" | "codex", string][] = [["claude", join(home, ".claude", "projects")], ["codex", join(home, ".codex", "sessions")]];
-    const files = roots.flatMap(([source, root]) => walkJsonl(root).map((file) => ({ source, file })));
+    const files = roots.flatMap(([source, root]) => walkJsonl(root).flatMap((file) => {
+      try { const stat = statSync(file); return [{ source, file, stat }]; } catch { return []; }
+    })).sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+    filesDone = 0;
+    filesTotal = files.length;
     const live = new Set(files.map((f) => f.file));
     const existing = db.query("SELECT file FROM indexed_files WHERE file NOT LIKE 'entity:%'").all() as { file: string }[];
     for (const entry of existing) if (!live.has(entry.file)) {
@@ -188,31 +227,66 @@ export function createRecallService(options: RecallOptions) {
       removeFile(entry.file);
       changed = true;
     }
-    for (const { source, file } of files) {
+    for (const { source, file, stat } of files) {
       const absolute = resolve(file);
       const secretRoot = resolve(home, ".config", "me", "secrets");
-      if (absolute === secretRoot || absolute.startsWith(`${secretRoot}/`)) { skippedNow++; continue; }
-      let stat;
-      try { stat = statSync(file); } catch { continue; }
-      const prior = db.query("SELECT mtime,bytes FROM indexed_files WHERE file=?").get(file) as { mtime: number; bytes: number } | null;
-      if (prior?.mtime === stat.mtimeMs && prior.bytes === stat.size) continue;
-      const reserved = prior?.bytes ?? 0;
-      if (indexed - reserved + stat.size + entityBytes > limit) { skippedNow++; continue; }
-      const { messages: parsed, skipped: fileSkipped } = fileMessages(source, file, maxChars);
-      removeFile(file);
-      for (const item of parsed) {
-        item.version = `${stat.mtimeMs}:${stat.size}`;
-        addMessage(item);
+      if (absolute === secretRoot || absolute.startsWith(`${secretRoot}/`)) { removeFile(file); skippedNow++; filesDone++; continue; }
+      const prior = db.query("SELECT mtime,bytes,file_size,candidate_bytes,stored,skipped FROM indexed_files WHERE file=?").get(file) as { mtime: number; bytes: number; file_size: number; candidate_bytes: number; stored: number; skipped: number } | null;
+      if (prior?.mtime === stat.mtimeMs && prior.file_size === stat.size) {
+        if (prior.stored && indexed + prior.bytes + entityBytes <= limit) indexed += prior.bytes;
+        else if (prior.stored) {
+          const rows = db.query("SELECT rowid FROM messages WHERE file=?").all(file) as { rowid: number }[];
+          for (const row of rows) db.query("DELETE FROM messages_fts WHERE rowid=?").run(row.rowid);
+          db.query("DELETE FROM messages WHERE file=?").run(file);
+          db.query("UPDATE indexed_files SET bytes=0,stored=0 WHERE file=?").run(file);
+          indexed = Math.max(0, indexed - prior.bytes);
+          skippedNow++;
+          changed = true;
+        } else if (prior.candidate_bytes === 0) {
+          db.query("UPDATE indexed_files SET stored=1 WHERE file=?").run(file);
+        } else if (indexed + prior.candidate_bytes + entityBytes <= limit) {
+          const { messages: parsed, skipped: fileSkipped } = await fileMessages(source, file, maxChars);
+          const textBytes = parsed.reduce((sum, item) => sum + item.size, 0);
+          if (indexed + textBytes + entityBytes <= limit) {
+            for (const item of parsed) { item.version = `${stat.mtimeMs}:${stat.size}`; addMessage(item); }
+            db.query("UPDATE indexed_files SET bytes=?,candidate_bytes=?,skipped=?,stored=1 WHERE file=?").run(textBytes, textBytes, fileSkipped, file);
+            indexed += textBytes;
+          } else skippedNow++;
+        } else skippedNow++;
+      } else {
+        const { messages: parsed, skipped: fileSkipped } = await fileMessages(source, file, maxChars);
+        const textBytes = parsed.reduce((sum, item) => sum + item.size, 0);
+        removeFile(file);
+        if (indexed + textBytes + entityBytes <= limit) {
+          for (const item of parsed) {
+            item.version = `${stat.mtimeMs}:${stat.size}`;
+            addMessage(item);
+          }
+          db.query("INSERT OR REPLACE INTO indexed_files(file,mtime,bytes,skipped,file_size,candidate_bytes,stored) VALUES(?,?,?,?,?,?,1)").run(file, stat.mtimeMs, textBytes, fileSkipped, stat.size, textBytes);
+          indexed += textBytes;
+        } else {
+          db.query("INSERT OR REPLACE INTO indexed_files(file,mtime,bytes,skipped,file_size,candidate_bytes,stored) VALUES(?,?,0,?,?,?,0)").run(file, stat.mtimeMs, fileSkipped, stat.size, textBytes);
+          skippedNow++;
+        }
+        changed = true;
       }
-      db.query("INSERT OR REPLACE INTO indexed_files(file,mtime,bytes,skipped) VALUES(?,?,?,?)").run(file, stat.mtimeMs, stat.size, fileSkipped);
-      indexed = indexed - reserved + stat.size;
-      changed = true;
+      filesDone++;
+      if (filesDone % batchSize === 0) await yieldToEventLoop();
     }
 
     skipped = skippedNow + Number((db.query("SELECT COALESCE(SUM(skipped),0) AS n FROM indexed_files").get() as { n: number }).n);
     if (changed || lastIndexedAt === null) lastIndexedAt = (options.now?.() ?? new Date()).toISOString();
+    lastRunAt = (options.now?.() ?? new Date()).toISOString();
     db.query("INSERT OR REPLACE INTO settings(key,value) VALUES('skipped',?)").run(String(skipped));
     db.query("INSERT OR REPLACE INTO settings(key,value) VALUES('lastIndexedAt',?)").run(lastIndexedAt);
+    db.query("INSERT OR REPLACE INTO settings(key,value) VALUES('lastRunAt',?)").run(lastRunAt);
+  }
+
+  function index() {
+    if (activeRun) return activeRun;
+    running = true;
+    activeRun = refresh().catch(() => { skipped++; }).finally(() => { running = false; activeRun = null; });
+    return activeRun;
   }
 
   const requireText = (value: unknown, field: string) => {
@@ -222,7 +296,6 @@ export function createRecallService(options: RecallOptions) {
   return {
     async search(p: { q?: unknown; source?: unknown; project?: unknown; limit?: unknown }) {
       const q = requireText(p.q, "q");
-      await refresh();
       const terms = q.match(/[\p{L}\p{N}_-]+/gu) ?? [];
       if (!terms.length) return [];
       const match = terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ");
@@ -231,11 +304,12 @@ export function createRecallService(options: RecallOptions) {
       return rows;
     },
     async status() {
-      await refresh();
       const rows = db.query("SELECT source,COUNT(*) AS count FROM messages GROUP BY source").all() as { source: string; count: number }[];
       const counts: Record<string, number> = { me: 0, claude: 0, codex: 0, total: 0 };
       for (const row of rows) { counts[row.source] = row.count; counts.total += row.count; }
-      return { counts, lastIndexedAt, skipped };
+      const bytes = Number((db.query("SELECT COALESCE(SUM(bytes),0) AS bytes FROM indexed_files").get() as { bytes: number }).bytes)
+        + Number((db.query("SELECT COALESCE(SUM(size),0) AS bytes FROM messages WHERE source='me'").get() as { bytes: number }).bytes);
+      return { counts, lastIndexedAt, lastRun: lastRunAt, skipped, filesDone, filesTotal, bytes, running };
     },
     async remember(p: { project?: unknown; text?: unknown; source?: unknown; pinned?: unknown }) {
       const project = requireText(p.project, "project");
@@ -274,6 +348,14 @@ export function createRecallService(options: RecallOptions) {
       }
       return { project, text: out };
     },
-    close() { db.close(); },
+    start() {
+      if (!timer) {
+        void index();
+        timer = setInterval(() => { void index(); }, intervalMs);
+        timer.unref?.();
+      }
+    },
+    index,
+    close() { if (timer) clearInterval(timer); db.close(); },
   };
 }

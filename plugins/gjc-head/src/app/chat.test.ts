@@ -3,10 +3,10 @@ import type { HeadSettings, Message, Summary, Thread } from "../domain/types.ts"
 import type { ApprovalOutcome } from "../ports/index.ts";
 import { createHead, type HeadPorts } from "./chat.ts";
 
-function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean; brainError?: string; delegateError?: string; clarify?: boolean } = {}) {
+function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean; brainError?: string; delegateError?: string; clarify?: boolean; projectNotes?: string; recallError?: boolean } = {}) {
   let saved: HeadSettings | null = null;
   const warmLog: string[] = [];
-  const calls: Record<string, any[]> = { summarize: [], judge: [], approval: [], delegate: [], brain: [] };
+  const calls: Record<string, any[]> = { summarize: [], judge: [], approval: [], delegate: [], brain: [], recall: [] };
   const messages = new Map<string, Message>();
   const threads = new Map<string, Thread>();
   const alerts = new Map<string, any>();
@@ -37,6 +37,13 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
         calls.summarize!.push(p),
         { summaryEn: "Fix the bug", brief: "Fix it", needsCodeChange: true, scope: "single-file", harness: "local.codex", harnessReason: "", criterion: "bun test passes.", commitSubject: "Fix the bug", ambiguous: false, questions: [], ...opts.summary }
       ),
+    },
+    recall: {
+      context: async (p) => {
+        calls.recall!.push(p);
+        if (opts.recallError) throw new Error("recall unavailable");
+        return { text: opts.projectNotes ?? "" };
+      },
     },
     judge: { judge: async (p) => (calls.judge!.push(p), { simpleProb: opts.simpleProb ?? 0.1, confidence: 0.9, source: "jev", model: "m" }) },
     approvals: { request: async (p) => (calls.approval!.push(p), { approvalId: "a1", ...(opts.decision ?? { decision: "approve" }) }) },
@@ -132,14 +139,44 @@ describe("chat.send", () => {
     expect(s.calls.delegate).toHaveLength(0);
     expect(s.messages.get(first.messageId)?.text).toContain("1. 어느 범위를 고칠까요?");
     expect(s.messages.get(first.messageId)?.text).toContain("(추천)");
-    const second = await s.head.send({ threadId: first.threadId, text: "가입 화면으로 해줘" }, s.turn);
+    const second = await s.head.send({ threadId: first.threadId, text: "가입 화면" }, s.turn);
     expect(second.status).toBe("done");
     expect(s.calls.summarize).toHaveLength(1);
     expect(s.calls.delegate).toHaveLength(1);
     expect(s.calls.delegate[0].request).toContain("gjc-head 로그인 흐름 파일을 정리하고 테스트도 써 줘");
-    expect(s.calls.delegate[0].request).toContain("사용자 보충 답변: 가입 화면으로 해줘");
-    expect(s.calls.delegate[0].objective).toContain("User clarification: 가입 화면으로 해줘");
+    expect(s.calls.delegate[0].request).toContain("사용자 보충 답변: 가입 화면");
+    expect(s.calls.delegate[0].objective).toContain("Clarification: 어느 범위를 고칠까요? -> 가입 화면");
     expect(s.threads.get(first.threadId)?.pendingClarification).toBeUndefined();
+  });
+
+  test("resolves numbered clarification answers to their option text and keeps the raw request", async () => {
+    const cases = [
+      { answer: "1", questions: [{ q: "화면?", options: ["로그인", "가입"] }], expected: "Clarification: 화면? -> 로그인" },
+      { answer: "2", questions: [{ q: "화면?", options: ["로그인", "가입"] }], expected: "Clarification: 화면? -> 가입" },
+      { answer: "1번", questions: [{ q: "화면?", options: ["로그인", "가입"] }], expected: "Clarification: 화면? -> 로그인" },
+      { answer: "1 2", questions: [{ q: "화면?", options: ["로그인", "가입"] }, { q: "범위?", options: ["한 파일", "여러 파일"] }], expected: "Clarification: 화면? -> 로그인\nClarification: 범위? -> 여러 파일" },
+      { answer: "가입", questions: [{ q: "화면?", options: ["로그인", "가입"] }], expected: "Clarification: 화면? -> 가입" },
+      { answer: "문서도 함께 수정해 주세요", questions: [{ q: "화면?", options: ["로그인", "가입"] }], expected: "User clarification: 문서도 함께 수정해 주세요" },
+      { answer: "3", questions: [{ q: "화면?", options: ["로그인", "가입"] }], expected: "User clarification: 3" },
+    ];
+    for (const item of cases) {
+      const s = setup({ summary: { ambiguous: true, questions: item.questions } });
+      const first = await s.head.send({ text: "화면 코드를 고쳐 줘" }, s.turn);
+      await s.head.send({ threadId: first.threadId, text: item.answer }, s.turn);
+      expect(s.calls.delegate[0].objective).toContain(item.expected);
+      expect(s.calls.delegate[0].request).toContain(`사용자 보충 답변: ${item.answer}`);
+    }
+  });
+
+  test("includes optional project notes in summarization and ignores recall failures", async () => {
+    const withNotes = setup({ simpleProb: 0.05, projectNotes: "- Uses SQLite" });
+    await withNotes.head.send({ text: "프로젝트 코드를 고쳐 줘" }, withNotes.turn);
+    expect(withNotes.calls.recall).toEqual([{ project: "/p", text: "프로젝트 코드를 고쳐 줘" }]);
+    expect(withNotes.calls.summarize[0].projectNotes).toBe("- Uses SQLite");
+
+    const failed = setup({ simpleProb: 0.05, recallError: true });
+    await failed.head.send({ text: "프로젝트 코드를 고쳐 줘" }, failed.turn);
+    expect(failed.calls.summarize[0]).not.toHaveProperty("projectNotes");
   });
 
   test("clarification can be disabled and does not affect direct or read-only answers", async () => {

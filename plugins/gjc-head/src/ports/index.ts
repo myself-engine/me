@@ -44,8 +44,9 @@ export interface Normalizer {
 }
 
 export interface Summarizer {
-  summarize(p: { original: string; normalized: string; harnesses: string[]; project: string }): Promise<Summary>;
+  summarize(p: { original: string; normalized: string; harnesses: string[]; project: string; projectNotes?: string }): Promise<Summary>;
 }
+export interface RecallContext { context(p: { project: string; text: string }): Promise<{ text: string }> }
 
 export interface Judge {
   /** `request` is the normalized user text; Jev judges Korean directly (10/10 on a live sample, 2026-10-11). */

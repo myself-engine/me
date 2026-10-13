@@ -9,6 +9,7 @@
     "subscribe",
     "call:slang",
     "call:summarize",
+    "call:recall",
     "call:jev",
     "call:brgr",
     "approve.request",

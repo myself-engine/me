@@ -28,7 +28,7 @@ const dataDir = process.env.ME_DATA_DIR ?? ".";
 
 const plugin = definePlugin({
   methods: {
-    summarize: async (p: { original: string; normalized: string; harnesses: string[]; project?: string }, ctx) => {
+    summarize: async (p: { original: string; normalized: string; harnesses: string[]; project?: string; projectNotes?: string }, ctx) => {
       const model = (plugin.config.model as string) ?? "openai-codex/gpt-5.6-luna";
       // Follows the head's harness when the operator sets the same value here (own config, no cross-plugin call).
       const harness: HeadHarness = isHeadHarness(plugin.config.harness) ? plugin.config.harness : "gjc";
@@ -39,6 +39,8 @@ const plugin = definePlugin({
         `Original message: ${JSON.stringify(p.original)}`,
         `Normalized Korean: ${JSON.stringify(p.normalized)}`,
         `Project directory (may be empty): ${JSON.stringify(p.project ?? "")}`,
+        `Project notes (optional, at most 800 characters): ${JSON.stringify((p.projectNotes ?? "").slice(0, 800))}`,
+        "Use project notes as background when relevant; the user's request remains authoritative.",
         `Available worker harnesses: ${JSON.stringify(p.harnesses)}`,
         "",
         "JSON fields:",

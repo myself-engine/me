@@ -9,7 +9,7 @@ import { harnessName, isHeadHarness, withModelFallback, type HeadHarness } from 
 import { accessOf, brainChoice, checkAccess, checkCooldownSec, checkFallbackModels, checkHarness, checkHeadChoice, checkHeadModels, checkWorkerChoice, DEFAULT_ACCESS, DEFAULT_COOLDOWN_SEC, DEFAULT_HARNESS, EFFORTS, isAccessMode, isAnthropic, WORKER_EFFORTS } from "../domain/settings.ts";
 import { parseFallbackRef, refKey, resolveFallbackRef } from "../domain/settings.ts";
 import type { AccessMode, DelegationState, Effort, HeadSettings, Message, Thread } from "../domain/types.ts";
-import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, ModelCatalog, Normalizer, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
+import type { Approvals, Brain, BrainUpdate, Delegator, Events, Judge, ModelCatalog, Normalizer, RecallContext, Store, Summarizer, Turn, WarmBrain } from "../ports/index.ts";
 
 export interface HeadConfig {
   harnesses: string[];
@@ -40,6 +40,7 @@ export interface HeadPorts {
   brain: Brain;
   normalizer: Normalizer;
   summarizer: Summarizer;
+  recall?: RecallContext;
   judge: Judge;
   approvals: Approvals;
   delegator: Delegator;
@@ -75,6 +76,24 @@ export interface SendParams extends Choice {
 
 const now = () => new Date().toISOString();
 const TOOL_NAMES: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex", omp: "OMP", gjc: "GJC", opencode: "OpenCode" };
+function resolvedClarification(answer: string, questions: { q: string; options: string[] }[]) {
+  const raw = answer.trim();
+  const numeric = raw.replace(/번/gu, "").replace(/[，,]/gu, " ").trim();
+  if (numeric && /^[\d\s]+$/u.test(numeric)) {
+    const choices = numeric.split(/\s+/u).map(Number);
+    if (choices.length <= questions.length && choices.every((choice, index) => Number.isInteger(choice) && choice > 0 && choice <= (questions[index]?.options.length ?? 0))) {
+      const lines = choices.map((choice, index) => `Clarification: ${questions[index]!.q} -> ${questions[index]!.options[choice - 1]!}`);
+      return lines.join("\n");
+    }
+    return `User clarification: ${answer}`;
+  }
+  const normalized = raw.toLocaleLowerCase();
+  for (const question of questions) {
+    const option = question.options.find((candidate) => candidate.trim().toLocaleLowerCase() === normalized);
+    if (option) return `Clarification: ${question.q} -> ${option}`;
+  }
+  return `User clarification: ${answer}`;
+}
 /** The tool's product name for people: local.claude-code → Claude Code. */
 const toolName = (harness: string) => TOOL_NAMES[harness.replace(/^local\./, "")] ?? harness.replace(/^local\./, "");
 const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
@@ -82,7 +101,7 @@ const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(
 const READ_ONLY_REPLY = "이 대화는 읽기 전용이라 위임하지 않았어요. 코드를 바꾸려면 입력창 옆의 모드에서 '프로젝트 쓰기' 또는 '전부 알아서'로 바꾸고 다시 말해 주세요.";
 
 export function createHead(ports: HeadPorts, config: HeadConfig) {
-  const { brain, normalizer, summarizer, judge, approvals, delegator, store, events, models } = ports;
+  const { brain, normalizer, summarizer, recall, judge, approvals, delegator, store, events, models } = ports;
   /** Models that failed eligibly stay out until this time (ms); shared by every turn. */
   const cooldowns = new Map<string, number>();
   const clock = config.clock ?? Date.now;
@@ -257,13 +276,14 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     if (pending || answered) {
       const clarification = pending ?? answered!;
       const answer = pending ? p.text : answered!.answer;
+      const clarifiedBrief = resolvedClarification(answer, clarification.questions);
       delete thread.pendingClarification;
-      thread.answeredClarification = { original: clarification.original, answer, summary: clarification.summary };
+      thread.answeredClarification = { original: clarification.original, answer, summary: clarification.summary, questions: clarification.questions };
       const request = `${clarification.original}\n\n사용자 보충 답변: ${answer}`;
       reply.route = "delegate";
       reply.summary = {
         ...clarification.summary,
-        brief: `${clarification.summary.brief}\n\nUser clarification: ${answer}`,
+        brief: `${clarification.summary.brief}\n\n${clarifiedBrief}`,
       };
       await saveMessage(reply);
       try {
@@ -311,7 +331,9 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         turn.update({ kind: "access", mode: access, delegated: false });
       } else if (reply.route === "delegate") {
         turn.phase?.("summarizing", "지시서 작성 중");
-        const summary = await summarizer.summarize({ original: p.text, normalized: understood.normalized, harnesses: config.harnesses, project: thread.project });
+        let projectNotes = "";
+        try { projectNotes = (await recall?.context({ project: thread.project, text: p.text }))?.text?.slice(0, 800) ?? ""; } catch { /* recall is optional; delegation proceeds without notes */ }
+        const summary = await summarizer.summarize({ original: p.text, normalized: understood.normalized, harnesses: config.harnesses, project: thread.project, ...(projectNotes ? { projectNotes } : {}) });
         const questions = config.clarify === false || !Array.isArray(summary.questions) ? [] : summary.questions
           .slice(0, 2)
           .filter((question) => typeof question.q === "string" && question.q.trim() && Array.isArray(question.options))

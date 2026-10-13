@@ -10,7 +10,7 @@ import type { Effort } from "./domain/types.ts";
 import type { HeadHarness } from "@me/runner";
 import { gjcBrain, gjcModels } from "./adapters/gjc-brain.ts";
 import { ompBrain, ompModels } from "./adapters/omp-brain.ts";
-import { brgrDelegator, entityStore, kernelApprovals, kernelEvents, kernelJudge, kernelNormalizer, kernelSummarizer } from "./adapters/kernel.ts";
+import { brgrDelegator, entityStore, kernelApprovals, kernelEvents, kernelJudge, kernelNormalizer, kernelRecallContext, kernelSummarizer } from "./adapters/kernel.ts";
 import type { Brain } from "./ports/index.ts";
 
 let head: ReturnType<typeof createHead>;
@@ -32,6 +32,7 @@ const plugin = definePlugin({
         models: { list: (harness: HeadHarness) => catalogs[harness].list() },
         normalizer: kernelNormalizer(plugin),
         summarizer: kernelSummarizer(plugin),
+        recall: kernelRecallContext(plugin),
         judge: kernelJudge(plugin),
         approvals: kernelApprovals(plugin),
         delegator: brgrDelegator(plugin),

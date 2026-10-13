@@ -2,7 +2,7 @@
 import type { Plugin } from "@me/sdk";
 import type { AlertCause, HeadAlert } from "../domain/alerts.ts";
 import type { HeadSettings, Judgement, Message, Summary, Thread, Understood } from "../domain/types.ts";
-import type { Approvals, Delegator, Events, Judge, Normalizer, Store, Summarizer } from "../ports/index.ts";
+import type { Approvals, Delegator, Events, Judge, Normalizer, RecallContext, Store, Summarizer } from "../ports/index.ts";
 
 export const THREAD = "gjc-head.thread";
 export const MESSAGE = "gjc-head.message";
@@ -15,6 +15,17 @@ export function kernelNormalizer(plugin: Plugin): Normalizer {
 
 export function kernelSummarizer(plugin: Plugin): Summarizer {
   return { summarize: (p) => plugin.invoke<Summary>("summarize", "summarize", p, { timeoutMs: 120_000 }) };
+}
+
+export function kernelRecallContext(plugin: Plugin): RecallContext {
+  return {
+    async context(p) {
+      try {
+        const result = await plugin.invoke<{ text?: string }>("recall", "recall.context", p);
+        return { text: typeof result.text === "string" ? result.text.slice(0, 800) : "" };
+      } catch { return { text: "" }; }
+    },
+  };
 }
 
 export function kernelJudge(plugin: Plugin): Judge {

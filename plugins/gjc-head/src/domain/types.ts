@@ -17,7 +17,7 @@ export interface Thread {
     summary: Summary;
     questions: { q: string; options: string[] }[];
   };
-  answeredClarification?: { original: string; answer: string; summary: Summary };
+  answeredClarification?: { original: string; answer: string; summary: Summary; questions: { q: string; options: string[] }[] };
   createdAt: string;
   updatedAt: string;
 }
