@@ -8,3 +8,6 @@ spikes/**/*.err
 dist/
 me.local.json
 .shots/
+
+# Local-only notes (private infra details kept out of git)
+*.local.md
