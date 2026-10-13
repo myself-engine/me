@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v0.9.7 (2026-10-13)
+
+- me release: Korean release notes drafted from commits and decisions, optional joke opening, GitHub release (9fe2ca2)
+- gjc-head: fast path only for clear chat; direct answers hand work requests back to delegation (8841c8e)
+
 ## v0.9.6 (2026-10-13)
 
 - recall: background newest-first indexing; clarify answers resolve to options; project notes in delegation briefs (32a7ea2)
