@@ -47,6 +47,7 @@ export function releaseNotesPrompt(version: string, material: ReleaseMaterial, j
   return [
     `# me ${version}`,
     "이 자료만 사용해 me를 쓰는 사람을 위한 한국어 릴리스 노트를 작성하세요. 개발자용 설명이나 추측을 덧붙이지 마세요.",
+    `첫 줄에 반드시 제목 '# me ${version}'을 쓰세요.`,
     opening,
     "필요한 경우에만 다음 제목을 사용하세요: ## 새로 생긴 것, ## 고친 것, ## 알아둘 것. 각 항목은 빠진 점이나 문제와 이제 달라진 점을 1~2문장으로 씁니다. 해시와 파일 경로는 사용자가 직접 해야 할 때만 씁니다. 확인되지 않은 실제 동작은 알아둘 것에 적습니다. 마크다운 노트만 출력하세요.",
     "제공된 커밋 제목·본문:",
@@ -67,13 +68,26 @@ export function fallbackReleaseNotes(version: string, material: ReleaseMaterial)
 }
 
 function usableNote(text: string, version: string): string | null {
-  const note = text.trim().replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/, "").trim();
-  if (!note.startsWith(`# me ${version}\n`)) return null;
+  let note = text.trim().replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const lines = note.split("\n");
+  const firstLine = lines[0]?.trim() ?? "";
+  const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const title = new RegExp(`^#?\\s*me\\s+${escapedVersion}(?:\\s+.+)?$`, "i");
+  if (firstLine.startsWith("#")) {
+    if (!title.test(firstLine)) return null;
+    note = lines.slice(1).join("\n").trim();
+  } else if (title.test(firstLine)) {
+    note = lines.slice(1).join("\n").trim();
+  }
   const allowed = new Set(["새로 생긴 것", "고친 것", "알아둘 것"]);
   for (const heading of note.matchAll(/^## (.+)$/gm)) if (!allowed.has(heading[1]!)) return null;
   const firstSection = note.search(/^## /m);
-  const opening = note.slice(note.indexOf("\n") + 1, firstSection < 0 ? undefined : firstSection).trim();
-  return opening && opening.split(/[.!?。]+/).filter(Boolean).length <= 3 ? `${note}\n` : null;
+  const opening = note.slice(0, firstSection < 0 ? undefined : firstSection).trim();
+  const sentenceText = opening.replace(/\b(?:e\.g|i\.e|etc|vs|dr|mr|ms|prof)\./gi, (abbreviation) => abbreviation.replace(/\./g, ""));
+  const sentenceEnds = [...sentenceText.matchAll(/[!?。]+|\.(?=\s|$)/g)];
+  const tail = sentenceEnds.at(-1);
+  const sentenceCount = sentenceEnds.length + (tail ? sentenceText.slice(tail.index! + tail[0].length).trim() ? 1 : 0 : 1);
+  return opening && sentenceCount <= 3 ? `# me ${version}\n\n${note}\n` : null;
 }
 
 /** Model notes are best effort: abort after a short bound and always return a local fallback. */

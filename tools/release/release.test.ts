@@ -71,6 +71,34 @@ describe("release", () => {
     expect(calls[0].prompt).toContain("feat: add status hints");
     expect(calls[0].prompt).toContain("새 항목 근거");
     expect(calls[0].prompt).not.toContain("not supplied");
+    expect(calls[0].prompt).toContain("첫 줄에 반드시 제목 '# me v1.2.3'을 쓰세요.");
+  });
+
+  test("accepts the live Korean draft, normalizes equivalent titles, and counts only sentence endings", async () => {
+    const root = tempDir();
+    writeFileSync(join(root, "me.config.json"), JSON.stringify({ pluginConfig: { "gjc-head": { harness: "gjc", model: "m" } } }));
+    const draft = async (text: string, version = "v0.9.7") => draftReleaseNotes(root, version, material, false, { runHead: async () => ({ text, sessionId: null, stopReason: null, violation: null }) });
+    const liveDraft = readFileSync(new URL("./fixtures/v0.9.7-live-draft.md", import.meta.url), "utf8");
+    const acceptedLive = await draft(liveDraft);
+    expect(acceptedLive).toStartWith("# me v0.9.7\n\nme v0.9.7에서는");
+    expect(acceptedLive.match(/^# me v0\.9\.7$/gm)).toHaveLength(1);
+
+    const titled = await draft("# me v0.9.7 릴리스 노트\n\n이번 변경은 README.md와 e.g. 예시를 함께 정리해요.\n\n## 고친 것\n\n- 반영했어요.");
+    expect(titled).toStartWith("# me v0.9.7\n\n이번 변경");
+    expect(titled.match(/^# me v0\.9\.7$/gm)).toHaveLength(1);
+
+    const dottedVersion = await draft("v0.9.7에서는 README.md와 e.g. 표기를 함께 고쳤어요. 이제 잘 동작합니다.");
+    expect(dottedVersion).toContain("README.md와 e.g. 표기를");
+    expect(dottedVersion).not.toBe(fallbackReleaseNotes("v0.9.7", material));
+  });
+
+  test("rejects a draft with an unknown section heading", async () => {
+    const root = tempDir();
+    writeFileSync(join(root, "me.config.json"), JSON.stringify({ pluginConfig: { "gjc-head": { harness: "gjc", model: "m" } } }));
+    const note = await draftReleaseNotes(root, "v1.2.3", material, false, { runHead: async () => ({
+      text: "이번 변경을 담았어요.\n\n## 내부 구조\n\n- 바꿨어요.", sessionId: null, stopReason: null, violation: null,
+    }) });
+    expect(note).toBe(fallbackReleaseNotes("v1.2.3", material));
   });
 
   test("unusable or failed model output falls back to Korean headings and subjects", async () => {
