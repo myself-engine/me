@@ -57,36 +57,31 @@ describe("release", () => {
     expect(calls[1]).toContain("v0.1.0..v0.2.0");
   });
 
-  test("release prompt asks for bilingual notes, localized jokes, and the configured maintainer", async () => {
+  test("release prompt asks for bilingual notes, 해요체, and evidence-bounded descriptions", async () => {
     const root = tempDir();
-    writeFileSync(join(root, "me.config.json"), JSON.stringify({ maintainer: "Mina", pluginConfig: { "gjc-head": { harness: "omp", model: "primary", models: { omp: "selected" } } } }));
+    writeFileSync(join(root, "me.config.json"), JSON.stringify({ pluginConfig: { "gjc-head": { harness: "omp", model: "primary", models: { omp: "selected" } } } }));
     const calls: any[] = [];
     const fake = async (input: any) => { calls.push(input); return { text: "# me v1.2.3\n\n이번 판은 이제 바뀐 화면을 설명해요.\n\n## 새로 생긴 것\n\n- 바뀌었어요.", sessionId: null, stopReason: null, violation: null }; };
-    const plainPrompt = releaseNotesPrompt("v1.2.3", material, false);
-    const jokePrompt = releaseNotesPrompt("v1.2.3", material, true, "v1.2.3", "Mina");
-    expect(plainPrompt).toContain("## New");
-    expect(plainPrompt).toContain("## 새로 생긴 것");
-    expect(plainPrompt).toContain("---");
-    expect(jokePrompt).toContain("이제 기억력이 당신보다 똑똑할 수도 있어요");
-    expect(jokePrompt).toContain("Mina가 좀 더 나은 기능을 생각했어요");
-    expect(jokePrompt).toContain("shit");
-    expect(jokePrompt).toContain("damn");
-    expect(jokePrompt).toContain("가장 큰 변경과 연결된 짧은 실제 농담");
-    expect(jokePrompt).toContain("자료가 설명하는 범위를 정확히 유지하세요");
-    const note = await draftReleaseNotes(root, "v1.2.3", material, true, { runHead: fake });
+    const prompt = releaseNotesPrompt("v1.2.3", material);
+    expect(prompt).toContain("## New");
+    expect(prompt).toContain("## 새로 생긴 것");
+    expect(prompt).toContain("---");
+    expect(prompt).toContain("해요체(~해요, ~됐어요)");
+    expect(prompt).toContain("제공된 커밋과 결정 자료에 명시된 사실만 쓰고");
+    expect(prompt).toContain("현재 설정 가능한 하네스 대상은 대화 head, summarize, jev입니다.");
+    expect(prompt).toContain("예약 실행이나 위임에서 GJC/OMP를 고를 수 있다고 쓰지 마세요.");
+    const note = await draftReleaseNotes(root, "v1.2.3", material, { runHead: fake });
     expect(note).toContain("# me v1.2.3");
     expect(calls[0]).toMatchObject({ harness: "omp", model: "selected", allowTools: [], ephemeral: true, thinking: "low" });
     expect(calls[0].prompt).toContain("feat: add status hints");
     expect(calls[0].prompt).toContain("새 항목 근거");
-    expect(calls[0].prompt).not.toContain("not supplied");
     expect(calls[0].prompt).toContain("첫 줄에 반드시 제목 '# me v1.2.3'을 쓰세요.");
-    expect(calls[0].prompt).toContain("Mina를 3인칭으로");
   });
 
   test("accepts bilingual drafts, normalizes titles, and counts sentences in each opening", async () => {
     const root = tempDir();
     writeFileSync(join(root, "me.config.json"), JSON.stringify({ pluginConfig: { "gjc-head": { harness: "gjc", model: "m" } } }));
-    const draft = async (text: string, version = "v0.9.7", title = version) => draftReleaseNotes(root, version, material, false, { title, runHead: async () => ({ text, sessionId: null, stopReason: null, violation: null }) });
+    const draft = async (text: string, version = "v0.9.7", title = version) => draftReleaseNotes(root, version, material, { title, runHead: async () => ({ text, sessionId: null, stopReason: null, violation: null }) });
     const liveDraft = readFileSync(new URL("./fixtures/v0.9.7-live-draft.md", import.meta.url), "utf8");
     const acceptedLive = await draft(liveDraft);
     expect(acceptedLive).toStartWith("# me v0.9.7\n\nIn me v0.9.7");
@@ -115,7 +110,7 @@ describe("release", () => {
       "One. Two. Three. Four.\n\n---\n\n이번 변경을 담았어요.",
     ];
     for (const text of invalidDrafts) {
-      const note = await draftReleaseNotes(root, "v1.2.3", material, false, { runHead: async () => ({ text, sessionId: null, stopReason: null, violation: null }) });
+      const note = await draftReleaseNotes(root, "v1.2.3", material, { runHead: async () => ({ text, sessionId: null, stopReason: null, violation: null }) });
       expect(note).toBe(fallbackReleaseNotes("v1.2.3", material));
     }
   });
@@ -123,14 +118,14 @@ describe("release", () => {
   test("fallback keeps commit subjects in English and points Korean readers to that list", async () => {
     const root = tempDir();
     writeFileSync(join(root, "me.config.json"), JSON.stringify({ pluginConfig: { "gjc-head": { harness: "gjc", model: "m" } } }));
-    const note = await draftReleaseNotes(root, "v2.0.0", material, false, { runHead: async () => { throw new Error("offline"); } });
+    const note = await draftReleaseNotes(root, "v2.0.0", material, { runHead: async () => { throw new Error("offline"); } });
     expect(note).toBe(fallbackReleaseNotes("v2.0.0", material));
     expect(note).toContain("## Worth knowing");
     expect(note).toContain("---");
     expect(note).toContain("## 알아둘 것\n\n위 영어 목록과 같은 변경이에요");
     expect(note).toContain("feat: add status hints");
     expect(note).not.toContain("feat: add status hints 항목");
-    const ranged = await draftReleaseNotes(root, "v0.9.7", material, false, {
+    const ranged = await draftReleaseNotes(root, "v0.9.7", material, {
       title: "v0.6.0 ~ v0.9.7",
       runHead: async () => { throw new Error("offline"); },
     });
@@ -187,7 +182,7 @@ describe("release", () => {
     let content = "";
     const note = await releaseNotes({ root: "/repo", from: "v0.6.0", to: "v0.9.6", out: "catch-up.md" }, {
       run,
-      draft: async (_root, version, got, _joke, options) => { expect(version).toBe("v0.9.6"); expect(options?.title).toBe("v0.6.0 ~ v0.9.6"); expect(got.commits[0]?.subject).toBe("fix: ranged change"); expect(got.decisions).toBe("new decision"); return "# note"; },
+      draft: async (_root, version, got, options) => { expect(version).toBe("v0.9.6"); expect(options?.title).toBe("v0.6.0 ~ v0.9.6"); expect(got.commits[0]?.subject).toBe("fix: ranged change"); expect(got.decisions).toBe("new decision"); return "# note"; },
       write: (path, text) => { outputPath = path; content = text; },
     });
     expect(note).toBe("# note");

@@ -8,9 +8,9 @@ import { runHead, type HeadHarness, type RunnerResult } from "../../lib/runner/i
 export type Remote = { host: string; dir: string; service: string; pluginId?: string };
 export type ReleaseOptions = {
   root: string; bump: "minor" | "patch"; dryRun: boolean; skipE2e: boolean;
-  joke?: boolean; noNotes?: boolean; log?: (line: string) => void;
+  noNotes?: boolean; log?: (line: string) => void;
   runCommand?: (cmd: string[], cwd: string) => string;
-  draft?: (root: string, version: string, material: ReleaseMaterial, joke: boolean) => Promise<string>;
+  draft?: (root: string, version: string, material: ReleaseMaterial, opts?: { title?: string }) => Promise<string>;
   write?: (path: string, content: string) => void;
 };
 
@@ -18,14 +18,6 @@ export type ReleaseMaterial = { commits: { subject: string; body: string }[]; de
 type CommandRunner = (cmd: string[], cwd: string) => string;
 
 const DEFAULT_TIMEOUT_MS = 45_000;
-const DEFAULT_MAINTAINER = "Justn";
-
-function koreanSubjectParticle(name: string): string {
-  const last = [...name.trim()].at(-1) ?? "";
-  const code = last.charCodeAt(0);
-  if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28 === 0 ? "가" : "이";
-  return /[aeiou]$/i.test(last) ? "가" : "이";
-}
 
 function command(cmd: string[], cwd: string): string {
   const r = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
@@ -48,20 +40,13 @@ export function releaseMaterial(root: string, from: string | null, to = "HEAD", 
   return { commits, decisions };
 }
 
-export function releaseNotesPrompt(version: string, material: ReleaseMaterial, joke = false, title = version, maintainer = DEFAULT_MAINTAINER): string {
-  const opening = joke
-    ? [
-      "영어 opening은 자료에서 가장 큰 변경과 연결된 짧은 실제 농담 한 문장으로 시작하세요. me, 독자, 또는 maintainer를 3인칭으로 가볍게 놀릴 수 있습니다. 영어 농담에는 선택적으로 mild swear를 쓸 수 있지만 'shit' 또는 'damn'만 허용하고 농담 하나에 최대 하나만 쓰며 사람을 겨냥한 모욕으로 쓰지 마세요. 그 밖의 swear word는 모두 금지합니다. 이모지는 쓰지 마세요.",
-      `한국어 opening도 가장 큰 변경과 연결된 짧은 실제 농담 한 문장으로 시작하세요. me, 독자, 또는 maintainer ${maintainer}를 3인칭으로 가볍게 놀릴 수 있습니다. 말투 참고 예시(그대로 복사하지 마세요): 이제 기억력이 당신보다 똑똑할 수도 있어요 / ${maintainer}${koreanSubjectParticle(maintainer)} 좀 더 나은 기능을 생각했어요. 욕설과 이모지는 쓰지 마세요.`,
-      "두 언어의 농담은 각 언어에 자연스러워야 하며 서로 번역문일 필요는 없습니다. 각 opening은 사실을 담은 1~3문장으로 쓰고, 농담 뒤의 문장은 제공된 사실만 사용하세요.",
-    ].join("\n")
-    : "영어와 한국어 opening을 각각 사실만 담아 1~3문장으로 씁니다. 한국어는 자연스럽게 다시 쓰고 영어를 직역하지 마세요.";
+export function releaseNotesPrompt(version: string, material: ReleaseMaterial, title = version): string {
   return [
     `# me ${title}`,
     "이 자료만 사용해 me를 쓰는 사람을 위한 영어·한국어 릴리스 노트를 한 파일로 작성하세요. 영어를 먼저 쓰고 한국어는 같은 사실을 자연스럽게 다시 쓰세요. 개발자용 설명이나 추측을 덧붙이지 마세요.",
     `첫 줄에 반드시 제목 '# me ${title}'을 쓰세요.`,
-    opening,
-    "본문 순서는 영어 opening, 영어의 비어 있지 않은 섹션만 '## New', '## Fixed', '## Worth knowing' 순으로, 단독 줄 '---', 한국어 opening, 한국어의 비어 있지 않은 섹션만 '## 새로 생긴 것', '## 고친 것', '## 알아둘 것' 순으로 씁니다. 섹션 내용과 opening은 양쪽 언어에서 같은 사실을 다뤄야 합니다. 자료가 설명하는 범위를 정확히 유지하세요. 예를 들어 대화별 설정을 기본 설정처럼 넓혀 쓰지 마세요. 범위가 모호하면 추측하지 말고 생략하세요. 각 섹션 항목은 1~2문장으로 씁니다. 해시와 파일 경로는 사용자가 직접 해야 할 때만 씁니다. 확인되지 않은 실제 동작은 Worth knowing/알아둘 것에 적습니다. 마크다운 노트만 출력하세요.",
+    "영어와 한국어 opening은 각각 사실만 담아 1~3문장으로 씁니다. 한국어는 자연스럽게 다시 쓰고 영어를 직역하지 마세요. 한국어 부분은 해요체(~해요, ~됐어요)를 사용하세요.",
+    "본문 순서는 영어 opening, 영어의 비어 있지 않은 섹션만 '## New', '## Fixed', '## Worth knowing' 순으로, 단독 줄 '---', 한국어 opening, 한국어의 비어 있지 않은 섹션만 '## 새로 생긴 것', '## 고친 것', '## 알아둘 것' 순으로 씁니다. 섹션 내용과 opening은 양쪽 언어에서 같은 사실을 다뤄야 합니다. 제공된 커밋과 결정 자료에 명시된 사실만 쓰고, 설정 가능한 범위나 하네스를 자료보다 넓히지 마세요. 현재 설정 가능한 하네스 대상은 대화 head, summarize, jev입니다. 예약 실행이나 위임에서 GJC/OMP를 고를 수 있다고 쓰지 마세요. 범위가 모호하면 추측하지 말고 생략하세요. 각 섹션 항목은 1~2문장으로 씁니다. 해시와 파일 경로는 사용자가 직접 해야 할 때만 씁니다. 확인되지 않은 실제 동작은 Worth knowing/알아둘 것에 적습니다. 마크다운 노트만 출력하세요.",
     "제공된 커밋 제목·본문:",
     JSON.stringify(material.commits),
     "이전 릴리스 이후 추가된 docs/DECISIONS.md 내용:",
@@ -115,14 +100,13 @@ function usableNote(text: string, version: string, title = version): string | nu
 }
 
 /** Model notes are best effort: abort after a short bound and always return a local fallback. */
-export async function draftReleaseNotes(root: string, version: string, material: ReleaseMaterial, joke = false, opts: {
+export async function draftReleaseNotes(root: string, version: string, material: ReleaseMaterial, opts: {
   runHead?: (input: Parameters<typeof runHead>[0]) => Promise<RunnerResult>; timeoutMs?: number;
   title?: string;
 } = {}): Promise<string> {
   const title = opts.title ?? version;
   const fallback = fallbackReleaseNotes(version, material, title);
   const config = readJson(join(root, "me.config.json"));
-  const maintainer = typeof config?.maintainer === "string" && config.maintainer.trim() ? config.maintainer.trim() : DEFAULT_MAINTAINER;
   const head = config?.pluginConfig?.["gjc-head"] ?? {};
   const harness = head.harness as HeadHarness;
   const model = head.models?.[harness] ?? head.model;
@@ -132,7 +116,7 @@ export async function draftReleaseNotes(root: string, version: string, material:
   const run = opts.runHead ?? runHead;
   try {
     const result = await Promise.race([
-      run({ harness, model, cwd: root, prompt: releaseNotesPrompt(version, material, joke, title, maintainer), allowTools: [], ephemeral: true, thinking: "low", signal: controller.signal }),
+      run({ harness, model, cwd: root, prompt: releaseNotesPrompt(version, material, title), allowTools: [], ephemeral: true, thinking: "low", signal: controller.signal }),
       new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("release note draft timed out")); }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS); }),
     ]);
     return usableNote(result.text, version, title) ?? fallback;
@@ -151,7 +135,7 @@ export function createGithubRelease(version: string, notePath: string, root: str
   }
 }
 
-export type NotesRangeOptions = { root: string; from: string; to?: string; joke?: boolean; out?: string; log?: (line: string) => void };
+export type NotesRangeOptions = { root: string; from: string; to?: string; out?: string; log?: (line: string) => void };
 
 /** Return the first version tag on the first-parent path after `from`, falling back to `to`. */
 export function firstReleaseAfter(from: string, to: string, run: CommandRunner = command, root = process.cwd()): string {
@@ -174,7 +158,7 @@ export async function releaseNotes(o: NotesRangeOptions, deps: { run?: CommandRu
     ? nextVersion(run(["git", "tag", "--list", "v*", "--sort=-v:refname"], o.root).split("\n").filter(Boolean)[0] ?? null, "patch")
     : to;
   const title = to === "HEAD" ? version : `${firstReleaseAfter(o.from, to, run, o.root)} ~ ${to}`;
-  const note = await (deps.draft ?? draftReleaseNotes)(o.root, version, material, o.joke ?? false, { title });
+  const note = await (deps.draft ?? draftReleaseNotes)(o.root, version, material, { title });
   if (o.out) (deps.write ?? writeFileSync)(resolve(o.root, o.out), note);
   else (o.log ?? console.log)(note.trimEnd());
   return note;
@@ -238,7 +222,7 @@ export async function release(o: ReleaseOptions) {
   const subjects = run(["git", "log", "--no-merges", "--format=%s (%h)", ...(last ? [`${last}..HEAD`] : [])]).split("\n").filter(Boolean);
   const material = o.noNotes ? null : releaseMaterial(o.root, last, "HEAD", (cmd, cwd) => run(cmd, { cwd }));
   const notePath = join(o.root, "docs", "releases", `${version}.md`);
-  const note = material ? await (o.draft ?? draftReleaseNotes)(o.root, version, material, o.joke ?? false) : "";
+  const note = material ? await (o.draft ?? draftReleaseNotes)(o.root, version, material) : "";
   step(`버전 ${version} (이전 ${last ?? "없음"}, 커밋 ${subjects.length}개)`);
   if (o.dryRun) {
     log(subjects.map((s) => `  - ${s}`).join("\n"));
