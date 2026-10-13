@@ -18,6 +18,14 @@ export type ReleaseMaterial = { commits: { subject: string; body: string }[]; de
 type CommandRunner = (cmd: string[], cwd: string) => string;
 
 const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_MAINTAINER = "Justn";
+
+function koreanSubjectParticle(name: string): string {
+  const last = [...name.trim()].at(-1) ?? "";
+  const code = last.charCodeAt(0);
+  if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28 === 0 ? "가" : "이";
+  return /[aeiou]$/i.test(last) ? "가" : "이";
+}
 
 function command(cmd: string[], cwd: string): string {
   const r = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
@@ -40,20 +48,20 @@ export function releaseMaterial(root: string, from: string | null, to = "HEAD", 
   return { commits, decisions };
 }
 
-export function releaseNotesPrompt(version: string, material: ReleaseMaterial, joke = false, title = version): string {
+export function releaseNotesPrompt(version: string, material: ReleaseMaterial, joke = false, title = version, maintainer = DEFAULT_MAINTAINER): string {
   const opening = joke
     ? [
-      "첫 문장은 자료에서 가장 큰 변경과 연결된 실제 농담이어야 합니다. me나 me를 쓰는 사람을 한국어 해요체로 가볍게 놀리는 짧은 한 줄로 쓰세요. 외모나 지능을 심하게 놀리지 말고, 욕설과 이모지는 쓰지 말며, 40자 안팎을 넘기지 마세요. 따뜻한 요약으로 시작하지 마세요.",
-      "말투 참고 예시(그대로 복사하지 마세요): 이제 기억력이 당신보다 똑똑할 수도 있어요 / 이제 me가 당신보다 먼저 일어나요 / 되돌리기가 생겨서 실수해도 아무도 몰라요.",
-      "첫 문장 뒤의 내용은 사실만 쓰세요.",
+      "영어 opening은 자료에서 가장 큰 변경과 연결된 짧은 실제 농담 한 문장으로 시작하세요. me, 독자, 또는 maintainer를 3인칭으로 가볍게 놀릴 수 있습니다. 영어 농담에는 선택적으로 mild swear를 쓸 수 있지만 'shit' 또는 'damn'만 허용하고 농담 하나에 최대 하나만 쓰며 사람을 겨냥한 모욕으로 쓰지 마세요. 그 밖의 swear word는 모두 금지합니다. 이모지는 쓰지 마세요.",
+      `한국어 opening도 가장 큰 변경과 연결된 짧은 실제 농담 한 문장으로 시작하세요. me, 독자, 또는 maintainer ${maintainer}를 3인칭으로 가볍게 놀릴 수 있습니다. 말투 참고 예시(그대로 복사하지 마세요): 이제 기억력이 당신보다 똑똑할 수도 있어요 / ${maintainer}${koreanSubjectParticle(maintainer)} 좀 더 나은 기능을 생각했어요. 욕설과 이모지는 쓰지 마세요.`,
+      "두 언어의 농담은 각 언어에 자연스러워야 하며 서로 번역문일 필요는 없습니다. 각 opening은 사실을 담은 1~3문장으로 쓰고, 농담 뒤의 문장은 제공된 사실만 사용하세요.",
     ].join("\n")
-    : "첫 문단은 한국어로 사실만 담아 1~3문장으로 씁니다.";
+    : "영어와 한국어 opening을 각각 사실만 담아 1~3문장으로 씁니다. 한국어는 자연스럽게 다시 쓰고 영어를 직역하지 마세요.";
   return [
     `# me ${title}`,
-    "이 자료만 사용해 me를 쓰는 사람을 위한 한국어 릴리스 노트를 작성하세요. 개발자용 설명이나 추측을 덧붙이지 마세요.",
+    "이 자료만 사용해 me를 쓰는 사람을 위한 영어·한국어 릴리스 노트를 한 파일로 작성하세요. 영어를 먼저 쓰고 한국어는 같은 사실을 자연스럽게 다시 쓰세요. 개발자용 설명이나 추측을 덧붙이지 마세요.",
     `첫 줄에 반드시 제목 '# me ${title}'을 쓰세요.`,
     opening,
-    "자료가 설명하는 범위를 정확히 유지하세요. 예를 들어 대화별 설정을 기본 설정처럼 넓혀 쓰지 마세요. 범위가 모호하면 세부 내용을 추측하지 말고 생략하세요. 필요한 경우에만 다음 제목을 사용하세요: ## 새로 생긴 것, ## 고친 것, ## 알아둘 것. 각 항목은 빠진 점이나 문제와 이제 달라진 점을 1~2문장으로 씁니다. 해시와 파일 경로는 사용자가 직접 해야 할 때만 씁니다. 확인되지 않은 실제 동작은 알아둘 것에 적습니다. 마크다운 노트만 출력하세요.",
+    "본문 순서는 영어 opening, 영어의 비어 있지 않은 섹션만 '## New', '## Fixed', '## Worth knowing' 순으로, 단독 줄 '---', 한국어 opening, 한국어의 비어 있지 않은 섹션만 '## 새로 생긴 것', '## 고친 것', '## 알아둘 것' 순으로 씁니다. 섹션 내용과 opening은 양쪽 언어에서 같은 사실을 다뤄야 합니다. 자료가 설명하는 범위를 정확히 유지하세요. 예를 들어 대화별 설정을 기본 설정처럼 넓혀 쓰지 마세요. 범위가 모호하면 추측하지 말고 생략하세요. 각 섹션 항목은 1~2문장으로 씁니다. 해시와 파일 경로는 사용자가 직접 해야 할 때만 씁니다. 확인되지 않은 실제 동작은 Worth knowing/알아둘 것에 적습니다. 마크다운 노트만 출력하세요.",
     "제공된 커밋 제목·본문:",
     JSON.stringify(material.commits),
     "이전 릴리스 이후 추가된 docs/DECISIONS.md 내용:",
@@ -62,13 +70,10 @@ export function releaseNotesPrompt(version: string, material: ReleaseMaterial, j
 }
 
 export function fallbackReleaseNotes(version: string, material: ReleaseMaterial, title = version): string {
-  const groups: Record<string, string[]> = { "새로 생긴 것": [], "고친 것": [], "알아둘 것": [] };
-  for (const { subject } of material.commits) {
-    const kind = /^(feat|add|new)(\(|:)/i.test(subject) ? "새로 생긴 것" : /^(fix|bug)(\(|:)/i.test(subject) ? "고친 것" : "알아둘 것";
-    groups[kind]!.push(`- ${subject} 항목을 반영했어요.`);
-  }
-  const sections = Object.entries(groups).filter(([, items]) => items.length).map(([title, items]) => `## ${title}\n\n${items.join("\n")}`);
-  return [`# me ${title}`, "이번 버전에는 다음 변경을 담았어요.", ...sections].join("\n\n") + "\n";
+  const subjects = material.commits.map(({ subject }) => `- ${subject}`);
+  const english = ["This release includes the following changes.", ...(subjects.length ? ["## Worth knowing", ...subjects] : [])];
+  const korean = ["이번 버전에는 아래 변경이 담겼어요.", "## 알아둘 것", "위 영어 목록과 같은 변경이에요"];
+  return [`# me ${title}`, english.join("\n\n"), "---", korean.join("\n\n")].join("\n\n") + "\n";
 }
 
 function usableNote(text: string, version: string, title = version): string | null {
@@ -84,15 +89,29 @@ function usableNote(text: string, version: string, title = version): string | nu
   } else if (versionTitle.test(firstLine) || expectedTitle.test(firstLine)) {
     note = lines.slice(1).join("\n").trim();
   }
-  const allowed = new Set(["새로 생긴 것", "고친 것", "알아둘 것"]);
-  for (const heading of note.matchAll(/^## (.+)$/gm)) if (!allowed.has(heading[1]!)) return null;
-  const firstSection = note.search(/^## /m);
-  const opening = note.slice(0, firstSection < 0 ? undefined : firstSection).trim();
-  const sentenceText = opening.replace(/\b(?:e\.g|i\.e|etc|vs|dr|mr|ms|prof)\./gi, (abbreviation) => abbreviation.replace(/\./g, ""));
-  const sentenceEnds = [...sentenceText.matchAll(/[!?。]+|\.(?=\s|$)/g)];
-  const tail = sentenceEnds.at(-1);
-  const sentenceCount = sentenceEnds.length + (tail ? sentenceText.slice(tail.index! + tail[0].length).trim() ? 1 : 0 : 1);
-  return opening && sentenceCount <= 3 ? `# me ${title}\n\n${note}\n` : null;
+  if ((note.match(/^---$/gm) ?? []).length !== 1) return null;
+  const [english, korean] = note.split(/^---$/m).map((part) => part.trim());
+  if (!english || !korean) return null;
+  const allowedHeadings: readonly string[][] = [["New", "Fixed", "Worth knowing"], ["새로 생긴 것", "고친 것", "알아둘 것"]];
+  for (const [part, allowed] of [[english, allowedHeadings[0]!], [korean, allowedHeadings[1]!]] as const) {
+    const headings = [...part.matchAll(/^## (.+)$/gm)];
+    const indexes = headings.map((heading) => allowed.indexOf(heading[1]!));
+    if (indexes.some((index, position) => index < 0 || (position > 0 && index <= indexes[position - 1]!))) return null;
+    const firstSection = part.search(/^## /m);
+    const opening = part.slice(0, firstSection < 0 ? undefined : firstSection).trim();
+    if (!opening) return null;
+    for (let i = 0; i < headings.length; i++) {
+      const start = headings[i]!.index! + headings[i]![0].length;
+      const end = headings[i + 1]?.index ?? part.length;
+      if (!part.slice(start, end).trim()) return null;
+    }
+    const sentenceText = opening.replace(/\b(?:e\.g|i\.e|etc|vs|dr|mr|ms|prof)\./gi, (abbreviation) => abbreviation.replace(/\./g, ""));
+    const sentenceEnds = [...sentenceText.matchAll(/[!?。]+|\.(?=\s|$)/g)];
+    const tail = sentenceEnds.at(-1);
+    const sentenceCount = sentenceEnds.length + (tail ? sentenceText.slice(tail.index! + tail[0].length).trim() ? 1 : 0 : 1);
+    if (sentenceCount < 1 || sentenceCount > 3) return null;
+  }
+  return `# me ${title}\n\n${note}\n`;
 }
 
 /** Model notes are best effort: abort after a short bound and always return a local fallback. */
@@ -103,6 +122,7 @@ export async function draftReleaseNotes(root: string, version: string, material:
   const title = opts.title ?? version;
   const fallback = fallbackReleaseNotes(version, material, title);
   const config = readJson(join(root, "me.config.json"));
+  const maintainer = typeof config?.maintainer === "string" && config.maintainer.trim() ? config.maintainer.trim() : DEFAULT_MAINTAINER;
   const head = config?.pluginConfig?.["gjc-head"] ?? {};
   const harness = head.harness as HeadHarness;
   const model = head.models?.[harness] ?? head.model;
@@ -112,7 +132,7 @@ export async function draftReleaseNotes(root: string, version: string, material:
   const run = opts.runHead ?? runHead;
   try {
     const result = await Promise.race([
-      run({ harness, model, cwd: root, prompt: releaseNotesPrompt(version, material, joke, title), allowTools: [], ephemeral: true, thinking: "low", signal: controller.signal }),
+      run({ harness, model, cwd: root, prompt: releaseNotesPrompt(version, material, joke, title, maintainer), allowTools: [], ephemeral: true, thinking: "low", signal: controller.signal }),
       new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("release note draft timed out")); }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS); }),
     ]);
     return usableNote(result.text, version, title) ?? fallback;
