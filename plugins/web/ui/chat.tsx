@@ -446,7 +446,7 @@ const workerLabel = (w: { harness: string; model?: string; effort?: string }) =>
   [toolName(w.harness), w.model, w.effort && effortLabel(w.effort)].filter(Boolean).join(" · ");
 
 /** States where a delegation's result sits in the thread as a card instead of a line. */
-const RESULT_STATES = new Set(["sealed", "accepted", "applied", "apply-failed", "reverted"]);
+const RESULT_STATES = new Set(["awaiting-input", "sealed", "accepted", "applied", "apply-failed", "reverted"]);
 
 /** First sentence of the worker's report for the card: body text over headings, markdown marks dropped. */
 const firstLine = (text: string | null) => {
@@ -461,6 +461,7 @@ function ResultCard({ task, time }: { task: Task; time: string }) {
   const [dev] = useDevView();
   const [busy, act] = useBusy(notify);
   const [totals, setTotals] = useState<ReturnType<typeof diffTotals> | null>(null);
+  const [answer, setAnswer] = useState("");
   useEffect(() => {
     if (!conn) return;
     let live = true;
@@ -482,6 +483,24 @@ function ResultCard({ task, time }: { task: Task; time: string }) {
         <span className="muted right">{time}</span>
       </div>
       {summary && <p className="approval-summary">{summary}</p>}
+      {task.state === "awaiting-input" && task.question && (
+        <section className="result-note" aria-label="워커 질문">
+          <strong>질문이 왔어요</strong>
+          <p className="brief">{task.question.text}</p>
+          {task.question.kind === "menu" && task.question.options?.length ? (
+            <div className="actions-row">
+              {task.question.options.map((option, i) => (
+                <button key={option} className="quiet" disabled={busy || !conn} onClick={() => act(() => conn!.request("task.answer", { taskId: task.taskId, questionId: task.question!.id, choice: String(i + 1) }))}>{option}</button>
+              ))}
+            </div>
+          ) : (
+            <form className="actions-row" onSubmit={(e) => { e.preventDefault(); const text = answer.trim(); if (text) act(() => conn!.request("task.answer", { taskId: task.taskId, questionId: task.question!.id, text }).then(() => setAnswer(""))); }}>
+              <input aria-label="질문 답변" value={answer} onChange={(e) => setAnswer(e.target.value)} disabled={busy || !conn} />
+              <button className="primary" type="submit" disabled={busy || !conn || !answer.trim()}>답하기</button>
+            </form>
+          )}
+        </section>
+      )}
       <p className="result-stat">
         {totals ? (
           <>

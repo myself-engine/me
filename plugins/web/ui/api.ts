@@ -74,6 +74,8 @@ export interface Task {
   model?: string;
   effort?: string;
   state: string;
+  question?: { id: string; text: string; at: string; kind: "message" | "menu" | "screen"; options?: string[] } | null;
+  answers?: { questionId: string; text: string | null; choice: string | null; at: string }[];
   outcome: string | null;
   resultText: string | null;
   error: string | null;

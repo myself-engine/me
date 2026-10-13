@@ -7,7 +7,7 @@ import { useDevView } from "./dev.ts";
 import { effortLabel } from "./head.tsx";
 import { Review, REVIEWABLE } from "./review.tsx";
 import { chatHref } from "./routes.ts";
-import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, toolName, useFocusTrap, useNow } from "./shared.tsx";
+import { Empty, Header, Markdown, StatusDot, elapsed, repoName, stateLabel, toolName, useBusy, useFocusTrap, useNow } from "./shared.tsx";
 import { taskTitle, toneOf, type Tone } from "./state.ts";
 
 const RUNNING = new Set(["running", "queued", "delegated", "awaiting-input", "awaiting-approval"]);
@@ -74,7 +74,8 @@ export function TaskPanel({ taskId, onClose }: { taskId: string; onClose: () => 
 }
 
 function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () => void }) {
-  const { s } = useApp();
+  const { s, conn, notify } = useApp();
+  const [busy, act] = useBusy(notify);
   const [dev] = useDevView();
   const now = useNow(5000);
   const task = s.tasks[taskId];
@@ -91,6 +92,7 @@ function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () => void }
   const queued = task.state === "queued";
   const ahead = queued ? queueAhead(s.tasks, task) : 0;
   const criterion = task.criterion || message?.delegation?.criterion;
+  const [answer, setAnswer] = useState("");
   return (
     <div className="detail">
       <Header title={taskTitle(s, { taskId: task.taskId, objective: task.objective })} back={back}>
@@ -113,6 +115,25 @@ function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () => void }
         </div>
 
         {task.error && <div className="card error">⚠️ {task.error}</div>}
+
+        {task.state === "awaiting-input" && task.question && (
+          <section className="card" aria-label="워커 질문">
+            <strong>질문이 왔어요</strong>
+            <p className="brief">{task.question.text}</p>
+            {task.question.kind === "menu" && task.question.options?.length ? (
+              <div className="actions-row">
+                {task.question.options.map((option, i) => (
+                  <button key={option} type="button" className="quiet" disabled={busy || !conn} onClick={() => act(() => conn!.request("task.answer", { taskId: task.taskId, questionId: task.question!.id, choice: String(i + 1) }))}>{option}</button>
+                ))}
+              </div>
+            ) : (
+              <form className="actions-row" onSubmit={(e) => { e.preventDefault(); const text = answer.trim(); if (text && conn) act(() => conn.request("task.answer", { taskId: task.taskId, questionId: task.question!.id, text }).then(() => setAnswer(""))); }}>
+                <input aria-label="질문 답변" value={answer} onChange={(e) => setAnswer(e.target.value)} disabled={busy || !conn} />
+                <button className="primary" type="submit" disabled={busy || !conn || !answer.trim()}>답하기</button>
+              </form>
+            )}
+          </section>
+        )}
 
         <VerifyStatus task={task} />
 

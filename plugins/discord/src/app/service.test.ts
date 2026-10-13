@@ -74,6 +74,7 @@ class FakeKernel implements Kernel {
   decisions: { approvalId: string; decision: string; amend?: Record<string, unknown> }[] = [];
   accepted: string[] = [];
   rejected: string[] = [];
+  answers: { taskId: string; text?: string; choice?: string; questionId: string }[] = [];
   respond: Respond = async (p, onUpdate) => {
     onUpdate({ kind: "understood", normalized: p.text, replaced: [] });
     onUpdate({ kind: "judgement", route: "direct" });
@@ -108,6 +109,12 @@ class FakeKernel implements Kernel {
   }
   async sealedTasks() {
     return [...this.tasks.values()].filter((t) => t.state === "sealed");
+  }
+  async awaitingTasks() {
+    return [...this.tasks.values()].filter((t) => t.state === "awaiting-input");
+  }
+  async answerTask(taskId: string, answer: { text?: string; choice?: string; questionId: string }) {
+    this.answers.push({ taskId, ...answer });
   }
   async acceptTask(taskId: string) {
     this.accepted.push(taskId);
@@ -352,6 +359,28 @@ test("a sealed task tied to a Discord conversation posts its result with accept/
   app.onKernelEvent("brgr.task.applied", { taskId, state: "applied" });
   await app.idle();
   expect(gateway.edits.at(-1)).toMatchObject({ messageId: card.id, rows: [] });
+});
+
+test("posts an awaiting question and routes an admitted Discord thread reply to brgr", async () => {
+  const { threadId } = await delegatedMessage();
+  const taskId = "waiting-question";
+  kernel.tasks.set(taskId, { taskId, harness: "local.codex", state: "awaiting-input", resultText: null, origin: { threadId }, question: { id: "q1", text: "계속할까요?", at: "2026-10-13T00:00:00Z", kind: "message" } });
+  app.onKernelEvent("brgr.task.awaiting-input", { taskId, state: "awaiting-input" });
+  await app.idle();
+  expect(gateway.sent.at(-1)?.text).toContain("질문이 왔어요");
+  gateway.receive({ place: "dm", messageId: "answer-1", content: "네", repliesToBot: true });
+  await app.idle();
+  expect(kernel.answers).toEqual([{ taskId, text: "네", questionId: "q1" }]);
+  expect(kernel.chats.at(-1)?.text).not.toBe("네");
+});
+
+test("routes a numbered Discord menu reply as native input choice", async () => {
+  const { threadId } = await delegatedMessage();
+  const taskId = "waiting-menu";
+  kernel.tasks.set(taskId, { taskId, harness: "local.codex", state: "awaiting-input", resultText: null, origin: { threadId }, question: { id: "q-menu", text: "어느 쪽인가요?", at: "2026-10-13T00:00:00Z", kind: "menu", options: ["첫째", "둘째"] } });
+  gateway.receive({ place: "dm", messageId: "answer-menu", content: "2", repliesToBot: true });
+  await app.idle();
+  expect(kernel.answers).toEqual([{ taskId, choice: "2", questionId: "q-menu" }]);
 });
 
 test("crash recovery reissues an uncertain reply with the duplicate label", async () => {

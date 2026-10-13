@@ -5,7 +5,7 @@
   "run": { "command": ["bun", "src/main.ts"] },
   "permissions": ["read-state", "emit", "shell", "call:budget", "approve.request"],
   "provides": {
-    "methods": ["task.delegate", "task.result", "task.diff", "task.accept", "task.reject", "task.cancel", "task.revert", "harness.list"],
+    "methods": ["task.delegate", "task.result", "task.diff", "task.answer", "task.accept", "task.reject", "task.cancel", "task.revert", "harness.list"],
     "events": ["brgr.task.queued", "brgr.task.running", "brgr.task.sealed", "brgr.task.failed", "brgr.task.verified", "brgr.task.awaiting-input", "brgr.task.accepted", "brgr.task.applied", "brgr.task.apply-failed", "brgr.task.rejected", "brgr.task.cancelled", "brgr.task.reverted"],
     "kinds": ["task"]
   },

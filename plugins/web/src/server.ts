@@ -323,6 +323,8 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       return plugin.approval.decide(m.approvalId, { decision: m.decision, note: m.note, ...(m.amend ? { amend: m.amend } : {}) });
     case "task.diff":
       return plugin.invoke("brgr", "task.diff", { taskId: m.taskId, stat: !!m.stat });
+    case "task.answer":
+      return plugin.invoke("brgr", "task.answer", { taskId: m.taskId, text: m.text, choice: m.choice, questionId: m.questionId });
     case "task.accept":
       return plugin.invoke("brgr", "task.accept", { taskId: m.taskId, reason: m.reason }, { timeoutMs: 120_000 });
     case "task.reject":

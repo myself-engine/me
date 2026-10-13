@@ -1,5 +1,7 @@
 // Use cases of the brgr plugin, written against ports only.
 import { commitMessage, touchedFiles } from "../domain/commit.ts";
+import { latestWorkerQuestion, parseMessages, questionFromMessage, questionFromStatus } from "../domain/input.ts";
+import { alreadyAnswered } from "../domain/question.ts";
 import { configListFor, planSnapshots, SNAPSHOT_CAP_BYTES } from "../domain/snapshot.ts";
 import { createQueuedTask, transition, type Task, type TaskPatch, type TaskState } from "../domain/task.ts";
 import type { VerifyInfo } from "../domain/task.ts";
@@ -312,7 +314,7 @@ export function createService(deps: ServiceDeps) {
         }
         const w = JSON.parse(r.stdout);
         if (w.state === "awaiting_input") {
-          await setState(taskId, "awaiting-input");
+          await captureQuestion(taskId, id);
           await sleep(5_000);
           continue;
         }
@@ -375,6 +377,64 @@ export function createService(deps: ServiceDeps) {
       for (const t of await store.listByState(state)) void watch(t.taskId);
     }
     await pump();
+  }
+
+  /**
+   * Records the worker's latest question on an awaiting-input task: worker→owner
+   * messages first, then a bounded tail of the pane via status. Re-captures
+   * while still waiting so a follow-up question replaces the old one.
+   */
+  async function captureQuestion(taskId: string, id: string) {
+    const at = now();
+    const m = await brgr.messages(id, "owner").catch(() => null);
+    if (m && m.code === 0) {
+      const pick = latestWorkerQuestion(parseMessages(m.stdout));
+      if (pick) {
+        const question = questionFromMessage(pick, at);
+        if (question) return setState(taskId, "awaiting-input", { question, error: null });
+      }
+    }
+    const s = await brgr.status(id).catch(() => null);
+    if (s && s.code === 0) {
+      const question = questionFromStatus(s.stdout, at);
+      if (question) return setState(taskId, "awaiting-input", { question, error: null });
+    }
+    return setState(taskId, "awaiting-input", { question: null });
+  }
+
+  /**
+   * Answers the worker's question: free text goes as an owner→worker message,
+   * a menu choice goes as native TUI input. Idempotent per question id; refuses
+   * with a Korean reason when the task no longer waits for input.
+   */
+  async function answer(p: { taskId: string; text?: string; choice?: string; questionId?: string }) {
+    const task = await load(p?.taskId);
+    if (task.state !== "awaiting-input") throw new Error("지금은 질문을 기다리는 작업이 아니에요. 질문이 왔을 때 답해 주세요.");
+    const question = task.question ?? null;
+    const questionId = p.questionId ?? question?.id ?? null;
+    if (!questionId) throw new Error("답할 질문을 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+    if (question?.id !== questionId) throw new Error("이 질문은 이미 바뀌었어요. 최신 질문을 확인해 주세요.");
+    if (alreadyAnswered(task.answers ?? [], questionId)) return task;
+    const text = p.text?.trim() ? p.text.trim().slice(0, 4000) : "";
+    const choice = p.choice?.trim() ? p.choice.trim().slice(0, 200) : "";
+    if (!text && !choice) throw new Error("답 내용을 적어 주세요.");
+    const id = remote(task) ?? task.taskId;
+    const at = now();
+    // A menu choice is native TUI input; free text is a message.
+    if (choice) {
+      const index = Number(choice) - 1;
+      if (question?.options?.length && !question.options.includes(choice) && (!Number.isInteger(index) || index < 0 || index >= question.options.length)) {
+        throw new Error("질문에 있는 선택지로 답해 주세요.");
+      }
+      const r = await brgr.input(id, { text: choice });
+      if (r.code !== 0) throw new Error(`brgr input failed: ${cliError(r)}`);
+    } else {
+      const r = await brgr.sendMessage(id, { to: "worker", kind: "reply", body: text, replyTo: questionId ?? undefined });
+      if (r.code !== 0) throw new Error(`brgr message send failed: ${cliError(r)}`);
+    }
+    const answers = [...(task.answers ?? []), { questionId, text: choice ? null : text, choice: choice || null, at }];
+    const updated = await store.put({ ...task, answers, updatedAt: at }).then(() => load(task.taskId));
+    return updated;
   }
 
   async function diff(p: { taskId: string; stat?: boolean }) {
@@ -556,6 +616,7 @@ export function createService(deps: ServiceDeps) {
     watch,
     resume,
     diff,
+    answer,
     accept,
     reject,
     cancel,

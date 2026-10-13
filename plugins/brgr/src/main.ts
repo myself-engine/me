@@ -28,6 +28,7 @@ const plugin = definePlugin({
     "task.delegate": (p) => service.delegate(p),
     "task.result": (p) => service.result(p),
     "task.diff": (p) => service.diff(p),
+    "task.answer": (p) => service.answer(p),
     "task.accept": (p) => service.accept(p),
     "task.reject": (p) => service.reject(p),
     "task.cancel": (p) => service.cancel(p),

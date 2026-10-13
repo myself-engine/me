@@ -110,6 +110,7 @@
       "dependencies": {
         "@me/env": "workspace:*",
         "@me/protocol": "workspace:*",
+        "@me/redact": "workspace:*",
         "@me/sdk": "workspace:*",
       },
     },

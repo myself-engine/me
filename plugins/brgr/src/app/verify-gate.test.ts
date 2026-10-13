@@ -19,6 +19,9 @@ class FakeBrgr implements BrgrCli {
   reject = (_id: string, _reason: string) => Promise.resolve(ok("{}"));
   cancel = (_id: string) => Promise.resolve(ok("{}"));
   apply = (_id: string, _ws: string) => Promise.resolve(ok("{}"));
+  messages = (_id: string, _recipient: "owner" | "worker") => Promise.resolve(ok("[]"));
+  sendMessage = (_id: string, _p: { to: "owner" | "worker"; kind: "question" | "reply" | "note"; body: string; replyTo?: string }) => Promise.resolve(ok("{}"));
+  input = (_id: string, _p: { text?: string; key?: string }) => Promise.resolve(ok("{}"));
 }
 
 const git: Git = {

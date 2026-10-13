@@ -1,6 +1,17 @@
 import type { JsonValue } from "@me/protocol";
 import type { Task, TaskState, VerifyInfo } from "../domain/task.ts";
 
+/** A worker→owner or owner→worker message on a brgr task. */
+export interface BrgrMessage {
+  id: string;
+  kind: string;
+  from: string;
+  to: string;
+  body: string;
+  replyTo?: string | null;
+  at?: string;
+}
+
 export interface CliResult {
   code: number;
   stdout: string;
@@ -34,6 +45,11 @@ export interface BrgrCli {
   cancel(taskId: string): Promise<CliResult>;
   /** Writes the sealed diff into `workspace` (`--execute`). */
   apply(taskId: string, workspace: string): Promise<CliResult>;
+  /** Worker↔owner messages on a task (`brgr message list/send --json`). */
+  messages(taskId: string, recipient: "owner" | "worker"): Promise<CliResult>;
+  sendMessage(taskId: string, p: { to: "owner" | "worker"; kind: "question" | "reply" | "note"; body: string; replyTo?: string }): Promise<CliResult>;
+  /** Native input to the task's TUI, e.g. a menu answer (`brgr input --json`). */
+  input(taskId: string, p: { text?: string; key?: string }): Promise<CliResult>;
 }
 
 /** Git in a working tree. Unless noted, methods throw on failure. */

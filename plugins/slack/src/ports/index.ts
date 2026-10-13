@@ -68,6 +68,7 @@ export interface Task {
   state: string;
   resultText: string | null;
   origin: Record<string, unknown> | null;
+  question?: { id: string; text: string; at: string; kind: "message" | "menu" | "screen"; options?: string[] } | null;
 }
 
 /** Entity slack.conversation, keyed by head thread id: which Slack conversation a thread belongs to. */
@@ -87,6 +88,8 @@ export interface Kernel {
   decideApproval(approvalId: string, d: { decision: "approve" | "reject"; note?: string; amend?: Record<string, unknown> }): Promise<void>;
   task(taskId: string): Promise<Task | null>;
   sealedTasks(): Promise<Task[]>;
+  awaitingTasks(): Promise<Task[]>;
+  answerTask(taskId: string, answer: { text?: string; choice?: string; questionId: string }): Promise<void>;
   acceptTask(taskId: string, reason: string): Promise<void>;
   rejectTask(taskId: string, reason: string): Promise<void>;
   taskDiff(taskId: string): Promise<{ diff: string; error: string | null }>;
@@ -96,7 +99,7 @@ export interface Kernel {
 
 /** Cards already posted (approval or task), so restarts and repeated events do not post twice. */
 export interface PostedCard {
-  kind: "approval" | "task";
+  kind: "approval" | "task" | "task-question";
   ref: string;
   originKey: string;
   messageId: string;

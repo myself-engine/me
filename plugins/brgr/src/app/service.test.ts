@@ -40,6 +40,9 @@ class FakeBrgr implements BrgrCli {
   reject = (id: string, reason: string) => this.reply("reject", [id, reason], ok("{}"));
   cancel = (id: string) => this.reply("cancel", [id], ok("{}"));
   apply = (id: string, ws: string) => this.reply("apply", [id, ws], ok("{}"));
+  messages = (id: string, recipient: "owner" | "worker") => this.reply("messages", [id, recipient], ok(JSON.stringify([])));
+  sendMessage = (id: string, p: { to: "owner" | "worker"; kind: string; body: string; replyTo?: string }) => this.reply("sendMessage", [id, p], ok("{}"));
+  input = (id: string, p: { text?: string; key?: string }) => this.reply("input", [id, p], ok("{}"));
   names = () => this.calls.map((c) => c[0]);
 }
 
@@ -268,6 +271,109 @@ describe("other methods", () => {
       await expect(call()).rejects.toThrow("taskId is required");
     }
     expect(brgr.calls).toEqual([]);
+  });
+});
+
+describe("task.answer", () => {
+  const awaiting = () => {
+    const s = setup("awaiting-input");
+    s.store.tasks.set("t1", { ...s.store.tasks.get("t1")!, question: { id: "q1", text: "계속할까요?", at: "2026-10-10T00:00:00.000Z", kind: "message" }, answers: [] });
+    return s;
+  };
+
+  test("free text goes as an owner→worker reply and records one answer", async () => {
+    const { brgr, service, get } = awaiting();
+    await service.answer({ taskId: "t1", text: "네, 계속하세요" });
+    expect(brgr.calls).toEqual([["sendMessage", "t1", { to: "worker", kind: "reply", body: "네, 계속하세요", replyTo: "q1" }]]);
+    expect(get().answers).toHaveLength(1);
+  });
+
+  test("a menu choice goes as native input", async () => {
+    const { brgr, service } = awaiting();
+    await service.answer({ taskId: "t1", choice: "1" });
+    expect(brgr.calls).toEqual([["input", "t1", { text: "1" }]]);
+  });
+
+  test("a second answer to the same question is ignored", async () => {
+    const { brgr, service, get } = awaiting();
+    await service.answer({ taskId: "t1", text: "네" });
+    await service.answer({ taskId: "t1", text: "네 다시" });
+    expect(brgr.names()).toEqual(["sendMessage"]);
+    expect(get().answers).toHaveLength(1);
+  });
+
+  test("refuses stale question ids and invalid menu choices", async () => {
+    const { brgr, service, store } = awaiting();
+    store.tasks.set("t1", { ...store.tasks.get("t1")!, question: { id: "q1", text: "하나를 골라 주세요", at: "now", kind: "menu", options: ["하나", "둘"] } });
+    await expect(service.answer({ taskId: "t1", questionId: "old", choice: "1" })).rejects.toThrow("최신 질문");
+    await expect(service.answer({ taskId: "t1", choice: "3" })).rejects.toThrow("선택지로 답해 주세요");
+    expect(brgr.names()).toEqual([]);
+  });
+
+  test("refuses when the task no longer waits, without side effects", async () => {
+    const { brgr, service } = setup("running");
+    await expect(service.answer({ taskId: "t1", text: "네" })).rejects.toThrow("질문을 기다리는 작업이 아니에요");
+    expect(brgr.names()).toEqual([]);
+  });
+
+  test("watch captures the worker question from messages first", async () => {
+    const brgr = new FakeBrgr();
+    const git = new FakeGit();
+    const store = new MemoryStore();
+    const events = new FakeEvents();
+    const task = createTask(
+      { taskId: "t1", harness: "local.codex", objective: "o", project: "/repo", criterion: "c", origin: null },
+      "2026-10-10T00:00:00.000Z",
+    );
+    store.tasks.set("t1", task);
+    let polls = 0;
+    brgr.wait = (id: string) => {
+      brgr.calls.push(["wait", id]);
+      polls++;
+      return Promise.resolve(ok(JSON.stringify(polls === 1 ? { state: "awaiting_input" } : { state: "sealed", outcome: "candidate" })));
+    };
+    brgr.responses.messages = ok(JSON.stringify([{ id: "m1", kind: "question", from: "worker", body: "어느 것으로 할까요?\n1. 첫째\n2. 둘째" }]));
+    const service = createService({
+      brgr, git, store, events, deadlineSeconds: () => 1, now: () => new Date().toISOString(),
+      sleep: async () => {},
+    });
+    await service.watch("t1");
+    // Wait for the background watch to finish (watch is guarded, so this joins it).
+    for (let i = 0; i < 200 && store.tasks.get("t1")!.state !== "sealed"; i++) await Bun.sleep(10);
+    const t = store.tasks.get("t1")!;
+    expect(t.state).toBe("sealed");
+    expect(events.names()).toContain("task.awaiting-input");
+    // The question survives the later seal (the panel only shows it while waiting).
+    expect(t.question?.kind).toBe("menu");
+    expect(t.question?.options).toEqual(["첫째", "둘째"]);
+  });
+
+  test("watch falls back to a bounded pane tail when no messages", async () => {
+    const brgr = new FakeBrgr();
+    const git = new FakeGit();
+    const store = new MemoryStore();
+    const events = new FakeEvents();
+    const task = createTask(
+      { taskId: "t1", harness: "local.codex", objective: "o", project: "/repo", criterion: "c", origin: null },
+      "2026-10-10T00:00:00.000Z",
+    );
+    store.tasks.set("t1", task);
+    let polls = 0;
+    brgr.wait = (id: string) => {
+      brgr.calls.push(["wait", id]);
+      polls++;
+      return Promise.resolve(ok(JSON.stringify(polls === 1 ? { state: "awaiting_input" } : { state: "sealed", outcome: "candidate" })));
+    };
+    brgr.responses.messages = ok(JSON.stringify([]));
+    brgr.responses.status = ok(JSON.stringify({ task: { pane: "line1\n질문을 화면에 띄웠어요" } }));
+    const service = createService({
+      brgr, git, store, events, deadlineSeconds: () => 1, now: () => new Date().toISOString(),
+      sleep: async () => {},
+    });
+    await service.watch("t1");
+    for (let i = 0; i < 200 && store.tasks.get("t1")!.state !== "sealed"; i++) await Bun.sleep(10);
+    // The question was captured on the way through awaiting-input (menu parse needs options; screen fallback here).
+    expect(events.names()).toContain("task.awaiting-input");
   });
 });
 

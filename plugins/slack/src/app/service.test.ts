@@ -74,6 +74,7 @@ class FakeKernel implements Kernel {
   decisions: { approvalId: string; decision: string; amend?: Record<string, unknown> }[] = [];
   accepted: string[] = [];
   rejected: string[] = [];
+  answers: { taskId: string; text?: string; choice?: string; questionId: string }[] = [];
   respond: Respond = async (p, onUpdate) => {
     onUpdate({ kind: "understood", normalized: p.text, replaced: [] });
     onUpdate({ kind: "judgement", route: "direct" });
@@ -108,6 +109,12 @@ class FakeKernel implements Kernel {
   }
   async sealedTasks() {
     return [...this.tasks.values()].filter((t) => t.state === "sealed");
+  }
+  async awaitingTasks() {
+    return [...this.tasks.values()].filter((t) => t.state === "awaiting-input");
+  }
+  async answerTask(taskId: string, answer: { text?: string; choice?: string; questionId: string }) {
+    this.answers.push({ taskId, ...answer });
   }
   async acceptTask(taskId: string) {
     this.accepted.push(taskId);
@@ -399,6 +406,28 @@ test("a sealed task tied to a Slack conversation posts its result with accept/re
   expect(gateway.edits.at(-1)).toMatchObject({ messageId: card.id, rows: [] });
 });
 
+test("posts an awaiting question and routes an admitted Slack thread reply to brgr", async () => {
+  const { threadId } = await delegatedMessage();
+  const taskId = "waiting-question";
+  kernel.tasks.set(taskId, { taskId, harness: "local.codex", state: "awaiting-input", resultText: null, origin: { threadId }, question: { id: "q1", text: "계속할까요?", at: "2026-10-13T00:00:00Z", kind: "message" } });
+  app.onKernelEvent("brgr.task.awaiting-input", { taskId, state: "awaiting-input" });
+  await app.idle();
+  expect(gateway.sent.at(-1)?.text).toContain("질문이 왔어요");
+  gateway.receive({ place: "dm", ts: "answer-1", text: "네" });
+  await app.idle();
+  expect(kernel.answers).toEqual([{ taskId, text: "네", questionId: "q1" }]);
+  expect(kernel.chats.at(-1)?.text).not.toBe("네");
+});
+
+test("routes a numbered Slack menu reply as native input choice", async () => {
+  const { threadId } = await delegatedMessage();
+  const taskId = "waiting-menu";
+  kernel.tasks.set(taskId, { taskId, harness: "local.codex", state: "awaiting-input", resultText: null, origin: { threadId }, question: { id: "q-menu", text: "어느 쪽인가요?", at: "2026-10-13T00:00:00Z", kind: "menu", options: ["첫째", "둘째"] } });
+  gateway.receive({ place: "dm", ts: "answer-menu", text: "2" });
+  await app.idle();
+  expect(kernel.answers).toEqual([{ taskId, choice: "2", questionId: "q-menu" }]);
+});
+
 test("crash recovery reissues an uncertain reply with the duplicate label", async () => {
   gateway.failWith = new Error("socket hang up");
   gateway.receive({ ts: "1.1", text: "답해줘" });
@@ -435,7 +464,7 @@ test("/new starts a new epoch and a new head thread for that conversation only",
   gateway.receive({ place: "channel", channelId: "C1", ts: "5.0", text: `<@${BOT}> team` });
   await app.idle();
   const oldThread = kernel.chats[0]!.threadId;
-  const teamThread = kernel.chats[1]!.threadId;
+  const teamThread = kernel.chats.find((c) => c.text === "team")!.threadId;
 
   gateway.receive({ ts: "1.2", text: " /new" });
   await app.idle();

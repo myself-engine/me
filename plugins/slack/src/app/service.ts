@@ -20,7 +20,7 @@ import { toMrkdwn } from "../domain/mrkdwn.ts";
 import { REACTIONS, stageOf, type Stage } from "../domain/progress.ts";
 import { approvalCard, approvalDecidedCard, approvalView, taskCard, taskClosedCard, type ApprovalView } from "../domain/render.ts";
 import { SLACK_LIMIT, splitMessage, truncate } from "../domain/split.ts";
-import type { CardStore, ComponentPress, ComponentReply, Kernel, PendingApproval, SlackGateway } from "../ports/index.ts";
+import type { CardStore, ComponentPress, ComponentReply, Kernel, PendingApproval, SlackGateway, Task } from "../ports/index.ts";
 
 export interface AppDeps {
   gateway: SlackGateway;
@@ -203,6 +203,20 @@ export function createSlackApp(deps: AppDeps) {
     }
     if (!m.text) return;
 
+    if (m.repliesToBot || origin.kind === "dm") {
+      const waiting = (await Promise.all((await kernel.awaitingTasks()).map(async (t) => ({ task: t, key: t.origin?.threadId ? await originKeyForThread(t.origin.threadId) : null }))))
+        .filter((x) => x.task.question && x.key === originKey(origin)).map((x) => x.task)
+        .sort((a, b) => b.question!.at.localeCompare(a.question!.at));
+      if (waiting.length > 0) {
+        try {
+          await kernel.answerTask(waiting[0]!.taskId, questionAnswer(waiting[0]!, m.text));
+          return reply(origin, "답변을 작업에 전달했어요.", m.messageId);
+        } catch (err) {
+          return reply(origin, `답변을 전달하지 못했어요: ${errText(err)}`, m.messageId);
+        }
+      }
+    }
+
     const preview = streamPreview(origin, m.messageId);
     let streamed = "";
     let text: string;
@@ -232,6 +246,18 @@ export function createSlackApp(deps: AppDeps) {
     const ts = await preview.finish();
     if (ts) previews.set(`${originKey(origin)}|${m.messageId}`, ts);
     if (text) await reply(origin, text, m.messageId);
+  }
+
+  function questionAnswer(task: Pick<Task, "question">, text: string) {
+    const q = task.question!;
+    if (q.kind === "menu" && q.options?.length) {
+      const value = text.trim();
+      const index = Number(value) - 1;
+      if (Number.isInteger(index) && index >= 0 && index < q.options.length) return { choice: String(index + 1), questionId: q.id };
+      const optionIndex = q.options.indexOf(value);
+      if (optionIndex >= 0) return { choice: String(optionIndex + 1), questionId: q.id };
+    }
+    return { text, questionId: q.id };
   }
 
   // ---- approvals -------------------------------------------------------------
@@ -308,6 +334,23 @@ export function createSlackApp(deps: AppDeps) {
     }
   }
 
+  async function postTaskQuestion(taskId: string) {
+    const task = await kernel.task(taskId);
+    if (!task || task.state !== "awaiting-input" || !task.question) return;
+    const origin = await originOfThread(task.origin?.threadId);
+    if (!origin) return;
+    const previous = cards.get("task-question", taskId);
+    if (previous?.data.questionId === task.question.id) return;
+    const text = [`질문이 왔어요 · 작업 ${taskId.slice(0, 8)}`, task.question.text, ...(task.question.options?.map((o, i) => `${i + 1}. ${o}`) ?? [])].join("\n");
+    await reply(origin, text, null);
+    cards.put({ kind: "task-question", ref: taskId, originKey: originKey(origin), messageId: `task-question:${taskId}`, data: { questionId: task.question.id } });
+  }
+
+  async function originKeyForThread(threadId: unknown) {
+    const origin = await originOfThread(threadId);
+    return origin ? originKey(origin) : null;
+  }
+
   async function closeTask(taskId: string, state: string) {
     const card = cards.get("task", taskId);
     if (!card) return;
@@ -352,6 +395,7 @@ export function createSlackApp(deps: AppDeps) {
     if (!name.startsWith("brgr.task.") || typeof data?.taskId !== "string") return; // gjc-head.message.*: the web's concern
     const state = name.slice("brgr.task.".length);
     if (state === "sealed") return track(postTask(data.taskId));
+    if (state === "awaiting-input") return track(postTaskQuestion(data.taskId));
     if (TASK_CLOSED.has(state)) return track(closeTask(data.taskId, state));
   }
 
@@ -369,6 +413,7 @@ export function createSlackApp(deps: AppDeps) {
       timer = setInterval(() => void drainNow().catch((err) => log("drain failed:", errText(err))), config.drainIntervalMs);
       for (const a of await kernel.listApprovals()) await track(postApproval(a));
       for (const t of await kernel.sealedTasks()) await track(postTask(t.taskId));
+      for (const t of await kernel.awaitingTasks()) await track(postTaskQuestion(t.taskId));
     },
     stop() {
       if (timer) clearInterval(timer);

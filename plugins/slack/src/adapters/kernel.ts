@@ -23,6 +23,8 @@ export function kernelPort(plugin: Plugin, opts: { chatTimeoutMs: number }): Ker
     decideApproval: async (approvalId, d) => void (await plugin.approval.decide(approvalId, d as any)),
     task: async (taskId) => (await plugin.entity.get<Task>("brgr.task", taskId))?.data ?? null,
     sealedTasks: async () => (await plugin.entity.list<Task>({ kind: "brgr.task", where: { state: "sealed" }, limit: 200 })).map((d) => d.data),
+    awaitingTasks: async () => (await plugin.entity.list<Task>({ kind: "brgr.task", where: { state: "awaiting-input" }, limit: 200 })).map((d) => d.data),
+    answerTask: async (taskId, answer) => void (await plugin.invoke("brgr", "task.answer", { taskId, ...answer }, { timeoutMs: 30_000 })),
     acceptTask: async (taskId, reason) => void (await plugin.invoke("brgr", "task.accept", { taskId, reason }, { timeoutMs: 120_000 })),
     rejectTask: async (taskId, reason) => void (await plugin.invoke("brgr", "task.reject", { taskId, reason }, { timeoutMs: 120_000 })),
     taskDiff: (taskId) => plugin.invoke("brgr", "task.diff", { taskId }, { timeoutMs: 60_000 }),

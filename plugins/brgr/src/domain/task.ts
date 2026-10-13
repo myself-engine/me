@@ -1,4 +1,5 @@
 // Task state machine: pure functions only, no I/O.
+import type { TaskAnswer, TaskQuestion } from "./question.ts";
 
 export type TaskState =
   | "queued"
@@ -54,6 +55,10 @@ export interface Task {
   resultText: string | null;
   error: string | null;
   decisionReason: string | null;
+  /** Latest worker question while awaiting input; null otherwise. */
+  question?: TaskQuestion | null;
+  /** Answers sent to the worker, idempotent per question id. */
+  answers?: TaskAnswer[];
   /** Commit created in task.project when the accepted diff was applied. */
   commitSha: string | null;
   appliedAt: string | null;
@@ -129,6 +134,8 @@ export function createTask(p: NewTask, at: string): Task {
     resultText: null,
     error: null,
     decisionReason: null,
+    question: null,
+    answers: [],
     commitSha: null,
     appliedAt: null,
     revert: null,

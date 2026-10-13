@@ -24,5 +24,9 @@ export function brgrCli(owner: () => string, bin = "brgr"): BrgrCli {
     reject: (taskId, reason) => brgr(["reject", taskId, "--reason", reason, "--json"]),
     cancel: (taskId) => brgr(["cancel", taskId, "--json"]),
     apply: (taskId, workspace) => brgr(["apply", taskId, "--workspace", workspace, "--execute", "--json"]),
+    messages: (taskId, recipient) => brgr(["message", "list", "--for", recipient, taskId, "--json"]),
+    sendMessage: (taskId, p) =>
+      brgr(["message", "send", "--to", p.to, "--kind", p.kind, "--body", p.body, ...(p.replyTo ? ["--reply-to", p.replyTo] : []), taskId, "--json"]),
+    input: (taskId, p) => brgr(["input", taskId, ...(p.text ? ["--text", p.text] : []), ...(p.key ? ["--key", p.key] : []), "--json"]),
   };
 }
