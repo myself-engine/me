@@ -11,7 +11,8 @@
     "plugins/approval-policy",
     "plugins/ops",
     "plugins/schedule",
-    "plugins/harness-config"
+    "plugins/harness-config",
+    "plugins/recall"
   ],
   "pluginConfig": {
     "gjc-head": {
@@ -94,6 +95,11 @@
     "schedule": {
       "allowUnattendedWrite": false,
       "jobs": []
+    },
+    "recall": {
+      "maxIndexBytes": 209715200,
+      "maxMessageChars": 20000,
+      "maxResults": 50
     }
   }
 }

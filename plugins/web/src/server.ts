@@ -342,6 +342,8 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       return plugin.invoke("slang", "dict.add", { from: m.from, to: m.to });
     case "budget.status":
       return plugin.invoke("budget", "budget.status", {});
+    case "recall.search":
+      return plugin.invoke("recall", "recall.search", { q: m.q, ...(m.source ? { source: m.source } : {}), ...(m.project ? { project: m.project } : {}), ...(m.limit ? { limit: m.limit } : {}) });
     case "harness.plan":
       return plugin.invoke("harness-config", "plan", { ...(m.harnesses ? { harnesses: m.harnesses } : {}), ...(m.force ? { force: true } : {}) });
     case "harness.list":

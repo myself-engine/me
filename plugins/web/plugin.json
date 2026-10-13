@@ -12,6 +12,7 @@
     "call:ops",
     "call:ops-*",
     "call:budget",
+    "call:recall",
     "call:harness-config",
     "approve.decide",
     "journal.read",

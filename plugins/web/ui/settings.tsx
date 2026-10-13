@@ -101,6 +101,7 @@ function GeneralSection() {
       <HarnessSelect />
       <PushRow />
       <BudgetLine />
+      <RecallSearch />
     </div>
   );
 }
@@ -275,6 +276,45 @@ function formatBudget(s: BudgetStatus): string {
   if (s.meters.length === 0) return s.problem ? `${head} · 한도를 확인하지 못했어요` : head;
   const tightest = s.meters.reduce((a, b) => (b.remainingPercent < a.remainingPercent ? b : a));
   return `${head} · ${tightest.provider} ${tightest.bucket} ${Math.floor(tightest.remainingPercent)}% 남음`;
+}
+
+interface RecallResult { source: string; project: string; title: string; excerpt: string; at: string; ref: string }
+
+function RecallSearch() {
+  const { conn, notify } = useApp();
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<RecallResult[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const search = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!conn || !q.trim() || busy) return;
+    setBusy(true);
+    try {
+      setRows(await conn.request<RecallResult[]>("recall.search", { q: q.trim(), limit: 20 }));
+      setSearched(true);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "대화를 찾지 못했어요");
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="stack">
+      <h3 className="section-label">지난 대화 찾기</h3>
+      <form className="actions-row" onSubmit={(event) => void search(event)}>
+        <label className="field" style={{ flex: 1 }}>
+          <span className="sr-only">지난 대화 검색어</span>
+          <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="대화에서 찾기" aria-label="지난 대화 검색어" />
+        </label>
+        <button type="submit" className="btn small" disabled={!conn || !q.trim() || busy}>{busy ? "찾는 중…" : "찾기"}</button>
+      </form>
+      {searched && rows.length === 0 && <p className="muted">찾은 대화가 없어요</p>}
+      {rows.map((row) => <div key={`${row.source}:${row.ref}`} className="stack" style={{ gap: 2 }}>
+        <strong>{row.title || row.project || "대화"}</strong>
+        <span className="muted">{row.source === "me" ? "me" : row.source === "claude" ? "Claude Code" : "Codex"} · {row.project}{row.at ? ` · ${new Date(row.at).toLocaleDateString()}` : ""}</span>
+        <span>{row.excerpt.replaceAll("〔", "“").replaceAll("〕", "”")}</span>
+      </div>)}
+    </div>
+  );
 }
 
 function ModelSection() {
