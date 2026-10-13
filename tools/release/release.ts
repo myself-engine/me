@@ -40,16 +40,20 @@ export function releaseMaterial(root: string, from: string | null, to = "HEAD", 
   return { commits, decisions };
 }
 
-export function releaseNotesPrompt(version: string, material: ReleaseMaterial, joke = false): string {
+export function releaseNotesPrompt(version: string, material: ReleaseMaterial, joke = false, title = version): string {
   const opening = joke
-    ? "첫 문장만 한국어로 가볍고 친근한 농담으로 시작하세요. 놀리거나 이모지를 쓰지 마세요. 그 다음 문장은 사실만 쓰세요."
+    ? [
+      "첫 문장은 자료에서 가장 큰 변경과 연결된 실제 농담이어야 합니다. me나 me를 쓰는 사람을 한국어 해요체로 가볍게 놀리는 짧은 한 줄로 쓰세요. 외모나 지능을 심하게 놀리지 말고, 욕설과 이모지는 쓰지 말며, 40자 안팎을 넘기지 마세요. 따뜻한 요약으로 시작하지 마세요.",
+      "말투 참고 예시(그대로 복사하지 마세요): 이제 기억력이 당신보다 똑똑할 수도 있어요 / 이제 me가 당신보다 먼저 일어나요 / 되돌리기가 생겨서 실수해도 아무도 몰라요.",
+      "첫 문장 뒤의 내용은 사실만 쓰세요.",
+    ].join("\n")
     : "첫 문단은 한국어로 사실만 담아 1~3문장으로 씁니다.";
   return [
-    `# me ${version}`,
+    `# me ${title}`,
     "이 자료만 사용해 me를 쓰는 사람을 위한 한국어 릴리스 노트를 작성하세요. 개발자용 설명이나 추측을 덧붙이지 마세요.",
-    `첫 줄에 반드시 제목 '# me ${version}'을 쓰세요.`,
+    `첫 줄에 반드시 제목 '# me ${title}'을 쓰세요.`,
     opening,
-    "필요한 경우에만 다음 제목을 사용하세요: ## 새로 생긴 것, ## 고친 것, ## 알아둘 것. 각 항목은 빠진 점이나 문제와 이제 달라진 점을 1~2문장으로 씁니다. 해시와 파일 경로는 사용자가 직접 해야 할 때만 씁니다. 확인되지 않은 실제 동작은 알아둘 것에 적습니다. 마크다운 노트만 출력하세요.",
+    "자료가 설명하는 범위를 정확히 유지하세요. 예를 들어 대화별 설정을 기본 설정처럼 넓혀 쓰지 마세요. 범위가 모호하면 세부 내용을 추측하지 말고 생략하세요. 필요한 경우에만 다음 제목을 사용하세요: ## 새로 생긴 것, ## 고친 것, ## 알아둘 것. 각 항목은 빠진 점이나 문제와 이제 달라진 점을 1~2문장으로 씁니다. 해시와 파일 경로는 사용자가 직접 해야 할 때만 씁니다. 확인되지 않은 실제 동작은 알아둘 것에 적습니다. 마크다운 노트만 출력하세요.",
     "제공된 커밋 제목·본문:",
     JSON.stringify(material.commits),
     "이전 릴리스 이후 추가된 docs/DECISIONS.md 내용:",
@@ -57,26 +61,27 @@ export function releaseNotesPrompt(version: string, material: ReleaseMaterial, j
   ].join("\n\n");
 }
 
-export function fallbackReleaseNotes(version: string, material: ReleaseMaterial): string {
+export function fallbackReleaseNotes(version: string, material: ReleaseMaterial, title = version): string {
   const groups: Record<string, string[]> = { "새로 생긴 것": [], "고친 것": [], "알아둘 것": [] };
   for (const { subject } of material.commits) {
     const kind = /^(feat|add|new)(\(|:)/i.test(subject) ? "새로 생긴 것" : /^(fix|bug)(\(|:)/i.test(subject) ? "고친 것" : "알아둘 것";
     groups[kind]!.push(`- ${subject} 항목을 반영했어요.`);
   }
   const sections = Object.entries(groups).filter(([, items]) => items.length).map(([title, items]) => `## ${title}\n\n${items.join("\n")}`);
-  return [`# me ${version}`, "이번 버전에는 다음 변경을 담았어요.", ...sections].join("\n\n") + "\n";
+  return [`# me ${title}`, "이번 버전에는 다음 변경을 담았어요.", ...sections].join("\n\n") + "\n";
 }
 
-function usableNote(text: string, version: string): string | null {
+function usableNote(text: string, version: string, title = version): string | null {
   let note = text.trim().replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/, "").trim();
   const lines = note.split("\n");
   const firstLine = lines[0]?.trim() ?? "";
   const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const title = new RegExp(`^#?\\s*me\\s+${escapedVersion}(?:\\s+.+)?$`, "i");
+  const versionTitle = new RegExp(`^#?\\s*me\\s+${escapedVersion}(?:\\s+.+)?$`, "i");
+  const expectedTitle = new RegExp(`^#?\\s*me\\s+${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
   if (firstLine.startsWith("#")) {
-    if (!title.test(firstLine)) return null;
+    if (!versionTitle.test(firstLine) && !expectedTitle.test(firstLine)) return null;
     note = lines.slice(1).join("\n").trim();
-  } else if (title.test(firstLine)) {
+  } else if (versionTitle.test(firstLine) || expectedTitle.test(firstLine)) {
     note = lines.slice(1).join("\n").trim();
   }
   const allowed = new Set(["새로 생긴 것", "고친 것", "알아둘 것"]);
@@ -87,14 +92,16 @@ function usableNote(text: string, version: string): string | null {
   const sentenceEnds = [...sentenceText.matchAll(/[!?。]+|\.(?=\s|$)/g)];
   const tail = sentenceEnds.at(-1);
   const sentenceCount = sentenceEnds.length + (tail ? sentenceText.slice(tail.index! + tail[0].length).trim() ? 1 : 0 : 1);
-  return opening && sentenceCount <= 3 ? `# me ${version}\n\n${note}\n` : null;
+  return opening && sentenceCount <= 3 ? `# me ${title}\n\n${note}\n` : null;
 }
 
 /** Model notes are best effort: abort after a short bound and always return a local fallback. */
 export async function draftReleaseNotes(root: string, version: string, material: ReleaseMaterial, joke = false, opts: {
   runHead?: (input: Parameters<typeof runHead>[0]) => Promise<RunnerResult>; timeoutMs?: number;
+  title?: string;
 } = {}): Promise<string> {
-  const fallback = fallbackReleaseNotes(version, material);
+  const title = opts.title ?? version;
+  const fallback = fallbackReleaseNotes(version, material, title);
   const config = readJson(join(root, "me.config.json"));
   const head = config?.pluginConfig?.["gjc-head"] ?? {};
   const harness = head.harness as HeadHarness;
@@ -105,10 +112,10 @@ export async function draftReleaseNotes(root: string, version: string, material:
   const run = opts.runHead ?? runHead;
   try {
     const result = await Promise.race([
-      run({ harness, model, cwd: root, prompt: releaseNotesPrompt(version, material, joke), allowTools: [], ephemeral: true, thinking: "low", signal: controller.signal }),
+      run({ harness, model, cwd: root, prompt: releaseNotesPrompt(version, material, joke, title), allowTools: [], ephemeral: true, thinking: "low", signal: controller.signal }),
       new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("release note draft timed out")); }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS); }),
     ]);
-    return usableNote(result.text, version) ?? fallback;
+    return usableNote(result.text, version, title) ?? fallback;
   } catch {
     return fallback;
   } finally {
@@ -126,6 +133,17 @@ export function createGithubRelease(version: string, notePath: string, root: str
 
 export type NotesRangeOptions = { root: string; from: string; to?: string; joke?: boolean; out?: string; log?: (line: string) => void };
 
+/** Return the first version tag on the first-parent path after `from`, falling back to `to`. */
+export function firstReleaseAfter(from: string, to: string, run: CommandRunner = command, root = process.cwd()): string {
+  const history = run(["git", "log", "--first-parent", "--reverse", "--decorate=short", "--format=%H%x00%D", `${from}..${to}`], root);
+  for (const line of history.split("\n")) {
+    const decorations = line.split("\u0000")[1] ?? "";
+    const tag = decorations.match(/(?:^|, )tag: (v\d+\.\d+\.\d+)(?:,|$)/)?.[1];
+    if (tag) return tag;
+  }
+  return to;
+}
+
 export async function releaseNotes(o: NotesRangeOptions, deps: { run?: CommandRunner; draft?: typeof draftReleaseNotes; write?: (path: string, text: string) => void } = {}) {
   const run = deps.run ?? command;
   const to = o.to ?? "HEAD";
@@ -135,7 +153,8 @@ export async function releaseNotes(o: NotesRangeOptions, deps: { run?: CommandRu
   const version = to === "HEAD"
     ? nextVersion(run(["git", "tag", "--list", "v*", "--sort=-v:refname"], o.root).split("\n").filter(Boolean)[0] ?? null, "patch")
     : to;
-  const note = await (deps.draft ?? draftReleaseNotes)(o.root, version, material, o.joke ?? false);
+  const title = to === "HEAD" ? version : `${firstReleaseAfter(o.from, to, run, o.root)} ~ ${to}`;
+  const note = await (deps.draft ?? draftReleaseNotes)(o.root, version, material, o.joke ?? false, { title });
   if (o.out) (deps.write ?? writeFileSync)(resolve(o.root, o.out), note);
   else (o.log ?? console.log)(note.trimEnd());
   return note;

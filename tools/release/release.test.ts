@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   changelogEntry, createGithubRelease, draftReleaseNotes, fallbackReleaseNotes, findKernelPane,
-  nextVersion, parseBump, release, releaseMaterial, releaseNotes, releaseNotesPrompt,
+  firstReleaseAfter, nextVersion, parseBump, release, releaseMaterial, releaseNotes, releaseNotesPrompt,
 } from "./release.ts";
 
 const tempDirs: string[] = [];
@@ -64,7 +64,14 @@ describe("release", () => {
     const fake = async (input: any) => { calls.push(input); return { text: "# me v1.2.3\n\n이번 판은 이제 바뀐 화면을 설명해요.\n\n## 새로 생긴 것\n\n- 바뀌었어요.", sessionId: null, stopReason: null, violation: null }; };
     const plainPrompt = releaseNotesPrompt("v1.2.3", material, false);
     const jokePrompt = releaseNotesPrompt("v1.2.3", material, true);
-    expect(jokePrompt.replace("첫 문장만 한국어로 가볍고 친근한 농담으로 시작하세요. 놀리거나 이모지를 쓰지 마세요. 그 다음 문장은 사실만 쓰세요.", "첫 문단은 한국어로 사실만 담아 1~3문장으로 씁니다.")).toBe(plainPrompt);
+    expect(plainPrompt).not.toContain("이제 기억력이 당신보다 똑똑할 수도 있어요");
+    expect(plainPrompt).not.toContain("이제 me가 당신보다 먼저 일어나요");
+    expect(jokePrompt).toContain("이제 기억력이 당신보다 똑똑할 수도 있어요");
+    expect(jokePrompt).toContain("이제 me가 당신보다 먼저 일어나요");
+    expect(jokePrompt).toContain("되돌리기가 생겨서 실수해도 아무도 몰라요");
+    expect(jokePrompt).toContain("그대로 복사하지 마세요");
+    expect(jokePrompt).toContain("가장 큰 변경과 연결된 실제 농담");
+    expect(jokePrompt).toContain("자료가 설명하는 범위를 정확히 유지하세요");
     const note = await draftReleaseNotes(root, "v1.2.3", material, false, { runHead: fake });
     expect(note).toContain("# me v1.2.3");
     expect(calls[0]).toMatchObject({ harness: "omp", model: "selected", allowTools: [], ephemeral: true, thinking: "low" });
@@ -77,7 +84,7 @@ describe("release", () => {
   test("accepts the live Korean draft, normalizes equivalent titles, and counts only sentence endings", async () => {
     const root = tempDir();
     writeFileSync(join(root, "me.config.json"), JSON.stringify({ pluginConfig: { "gjc-head": { harness: "gjc", model: "m" } } }));
-    const draft = async (text: string, version = "v0.9.7") => draftReleaseNotes(root, version, material, false, { runHead: async () => ({ text, sessionId: null, stopReason: null, violation: null }) });
+    const draft = async (text: string, version = "v0.9.7", title = version) => draftReleaseNotes(root, version, material, false, { title, runHead: async () => ({ text, sessionId: null, stopReason: null, violation: null }) });
     const liveDraft = readFileSync(new URL("./fixtures/v0.9.7-live-draft.md", import.meta.url), "utf8");
     const acceptedLive = await draft(liveDraft);
     expect(acceptedLive).toStartWith("# me v0.9.7\n\nme v0.9.7에서는");
@@ -86,6 +93,9 @@ describe("release", () => {
     const titled = await draft("# me v0.9.7 릴리스 노트\n\n이번 변경은 README.md와 e.g. 예시를 함께 정리해요.\n\n## 고친 것\n\n- 반영했어요.");
     expect(titled).toStartWith("# me v0.9.7\n\n이번 변경");
     expect(titled.match(/^# me v0\.9\.7$/gm)).toHaveLength(1);
+
+    const ranged = await draft("# me v0.6.0 ~ v0.9.7\n\n이번 변경은 범위 제목을 지원해요.", "v0.9.7", "v0.6.0 ~ v0.9.7");
+    expect(ranged).toStartWith("# me v0.6.0 ~ v0.9.7\n\n이번 변경");
 
     const dottedVersion = await draft("v0.9.7에서는 README.md와 e.g. 표기를 함께 고쳤어요. 이제 잘 동작합니다.");
     expect(dottedVersion).toContain("README.md와 e.g. 표기를");
@@ -109,6 +119,11 @@ describe("release", () => {
     expect(note).toContain("## 새로 생긴 것");
     expect(note).toContain("## 고친 것");
     expect(note).toContain("feat: add status hints");
+    const ranged = await draftReleaseNotes(root, "v0.9.7", material, false, {
+      title: "v0.6.0 ~ v0.9.7",
+      runHead: async () => { throw new Error("offline"); },
+    });
+    expect(ranged).toStartWith("# me v0.6.0 ~ v0.9.7\n");
   });
 
   test("dry run prints the note and writes nothing", async () => {
@@ -152,6 +167,7 @@ describe("release", () => {
     const calls: string[][] = [];
     const run = (cmd: string[]) => {
       calls.push(cmd);
+      if (cmd[1] === "log" && cmd.includes("--first-parent")) return "a1\u0000tag: v0.6.0\na2\u0000tag: v0.8.0";
       if (cmd[1] === "log") return "fix: ranged change\u0000body\u0000\u0001";
       if (cmd[1] === "diff") return "@@ -0,0 +1 @@\n+new decision";
       return "commit";
@@ -160,7 +176,7 @@ describe("release", () => {
     let content = "";
     const note = await releaseNotes({ root: "/repo", from: "v0.6.0", to: "v0.9.6", out: "catch-up.md" }, {
       run,
-      draft: async (_root, version, got) => { expect(version).toBe("v0.9.6"); expect(got.commits[0]?.subject).toBe("fix: ranged change"); expect(got.decisions).toBe("new decision"); return "# note"; },
+      draft: async (_root, version, got, _joke, options) => { expect(version).toBe("v0.9.6"); expect(options?.title).toBe("v0.6.0 ~ v0.9.6"); expect(got.commits[0]?.subject).toBe("fix: ranged change"); expect(got.decisions).toBe("new decision"); return "# note"; },
       write: (path, text) => { outputPath = path; content = text; },
     });
     expect(note).toBe("# note");
@@ -169,5 +185,7 @@ describe("release", () => {
     expect(calls.filter((cmd) => cmd[1] === "rev-parse").map((cmd) => cmd[3])).toEqual(["v0.6.0^{commit}", "v0.9.6^{commit}"]);
     expect(calls.some((cmd) => cmd[1] === "log" && cmd.includes("v0.6.0..v0.9.6"))).toBe(true);
     expect(calls.some((cmd) => ["commit", "tag", "push"].includes(cmd[1] ?? ""))).toBe(false);
+    expect(firstReleaseAfter("v0.5.0", "v0.9.6", (cmd) => cmd.includes("--first-parent") ? "a1\u0000tag: v0.6.0\na2\u0000tag: v0.8.0" : "", "/repo")).toBe("v0.6.0");
+    expect(firstReleaseAfter("v0.9.0", "v0.9.6", () => "", "/repo")).toBe("v0.9.6");
   });
 });
