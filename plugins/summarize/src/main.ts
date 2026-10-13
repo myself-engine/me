@@ -3,6 +3,7 @@
 import { join } from "node:path";
 import { definePlugin } from "@me/sdk";
 import { isHeadHarness, parseJsonObject, runHead, type HeadHarness } from "@me/runner";
+import { normalizeCommitSubject } from "./subject.ts";
 
 export interface Summary {
   summaryEn: string;
@@ -15,6 +16,8 @@ export interface Summary {
   criterion: string;
   /** Kind of work, used by approval risk tiers (approval-policy). */
   role: "none" | "test" | "code" | "docs" | "research" | "deploy" | "db-write";
+  /** Short English imperative git subject (<=60 chars, no trailing period); "" when no work is needed. */
+  commitSubject: string;
 }
 
 const dataDir = process.env.ME_DATA_DIR ?? ".";
@@ -43,11 +46,13 @@ const plugin = definePlugin({
         '- "harnessReason": a few words why.',
         '- "criterion": if work is needed, one observable English sentence that says when the work is done (e.g. "bun test passes and the README lists the new flag."); otherwise "".',
         '- "role": one of "none", "test" (only runs or writes tests), "code", "docs", "research", "deploy" (ships or releases anything), "db-write" (changes a database). Pick the most dangerous that applies.',
+        '- "commitSubject": if work is needed, a short English imperative git subject for the work, at most 60 characters, no trailing period (e.g. "Add multiply function with a test"); otherwise "".',
       ].join("\n");
       const res = await runHead({ harness, prompt, model, cwd: join(dataDir, "runs"), ephemeral: true, thinking: "low", signal: ctx.signal });
       const s = parseJsonObject<Summary>(res.text);
       if (!p.harnesses.includes(s.harness)) s.harness = p.harnesses[0] ?? s.harness;
       s.criterion = typeof s.criterion === "string" ? s.criterion.trim() : "";
+      s.commitSubject = normalizeCommitSubject(s.commitSubject);
       const roles = ["none", "test", "code", "docs", "research", "deploy", "db-write"] as const;
       // Unknown roles count as code: never let a parse slip make work look safer than it is.
       s.role = roles.includes(s.role as any) ? s.role : "code";

@@ -35,6 +35,10 @@ export interface DelegateParams {
   model?: string;
   effort?: string;
   objective: string;
+  /** Short English imperative git subject from summarize. */
+  commitSubject?: string;
+  /** The user's original raw message (Korean). */
+  request?: string;
   project: string;
   criterion?: string;
   origin?: Record<string, unknown>;
@@ -150,6 +154,8 @@ export function createService(deps: ServiceDeps) {
         harness: p.harness,
         ...worker,
         objective: p.objective,
+        ...(p.commitSubject ? { commitSubject: p.commitSubject } : {}),
+        ...(p.request ? { request: p.request } : {}),
         project: p.project,
         criterion,
         origin: p.origin ?? null,
@@ -415,7 +421,7 @@ export function createService(deps: ServiceDeps) {
       const a = await brgr.apply(id, task.project);
       if (a.code !== 0) throw new Error(`brgr apply failed: ${cliError(a)}`);
       await git.add(task.project, files);
-      await git.commit(task.project, commitMessage(task.objective, task.taskId));
+      await git.commit(task.project, commitMessage(task));
       const commitSha = await git.headSha(task.project);
       return await setState(task.taskId, "applied", { commitSha, appliedAt: now(), error: null });
     } catch (err) {

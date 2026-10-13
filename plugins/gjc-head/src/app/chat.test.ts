@@ -35,7 +35,7 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
     summarizer: {
       summarize: async (p) => (
         calls.summarize!.push(p),
-        { summaryEn: "Fix the bug", brief: "Fix it", needsCodeChange: true, scope: "single-file", harness: "local.codex", harnessReason: "", criterion: "bun test passes.", ...opts.summary }
+        { summaryEn: "Fix the bug", brief: "Fix it", needsCodeChange: true, scope: "single-file", harness: "local.codex", harnessReason: "", criterion: "bun test passes.", commitSubject: "Fix the bug", ...opts.summary }
       ),
     },
     judge: { judge: async (p) => (calls.judge!.push(p), { simpleProb: opts.simpleProb ?? 0.1, confidence: 0.9, source: "jev", model: "m" }) },
@@ -137,7 +137,7 @@ describe("chat.send", () => {
     const r = await head.send({ text: "README 오타 고쳐줘" }, turn);
     expect(r.route).toBe("delegate");
     expect(calls.approval).toHaveLength(0);
-    expect(calls.delegate[0]).toMatchObject({ harness: "local.codex", criterion: "bun test passes." });
+    expect(calls.delegate[0]).toMatchObject({ harness: "local.codex", criterion: "bun test passes.", commitSubject: "Fix the bug", request: "README 오타 고쳐줘" });
     expect(calls.delegate[0].autoApply).toBeUndefined();
     expect(calls.delegate[0]).not.toHaveProperty("model");
     expect(calls.delegate[0]).not.toHaveProperty("effort");
@@ -151,6 +151,13 @@ describe("chat.send", () => {
     expect(calls.delegate[0].harness).toBe("local.codex");
     expect(messages.get(r.messageId)!.delegation).toMatchObject({ harness: "local.codex" });
     expect(messages.get(r.messageId)!.delegation!.suggestedHarness).toBeUndefined();
+  });
+
+  test("a missing commitSubject delegates without it, but the request still travels", async () => {
+    const { head, turn, calls } = setup({ summary: { commitSubject: "" } });
+    await head.send({ text: "README 오타 고쳐줘" }, turn);
+    expect(calls.delegate[0]).toMatchObject({ request: "README 오타 고쳐줘" });
+    expect(calls.delegate[0]).not.toHaveProperty("commitSubject");
   });
 
   test("project mode never asks for an approval", async () => {

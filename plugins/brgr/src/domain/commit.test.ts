@@ -1,24 +1,92 @@
 import { describe, expect, test } from "bun:test";
-import { CO_AUTHOR, commitMessage, touchedFiles, unquote } from "./commit.ts";
+import { CO_AUTHOR, commitMessage, normalizeCommitSubject, touchedFiles, truncateSubject, unquote } from "./commit.ts";
+
+describe("normalizeCommitSubject", () => {
+  test("collapses whitespace, strips quotes and the trailing period", () => {
+    expect(normalizeCommitSubject('  "Add  multiply\nfunction."  ')).toBe("Add multiply function");
+  });
+
+  test("caps at a word boundary without adding anything", () => {
+    const s = normalizeCommitSubject(`${"word ".repeat(30)}tail`);
+    expect(s.length).toBeLessThanOrEqual(72);
+    expect(s.endsWith("tail")).toBe(false);
+    expect(/\s$/.test(s)).toBe(false);
+  });
+
+  test("spaceless text cuts hard at 60", () => {
+    expect(normalizeCommitSubject("x".repeat(100))).toBe("x".repeat(60));
+  });
+
+  test("non-strings and empty input give empty string", () => {
+    expect(normalizeCommitSubject(undefined)).toBe("");
+    expect(normalizeCommitSubject('"."')).toBe("");
+  });
+});
+
+describe("truncateSubject", () => {
+  test("short text passes through trimmed", () => {
+    expect(truncateSubject("  hi  ")).toBe("hi");
+  });
+
+  test("long text never cuts mid-word and stays within max", () => {
+    const s = truncateSubject("Add a very long feature name that goes on and on and on past the limit", 40);
+    expect(s.length).toBeLessThanOrEqual(40);
+    expect("Add a very long feature name that goes on and on and on past the limit".startsWith(`${s} `)).toBe(true);
+  });
+});
 
 describe("commitMessage", () => {
-  test("uses the first objective line, the task id, and the co-author trailer", () => {
-    expect(commitMessage("Fix the login bug\n\nmore detail here", "abc-123")).toBe(
-      "Fix the login bug\n\nApplied from brgr task abc-123 via me.\n\nCo-Authored-By: me <noreply@me.local>",
+  test("subject present: used as-is, request appears in the body", () => {
+    expect(
+      commitMessage({ taskId: "abc-123", objective: "long brief here", commitSubject: "Add multiply function", request: "곱하기 함수 추가해줘" }),
+    ).toBe(
+      `Add multiply function\n\nRequested: 곱하기 함수 추가해줘\n\nApplied from brgr task abc-123 via me.\n\n${CO_AUTHOR}`,
     );
   });
 
-  test("caps the subject at 72 characters", () => {
-    const subject = commitMessage("x".repeat(100), "t").split("\n")[0]!;
-    expect(subject).toBe("x".repeat(72));
+  test("missing subject: falls back to the request first line", () => {
+    const m = commitMessage({ taskId: "t", objective: "In the project, inspect the existing math module and test conventions, then add.", request: "README 오타 고쳐줘\n자세히" });
+    expect(m.split("\n")[0]).toBe("README 오타 고쳐줘");
+    expect(m).toContain("Requested: README 오타 고쳐줘 자세히");
   });
 
-  test("falls back to the task id when the objective has no first line", () => {
-    expect(commitMessage("\n\nbody", "t9").split("\n")[0]).toBe("brgr task t9");
+  test("missing subject and request: falls back to the brief's first sentence", () => {
+    const m = commitMessage({ taskId: "t", objective: "In the project, inspect the existing math module. Then add a test." });
+    expect(m.split("\n")[0]).toBe("In the project, inspect the existing math module");
+  });
+
+  test("Korean request without spaces cuts at 60 chars, never mid-word", () => {
+    const req = "가".repeat(100);
+    const m = commitMessage({ taskId: "t", objective: "brief", request: req });
+    expect(m.split("\n")[0]).toBe("가".repeat(60));
+  });
+
+  test("very long text: word boundary, no trailing additions", () => {
+    const objective = `${"word ".repeat(40)}tail`;
+    const subject = commitMessage({ taskId: "t", objective }).split("\n")[0]!;
+    expect(subject.length).toBeLessThanOrEqual(72);
+    expect(objective.startsWith(`${subject} `)).toBe(true);
+  });
+
+  test("no request: body is just the applied line", () => {
+    expect(commitMessage({ taskId: "t9", objective: "" })).toBe(
+      `brgr task t9\n\nApplied from brgr task t9 via me.\n\n${CO_AUTHOR}`,
+    );
+  });
+
+  test("request is trimmed to 300 chars in the body", () => {
+    const m = commitMessage({ taskId: "t", objective: "b", request: `x\ny${"z".repeat(500)}` });
+    expect(m).toContain(`Requested: ${`x y${"z".repeat(297)}`.slice(0, 300)}`);
+  });
+
+  test("legacy string form keeps the old three-paragraph shape", () => {
+    expect(commitMessage("Fix the login bug\n\nmore detail here", "abc-123")).toBe(
+      `Fix the login bug\n\nApplied from brgr task abc-123 via me.\n\n${CO_AUTHOR}`,
+    );
   });
 
   test("ends with the trailer as its own paragraph", () => {
-    expect(commitMessage("a", "t").endsWith(`\n\n${CO_AUTHOR}`)).toBe(true);
+    expect(commitMessage({ taskId: "t", objective: "a" }).endsWith(`\n\n${CO_AUTHOR}`)).toBe(true);
   });
 });
 

@@ -292,7 +292,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         // Delegated: the warm brain will never get a prompt.
         warm?.cancel();
         warm = null;
-        await delegate(thread, reply, turn, access);
+        await delegate(thread, reply, turn, access, p.text);
       }
       turn.phase?.("done", "완료", 1);
 
@@ -390,10 +390,11 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     }
   }
 
-  async function delegate(thread: Thread, reply: Message, turn: Turn, access: AccessMode) {
+  async function delegate(thread: Thread, reply: Message, turn: Turn, access: AccessMode, request: string) {
     const s = reply.summary!;
     const brief = s.brief || s.summaryEn;
     const criterion = s.criterion?.trim() || undefined;
+    const commitSubject = s.commitSubject?.trim() || undefined;
     reply.delegation = { state: "awaiting-approval", harness: s.harness, brief, ...(criterion ? { criterion } : {}) };
     await saveMessage(reply);
 
@@ -405,6 +406,8 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       const task = await delegator.delegate({
         harness: s.harness,
         objective: brief,
+        ...(commitSubject ? { commitSubject } : {}),
+        request,
         criterion,
         project: thread.project,
         origin: { plugin: "gjc-head", messageId: reply.id, threadId: thread.id },
@@ -459,6 +462,8 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       harness,
       ...worker,
       objective: brief,
+      ...(commitSubject ? { commitSubject } : {}),
+      request,
       criterion,
       project: thread.project,
       origin: { plugin: "gjc-head", messageId: reply.id, threadId: thread.id },

@@ -33,6 +33,10 @@ export interface Task {
   taskId: string;
   harness: string;
   objective: string;
+  /** Short English imperative git subject from summarize; absent on old tasks. */
+  commitSubject?: string | null;
+  /** The user's original raw message (Korean), stored at delegation. */
+  request?: string | null;
   project: string;
   criterion: string;
   /** Worker model and effort asked for at delegation; absent means the harness default. */
@@ -104,6 +108,8 @@ export interface NewTask {
   model?: string;
   effort?: string;
   objective: string;
+  commitSubject?: string;
+  request?: string;
   project: string;
   criterion: string;
   origin: Record<string, unknown> | null;
@@ -113,6 +119,8 @@ export interface NewTask {
 export function createTask(p: NewTask, at: string): Task {
   return {
     ...p,
+    commitSubject: p.commitSubject ?? null,
+    request: p.request ?? null,
     autoApply: p.autoApply ?? false,
     remoteId: null,
     verify: null,

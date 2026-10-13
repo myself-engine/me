@@ -73,6 +73,8 @@ export interface Summary {
   /** One observable English sentence saying when the work is done. */
   criterion?: string;
   role?: string;
+  /** Short English imperative git subject from summarize; "" when no work is needed. */
+  commitSubject?: string;
 }
 
 export interface Judgement {

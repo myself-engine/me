@@ -234,6 +234,24 @@ describe("other methods", () => {
     expect(store.tasks.get("t-new")).toMatchObject({ model: "gpt-6.1-sol", effort: "high" });
   });
 
+  test("delegate stores commitSubject and the user request on the task", async () => {
+    const { store, service } = setup();
+    await service.delegate({ harness: "local.codex", objective: "obj", commitSubject: "Fix the parser", request: "README 오타 고쳐줘", project: "/repo" });
+    expect(store.tasks.get("t-new")).toMatchObject({ commitSubject: "Fix the parser", request: "README 오타 고쳐줘" });
+  });
+
+  test("accept commits with the stored subject and request", async () => {
+    const { git, service } = setup();
+    await service.delegate({ harness: "local.codex", objective: "Fix the parser\nwith details", commitSubject: "Fix the parser", request: "파서 고쳐줘", project: "/repo2" });
+    const sealed = { ...((await service.result({ taskId: "t-new" }))!), state: "sealed" as const };
+    expect(sealed.commitSubject).toBe("Fix the parser");
+    await service.accept({ taskId: "t-new" });
+    const commit = git.calls.find((c) => c[0] === "commit")!;
+    expect(commit[2]).toContain("Fix the parser");
+    expect(commit[2]).toContain("Requested: 파서 고쳐줘");
+    expect(commit[2]).toContain("Applied from brgr task t-new via me.");
+  });
+
   test("a brgr run refusal fails the queued task with a Korean error", async () => {
     const { brgr, store, events, service } = setup();
     brgr.responses.run = fail("error: workspace has uncommitted changes");
