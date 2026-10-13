@@ -8,6 +8,10 @@
 - 플러그인 프로토콜: [docs/PROTOCOL.md](docs/PROTOCOL.md)
 - 결정 기록: [docs/DECISIONS.md](docs/DECISIONS.md)
 
+## 릴리스 노트
+
+`me release`는 변경 내용을 한국어 릴리스 노트로 만들고 `docs/releases/`에 함께 넣어요. 특정 구간의 노트만 만들려면 `me release notes --from v0.6.0 --to v0.9.6`을 실행하세요. `--out <파일>`을 붙이면 파일로 저장하고, `--joke`는 첫 문장만 가볍게 바꿉니다.
+
 ## 실행
 
 ```sh

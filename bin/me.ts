@@ -12,7 +12,8 @@
 //   me config plan | import [--write] | apply --yes   harness configs (MCP, instructions, skills, hooks) from one source
 //   me tailscale status|on|off [--https-port N]   phone access over the tailnet (never public)
 //   me doctor [--json]                     tool versions, symlinks, plugin conformance
-//   me release [--minor] [--patch] [--dry-run] [--skip-e2e]   checks, tag, restart the running me, refresh remote copies
+//   me release [--minor] [--patch] [--dry-run] [--skip-e2e] [--joke] [--no-notes]
+//   me release notes --from <tag> [--to <tag|HEAD>] [--joke] [--out <file>]
 //   me autostart install|uninstall|run [--config me.config.json]   start me in a Herdr pane at login
 //   me install                             link ~/.local/bin/me so a bare `me` works
 //   me help (-h, --help)                   this help, grouped in plain Korean
@@ -236,18 +237,42 @@ switch (cmd) {
     break;
   }
   case "release": {
+    if (rest[0] === "notes") {
+      const args = rest.slice(1);
+      const value = (flag: string) => {
+        const at = args.indexOf(flag);
+        return at >= 0 ? args[at + 1] : undefined;
+      };
+      const allowed = new Set(["--from", "--to", "--joke", "--out"]);
+      const unknown = args.filter((arg) => arg.startsWith("--") && !allowed.has(arg));
+      const from = value("--from");
+      const to = value("--to");
+      const out = value("--out");
+      if (unknown.length || !from || (args.includes("--to") && !to) || (args.includes("--out") && !out)) {
+        console.log("usage: me release notes --from <tag> [--to <tag|HEAD>] [--joke] [--out <file>]");
+        process.exit(unknown.length ? 2 : 1);
+      }
+      const { releaseNotes } = await import("../tools/release/release.ts");
+      try {
+        await releaseNotes({ root, from, ...(to ? { to } : {}), joke: args.includes("--joke"), ...(out ? { out } : {}) });
+      } catch (err: any) {
+        console.error(`✗ release notes failed: ${err.message}`);
+        process.exit(1);
+      }
+      break;
+    }
     // A release restarts the running me, so anything but the known flags (even --help) only prints usage.
-    const RELEASE_FLAGS = ["--minor", "--patch", "--dry-run", "--skip-e2e"];
+    const RELEASE_FLAGS = ["--minor", "--patch", "--dry-run", "--skip-e2e", "--joke", "--no-notes"];
     const unknown = rest.filter((a) => !RELEASE_FLAGS.includes(a));
     if (unknown.length) {
-      console.log("usage: me release [--minor] [--patch] [--dry-run] [--skip-e2e]");
-      console.log("  checks, bumps the version (patch, or minor with --minor), tags, pushes, and restarts the running me");
-      if (!unknown.every((a) => a === "--help" || a === "-h")) console.error(`unknown argument: ${unknown.join(" ")}`);
+      console.log("usage: me release [--minor] [--patch] [--dry-run] [--skip-e2e] [--joke] [--no-notes]");
+      console.log("usage: me release notes --from <tag> [--to <tag|HEAD>] [--joke] [--out <file>]");
+      console.log("  checks, bumps the version (patch, or minor with --minor), writes notes, tags, pushes, and restarts the running me");
       process.exit(unknown.every((a) => a === "--help" || a === "-h") ? 0 : 2);
     }
     const { parseBump, release } = await import("../tools/release/release.ts");
     try {
-      await release({ root, bump: parseBump(rest), dryRun: rest.includes("--dry-run"), skipE2e: rest.includes("--skip-e2e") });
+      await release({ root, bump: parseBump(rest), dryRun: rest.includes("--dry-run"), skipE2e: rest.includes("--skip-e2e"), joke: rest.includes("--joke"), noNotes: rest.includes("--no-notes") });
     } catch (err: any) {
       console.error(`✗ release failed: ${err.message}`);
       process.exit(1);
