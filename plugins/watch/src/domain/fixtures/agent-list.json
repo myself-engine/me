@@ -1,0 +1,16 @@
+{
+  "id": "cli:agent:list",
+  "result": {
+    "agents": [
+      {
+        "agent": "claude",
+        "agent_status": "working",
+        "cwd": "/workspace/example",
+        "foreground_cwd": "/workspace/example",
+        "pane_id": "w1:p1",
+        "revision": 1,
+        "state_change_seq": 10
+      }
+    ]
+  }
+}

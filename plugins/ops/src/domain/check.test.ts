@@ -101,6 +101,11 @@ describe("parseConfig", () => {
     expect(c.checks[5]).toEqual({ id: "git", kind: "command", argv: ["git", "--version"], expectExit: 0, timeoutMs: 5000 });
   });
 
+  test("keeps user-facing name, hint, and conversation impact from the configured check", () => {
+    const c = parseConfig({ checks: [{ id: "health", kind: "command", argv: ["me", "doctor"], name: "진단", hint: "다시 확인하세요", affectsChat: true }] });
+    expect(c.checks[0]).toMatchObject({ name: "진단", hint: "다시 확인하세요", affectsChat: true });
+  });
+
   test("rejects bad checks without dropping the good ones", () => {
     const c = parseConfig({
       intervalSec: 15,

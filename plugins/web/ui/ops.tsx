@@ -1,6 +1,6 @@
 // 상태: is everything fine, per-machine checks, what each part of me does, projects; raw diagnostics folded.
 // A failing check card offers its configured actions; pressing one asks for approval (the card shows up in 작업).
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { HeadAlert, OpsCheck, PluginInfo } from "./api.ts";
 import { useApp } from "./context.ts";
 import { HarnessLink } from "./harness.tsx";
@@ -61,11 +61,65 @@ const CHECK_ORDER: Record<OpsCheck["status"], number> = { down: 0, unknown: 1, u
 const CHECK_TONE: Record<OpsCheck["status"], Tone> = { up: "done", down: "failed", unknown: "needs" };
 
 const machineOf = (source?: string) => (!source || source === "ops" ? "이 Mac" : source.replace(/^ops-/, ""));
+export const machineGroupCount = (checks: OpsCheck[]) => new Set(checks.map((check) => machineOf(check.source))).size;
+
+interface WatchAgent {
+  pane: string;
+  kind: string;
+  project: string | null;
+  state: "working" | "waiting-input" | "idle" | "done" | "unknown";
+  since: string;
+  stalled: boolean;
+}
+interface WatchList {
+  agents: WatchAgent[];
+  problem: string | null;
+}
 
 /** Down checks plus plugins that are not running: the ops tab badge. */
 export function downCount(checks: OpsCheck[], plugins: PluginInfo[]) {
   return checks.filter((c) => c.status === "down").length + plugins.filter((p) => p.state === "stopped" || p.state === "quarantined").length;
 }
+
+const AGENT_STATE: Record<WatchAgent["state"], string> = {
+  working: "작업 중",
+  "waiting-input": "입력 대기",
+  idle: "대기 중",
+  done: "완료",
+  unknown: "알 수 없음",
+};
+
+/** Read-only live list from the watch plugin. */
+function WatchSection() {
+  const { conn } = useApp();
+  const [feed, setFeed] = useState<WatchList | null>(null);
+  useEffect(() => {
+    if (!conn) return;
+    let live = true;
+    const refresh = () => conn.request<WatchList>("watch.list", {}).then((value) => { if (live) setFeed(value); }).catch(() => {});
+    void refresh();
+    const timer = setInterval(() => void refresh(), 10_000);
+    return () => { live = false; clearInterval(timer); };
+  }, [conn]);
+  return (
+    <Section label="진행 중인 에이전트">
+      {feed?.problem ? <p className="muted pad">에이전트 상태를 읽을 수 없어요 · {feed.problem}</p> : null}
+      {!feed?.problem && (feed?.agents.length ?? 0) === 0 ? <p className="muted pad">표시할 에이전트가 없어요.</p> : null}
+      {!feed?.problem && (feed?.agents.length ?? 0) > 0 ? (
+        <ul className="rows boxed">
+          {feed!.agents.map((agent) => (
+            <li key={agent.pane} className="part-row">
+              <span className="row-title"><span className="mono">{agent.pane}</span> · {agent.kind}{agent.project ? ` · ${agent.project}` : ""}</span>
+              <span className={`tone-text ${agent.stalled ? "tone-failed" : "tone-muted"}`}>{agent.stalled ? "멈춤" : AGENT_STATE[agent.state]}</span>
+              <span className="row-sub">{timeAgo(agent.since)}부터</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Section>
+  );
+}
+
 /** Device-check content for the settings modal (기기 점검): summary, checks, parts, advanced diagnostics folded. Reuses the same components. */
 export function DeviceSection() {
   const { s } = useApp();
@@ -75,6 +129,7 @@ export function DeviceSection() {
     <>
       <AlertsCard />
       <Summary checks={checks} plugins={plugins} />
+      <WatchSection />
       <Machines checks={checks} />
       <Parts plugins={plugins} />
       <details className="fold advanced">
@@ -264,7 +319,7 @@ function Machines({ checks }: { checks: Check[] }) {
   );
   const down = checks.filter((c) => c.status === "down").length;
   return (
-    <Section label="기기" count={down || undefined} tone={down ? "failed" : undefined}>
+    <Section label="기기" count={machineGroupCount(checks)} tone={down ? "failed" : undefined}>
       {ordered.map(([machine, list]) => (
         <div key={machine} className="machine">
           <div className="machine-label">

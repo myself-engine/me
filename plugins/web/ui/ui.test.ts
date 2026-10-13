@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { diffTotals, parseDiffStat, splitDiff } from "./diff.ts";
 import { fenceLanguage, highlight } from "./highlight.ts";
 import { isDeep, parseRoute, settingsCloseHref, taskHref } from "./routes.ts";
-import { GENERIC_HINT, checkHint, checkImpact, checkName } from "./ops.tsx";
+import { GENERIC_HINT, checkHint, checkImpact, checkName, machineGroupCount } from "./ops.tsx";
 import { Markdown, threadTime } from "./shared.tsx";
 import { accessOf, activeAlerts, headChoice, initial, reducer, shortModel, taskTitle, threadApproval, threadPreview, threadTone, threadWait, toneOf, unlinkedApprovals, workItems, type State } from "./state.ts";
 import type { Effort, HeadSettings } from "./api.ts";
@@ -71,6 +71,12 @@ describe("device check plain reading", () => {
     expect(checkImpact({ ...base, affectsChat: true })).toContain("대화");
     expect(checkImpact({ ...base, affectsChat: true })).not.toBe("대화에는 영향 없어요.");
     expect(checkImpact({ ...base, id: "gjc-model" })).not.toBe("대화에는 영향 없어요.");
+  });
+  test("counts the machine groups shown, not the failed checks", () => {
+    expect(machineGroupCount([
+      { ...base, source: "ops" },
+      { ...base, id: "remote", source: "ops-rapi" },
+    ])).toBe(2);
   });
 });
 

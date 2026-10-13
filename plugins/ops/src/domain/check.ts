@@ -13,6 +13,12 @@ export type CheckSpec = (
 ) & {
   /** Operational actions offered on this check; each runs only after the user approves it. */
   actions?: ActionSpec[];
+  /** Plain-Korean display name for the card (falls back to id). */
+  name?: string;
+  /** Plain-Korean next step for the card (falls back to the generic help). */
+  hint?: string;
+  /** True when the conversation path needs this check; the UI warns chat may break. */
+  affectsChat?: boolean;
 };
 
 export type CheckKind = CheckSpec["kind"];
@@ -35,6 +41,9 @@ export interface CheckRecord {
   checkedAt: string;
   /** When the current status started. */
   since: string;
+  name?: string;
+  hint?: string;
+  affectsChat?: boolean;
   /** Actions offered on this check (set by the service, not by observe). */
   actions?: ActionInfo[];
   /** The last action run on this check, if any. */
@@ -121,7 +130,13 @@ const int = (v: unknown, fallback: number) => (typeof v === "number" && Number.i
 function parseCheck(raw: any, uid: number | null): CheckSpec {
   const spec = parseProbe(raw);
   const actions = parseActions(raw.actions, uid);
-  return actions.length ? { ...spec, actions } : spec;
+  return {
+    ...spec,
+    ...(str(raw.name) ? { name: raw.name } : {}),
+    ...(str(raw.hint) ? { hint: raw.hint } : {}),
+    ...(typeof raw.affectsChat === "boolean" ? { affectsChat: raw.affectsChat } : {}),
+    ...(actions.length ? { actions } : {}),
+  };
 }
 
 function parseProbe(raw: any): CheckSpec {

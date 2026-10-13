@@ -1,0 +1,1 @@
+{ "name": "@me/plugin-watch", "private": true, "type": "module", "dependencies": { "@me/sdk": "workspace:*", "@me/protocol": "workspace:*", "@me/redact": "workspace:*", "@me/env": "workspace:*" } }

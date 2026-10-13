@@ -280,6 +280,17 @@ describe("methods", () => {
     expect(service.list().checks[0]).toMatchObject({ id: "web", status: "up" });
   });
 
+  test("uses the executed argv as the default command-check hint and masks secret values", async () => {
+    const config = parseConfig({ checks: [{ id: "health", kind: "command", argv: ["runner", "--token", "sk-abcdefgh123456", "check"] }] });
+    const p = scriptedProbe();
+    p.answers.set("health", "down");
+    const service = createService({ config, probe: p.probe, clock: new FakeClock(), store: new MemoryStore(), events: new FakeEvents() });
+    await service.run();
+    const record = service.list().checks[0] as CheckRecord;
+    expect(record.hint).toBe("이 명령을 터미널에서 직접 실행해 보세요: runner --token [REDACTED] check");
+    expect(record.hint).not.toContain("sk-abcdefgh");
+  });
+
   test("run rejects unknown ids", async () => {
     const { service } = setup();
     await expect(service.run({ id: "nope" })).rejects.toThrow("unknown check: nope");

@@ -10,6 +10,7 @@
     "plugins/web",
     "plugins/approval-policy",
     "plugins/ops",
+    "plugins/watch",
     "plugins/schedule",
     "plugins/harness-config",
     "plugins/recall"
@@ -91,6 +92,10 @@
         }
       ],
       "startDelaySec": 5
+    },
+    "watch": {
+      "intervalSec": 10,
+      "stallMinutes": 15
     },
     "schedule": {
       "allowUnattendedWrite": false,

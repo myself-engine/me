@@ -160,6 +160,7 @@
       "name": "@me/plugin-ops",
       "dependencies": {
         "@me/protocol": "workspace:*",
+        "@me/redact": "workspace:*",
         "@me/sdk": "workspace:*",
       },
     },
@@ -202,6 +203,15 @@
         "@me/gjc": "workspace:*",
         "@me/protocol": "workspace:*",
         "@me/runner": "workspace:*",
+        "@me/sdk": "workspace:*",
+      },
+    },
+    "plugins/watch": {
+      "name": "@me/plugin-watch",
+      "dependencies": {
+        "@me/env": "workspace:*",
+        "@me/protocol": "workspace:*",
+        "@me/redact": "workspace:*",
         "@me/sdk": "workspace:*",
       },
     },
@@ -290,6 +300,8 @@
     "@me/plugin-slang": ["@me/plugin-slang@workspace:plugins/slang"],
 
     "@me/plugin-summarize": ["@me/plugin-summarize@workspace:plugins/summarize"],
+
+    "@me/plugin-watch": ["@me/plugin-watch@workspace:plugins/watch"],
 
     "@me/plugin-web": ["@me/plugin-web@workspace:plugins/web"],
 

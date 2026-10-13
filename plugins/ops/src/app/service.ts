@@ -2,6 +2,7 @@
 // something, so it runs only after the kernel approval gate says approve, and its argv comes only from config.
 import { actionInfo, approvalSummary, closeStale, finishRun, type ActionRun, type ActionSpec } from "../domain/action.ts";
 import { needsStore, observe, type CheckRecord, type CheckSpec, type CheckState, type OpsConfig } from "../domain/check.ts";
+import { redactString } from "@me/redact";
 import type { Approvals, CheckStore, Clock, Events, Exec, Probe } from "../ports/index.ts";
 
 export interface ServiceDeps {
@@ -34,6 +35,19 @@ const MAX_HISTORY_LIMIT = 1000;
 const DEFAULT_SETTLE_MS = 3_000;
 /** An unanswered approval rejects itself after this long (kernel note "expired"). */
 const APPROVAL_EXPIRY_SEC = 600;
+const SENSITIVE_ARG = /(?:token|secret|password|passwd|api[-_]?key|authorization|cookie|credential)/i;
+
+/** Keeps the configured argv recognizable while masking values passed to sensitive options. */
+function commandHint(argv: string[]): string {
+  const safe = argv.map((arg, index) => {
+    const previous = argv[index - 1] ?? "";
+    if (SENSITIVE_ARG.test(previous)) return "[REDACTED]";
+    const inline = arg.match(/^([^=]+)=([\s\S]*)$/);
+    if (inline && SENSITIVE_ARG.test(inline[1]!)) return `${inline[1]}=[REDACTED]`;
+    return redactString(arg).replace(/(https?:\/\/)[^/@\s]+:[^/@\s]+@/i, "$1[REDACTED]@");
+  });
+  return `이 명령을 터미널에서 직접 실행해 보세요: ${safe.join(" ")}`;
+}
 
 /** The record without the parts the service adds, so observe() only ever sees check fields. */
 const plain = ({ actions: _a, lastAction: _l, ...r }: CheckRecord): CheckRecord => r;
@@ -81,7 +95,15 @@ export function createService(deps: ServiceDeps) {
   function decorate(spec: CheckSpec, record: CheckRecord): CheckRecord {
     const actions = (spec.actions ?? []).map(actionInfo);
     const last = lastActions.get(spec.id);
-    return { ...plain(record), ...(actions.length ? { actions } : {}), ...(last ? { lastAction: last } : {}) };
+    const hint = spec.hint ?? (spec.kind === "command" ? commandHint(spec.argv) : undefined);
+    return {
+      ...plain(record),
+      ...(spec.name ? { name: spec.name } : {}),
+      ...(hint ? { hint } : {}),
+      ...(spec.affectsChat !== undefined ? { affectsChat: spec.affectsChat } : {}),
+      ...(actions.length ? { actions } : {}),
+      ...(last ? { lastAction: last } : {}),
+    };
   }
 
   /** Writes the record unless needsStore says nothing worth storing changed. */
