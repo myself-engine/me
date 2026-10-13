@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v0.9.6 (2026-10-13)
+
+- recall: background newest-first indexing; clarify answers resolve to options; project notes in delegation briefs (32a7ea2)
+- watch plugin: agent status feed and stall alerts; ops hints show the command; device count fix (c288a2a)
+- recall plugin: search past me, Claude Code, and Codex conversations; explicit project memory (3fd4003)
+- gjc-head: ask once before delegating ambiguous work; threadId in chat.send; validate thread.set; schedule thread titles (0f77420)
+- brgr: relay worker questions to web, Discord, and Slack and send answers back (bd4b7d9)
+
 ## v0.9.5 (2026-10-13)
 
 - commit messages from a short subject and the user's request instead of the brief's first line (df0a862)
