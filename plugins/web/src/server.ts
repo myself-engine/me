@@ -300,8 +300,9 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
   switch (m.type) {
     case "chat.send": {
       const traceId = crypto.randomUUID();
+      const threadId = typeof m.threadId === "string" && m.threadId ? m.threadId : crypto.randomUUID();
       const { opId, done } = await plugin.withTrace(traceId, () =>
-        plugin.invokeStream("gjc-head", "chat.send", { threadId: m.threadId, text: m.text, project: m.project, model: m.model, effort: m.effort, access: m.access, confirm: m.confirm }, {
+        plugin.invokeStream("gjc-head", "chat.send", { threadId, text: m.text, title: m.title, project: m.project, model: m.model, effort: m.effort, access: m.access, confirm: m.confirm }, {
           timeoutMs: 600_000,
           onUpdate: (update) => broadcast({ type: "op.update", opId, update, traceId }),
         }),
@@ -309,7 +310,7 @@ async function handle(ws: ServerWebSocket<unknown>, m: ClientMsg): Promise<unkno
       done
         .then((result) => broadcast({ type: "op.end", opId, result, traceId }))
         .catch((err) => broadcast({ type: "op.end", opId, error: String(err?.message ?? err), traceId }));
-      return { opId, traceId };
+      return { opId, traceId, threadId };
     }
     case "head.models":
       return plugin.invoke("gjc-head", "chat.models", { harness: m.harness }, { timeoutMs: 90_000 });

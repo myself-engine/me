@@ -3,7 +3,7 @@ import type { HeadSettings, Message, Summary, Thread } from "../domain/types.ts"
 import type { ApprovalOutcome } from "../ports/index.ts";
 import { createHead, type HeadPorts } from "./chat.ts";
 
-function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean; brainError?: string; delegateError?: string } = {}) {
+function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean; brainError?: string; delegateError?: string; clarify?: boolean } = {}) {
   let saved: HeadSettings | null = null;
   const warmLog: string[] = [];
   const calls: Record<string, any[]> = { summarize: [], judge: [], approval: [], delegate: [], brain: [] };
@@ -35,7 +35,7 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
     summarizer: {
       summarize: async (p) => (
         calls.summarize!.push(p),
-        { summaryEn: "Fix the bug", brief: "Fix it", needsCodeChange: true, scope: "single-file", harness: "local.codex", harnessReason: "", criterion: "bun test passes.", commitSubject: "Fix the bug", ...opts.summary }
+        { summaryEn: "Fix the bug", brief: "Fix it", needsCodeChange: true, scope: "single-file", harness: "local.codex", harnessReason: "", criterion: "bun test passes.", commitSubject: "Fix the bug", ambiguous: false, questions: [], ...opts.summary }
       ),
     },
     judge: { judge: async (p) => (calls.judge!.push(p), { simpleProb: opts.simpleProb ?? 0.1, confidence: 0.9, source: "jev", model: "m" }) },
@@ -69,6 +69,7 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
     harnesses: ["local.claude-code", "local.codex"],
     simpleThreshold: 0.8,
     approvalExpiresSec: 60,
+    clarify: opts.clarify,
     defaultProject: "/p",
     model: "openai-codex/gpt-5.6-luna",
     effort: "off",
@@ -121,6 +122,54 @@ describe("chat.send", () => {
     expect(kinds.indexOf("judgement")).toBeLessThan(kinds.indexOf("summary"));
     expect(calls.summarize).toHaveLength(1);
     expect(calls.delegate).toHaveLength(1);
+  });
+
+  test("an ambiguous delegate request asks once and delegates with the user's next message", async () => {
+    const s = setup({ summary: { ambiguous: true, questions: [{ q: "어느 범위를 고칠까요?", options: ["로그인 화면", "가입 화면"] }] } });
+    const first = await s.head.send({ text: "gjc-head 로그인 흐름 파일을 정리하고 테스트도 써 줘" }, s.turn);
+    expect(first.status).toBe("done");
+    expect(s.calls.summarize).toHaveLength(1);
+    expect(s.calls.delegate).toHaveLength(0);
+    expect(s.messages.get(first.messageId)?.text).toContain("1. 어느 범위를 고칠까요?");
+    expect(s.messages.get(first.messageId)?.text).toContain("(추천)");
+    const second = await s.head.send({ threadId: first.threadId, text: "가입 화면으로 해줘" }, s.turn);
+    expect(second.status).toBe("done");
+    expect(s.calls.summarize).toHaveLength(1);
+    expect(s.calls.delegate).toHaveLength(1);
+    expect(s.calls.delegate[0].request).toContain("gjc-head 로그인 흐름 파일을 정리하고 테스트도 써 줘");
+    expect(s.calls.delegate[0].request).toContain("사용자 보충 답변: 가입 화면으로 해줘");
+    expect(s.calls.delegate[0].objective).toContain("User clarification: 가입 화면으로 해줘");
+    expect(s.threads.get(first.threadId)?.pendingClarification).toBeUndefined();
+  });
+
+  test("clarification can be disabled and does not affect direct or read-only answers", async () => {
+    const disabled = setup({ clarify: false, summary: { ambiguous: true, questions: [{ q: "어느 쪽인가요?", options: ["A", "B"] }] } });
+    await disabled.head.send({ text: "코드 변경해 줘" }, disabled.turn);
+    expect(disabled.calls.delegate).toHaveLength(1);
+
+    const direct = setup({ simpleProb: 0.97, summary: { ambiguous: true, questions: [{ q: "어느 쪽인가요?", options: ["A", "B"] }] } });
+    await direct.head.send({ text: "설명해 줘" }, direct.turn);
+    expect(direct.calls.summarize).toHaveLength(0);
+
+    const readOnly = setup({ summary: { ambiguous: true, questions: [{ q: "어느 쪽인가요?", options: ["A", "B"] }] } });
+    await readOnly.head.setDefaults({ access: "read" });
+    const result = await readOnly.head.send({ text: "gjc-head 플러그인에 타임아웃 설정 추가하고 테스트도 써 줘" }, readOnly.turn);
+    expect(result.route).toBe("direct");
+    expect(readOnly.calls.summarize).toHaveLength(0);
+    expect(readOnly.calls.delegate).toHaveLength(0);
+  });
+
+  test("chat.send uses title only when it creates the thread", async () => {
+    const s = setup({ simpleProb: 0.97 });
+    const first = await s.head.send({ text: "일정 브리핑", title: "⏱ 아침 일정" }, s.turn);
+    expect(s.threads.get(first.threadId)?.title).toBe("⏱ 아침 일정");
+    await s.head.send({ threadId: first.threadId, text: "다시 실행", title: "다른 제목" }, s.turn);
+    expect(s.threads.get(first.threadId)?.title).toBe("⏱ 아침 일정");
+  });
+
+  test("chat.thread.set rejects a missing id before reading an entity", async () => {
+    const s = setup();
+    await expect(s.head.setThread({} as never)).rejects.toThrow("threadId is required");
   });
 
   test("short chat takes the fast path", async () => {

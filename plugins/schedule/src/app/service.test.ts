@@ -47,7 +47,7 @@ class FakeStore implements ScheduleStore {
 }
 
 class FakeInvoker implements ScheduleInvoker {
-  chats: { threadId: string; text: string }[] = [];
+  chats: { threadId: string; text: string; title?: string }[] = [];
   chatBehavior: () => Promise<ChatResult> = async () => ({ threadId: "sched-morning", messageId: "m1", route: "direct", status: "done" });
   messages = new Map<string, HeadMessage>();
   discord: string[] = [];
@@ -55,8 +55,8 @@ class FakeInvoker implements ScheduleInvoker {
   discordFails = false;
   approvals: { decision: "approve" | "reject" }[] = [];
   approvalDecision: "approve" | "reject" = "approve";
-  async chatSend(p: { threadId: string; text: string }) {
-    this.chats.push({ threadId: p.threadId, text: p.text });
+  async chatSend(p: { threadId: string; text: string; title?: string }) {
+    this.chats.push({ threadId: p.threadId, text: p.text, title: p.title });
     return this.chatBehavior();
   }
   async headMessage(id: string) {
@@ -111,14 +111,13 @@ describe("firing", () => {
     t.setNow(MON_09 + 60_000);
     await t.svc.tick();
     expect(t.invoker.chats).toHaveLength(1);
-    expect(t.invoker.chats[0]).toMatchObject({ threadId: "sched-morning", text: "오늘 일정 요약해줘" });
+    expect(t.invoker.chats[0]).toMatchObject({ threadId: "sched-morning", text: "오늘 일정 요약해줘", title: "⏱ 아침 브리핑" });
     // The reply completes: run goes done and discord gets the summary.
     t.invoker.messages.set("m1", { id: "m1", threadId: "sched-morning", role: "assistant", text: "브리핑이에요", status: "done" });
     await t.svc.onMessageChanged({ id: "m1", threadId: "sched-morning" });
     expect(t.store.saved.map((r) => r.state)).toEqual(["done"]);
     expect(t.invoker.discord).toEqual(["⏱ 아침 브리핑\n브리핑이에요"]);
   });
-
   test("an unrelated thread's message is ignored", async () => {
     const t = setup();
     await t.addJobs();

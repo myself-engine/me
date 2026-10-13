@@ -18,6 +18,10 @@ export interface Summary {
   role: "none" | "test" | "code" | "docs" | "research" | "deploy" | "db-write";
   /** Short English imperative git subject (<=60 chars, no trailing period); "" when no work is needed. */
   commitSubject: string;
+  /** True when a consequential detail needs the user before this task can be delegated. */
+  ambiguous: boolean;
+  /** Up to two concise questions; each has two to four options, with the recommended default first. */
+  questions: { q: string; options: string[] }[];
 }
 
 const dataDir = process.env.ME_DATA_DIR ?? ".";
@@ -47,6 +51,8 @@ const plugin = definePlugin({
         '- "criterion": if work is needed, one observable English sentence that says when the work is done (e.g. "bun test passes and the README lists the new flag."); otherwise "".',
         '- "role": one of "none", "test" (only runs or writes tests), "code", "docs", "research", "deploy" (ships or releases anything), "db-write" (changes a database). Pick the most dangerous that applies.',
         '- "commitSubject": if work is needed, a short English imperative git subject for the work, at most 60 characters, no trailing period (e.g. "Add multiply function with a test"); otherwise "".',
+        '- "ambiguous": true only when a materially different outcome depends on missing information and the user should answer before delegation; otherwise false.',
+        '- "questions": when ambiguous, an array of at most two short Korean questions, each with two to four concise options; put the recommended default first. Otherwise an empty array. Do not ask about details a worker can safely decide.',
       ].join("\n");
       const res = await runHead({ harness, prompt, model, cwd: join(dataDir, "runs"), ephemeral: true, thinking: "low", signal: ctx.signal });
       const s = parseJsonObject<Summary>(res.text);

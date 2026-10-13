@@ -29,7 +29,7 @@ export interface ScheduleStore {
 }
 
 export interface ScheduleInvoker {
-  chatSend(p: { threadId: string; text: string; project?: string; access: string }): Promise<ChatResult>;
+  chatSend(p: { threadId: string; text: string; title?: string; project?: string; access: string }): Promise<ChatResult>;
   headMessage(id: string): Promise<HeadMessage | null>;
   notifyDiscord(text: string): Promise<void>;
   notifySlack(text: string): Promise<void>;
@@ -142,7 +142,7 @@ export function createScheduleService(deps: ServiceDeps) {
       let startError: unknown = null;
       for (let attempt = 0; attempt <= config.retryDelaysMs.length; attempt++) {
         try {
-          res = await invoker.chatSend({ threadId, text: job.prompt, ...(job.project ? { project: job.project } : {}), access: job.access });
+          res = await invoker.chatSend({ threadId, text: job.prompt, title: `⏱ ${job.name}`, ...(job.project ? { project: job.project } : {}), access: job.access });
           startError = null;
           break;
         } catch (err) {

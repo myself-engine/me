@@ -51,6 +51,7 @@ const plugin = definePlugin({
         defaultProject: (c.defaultProject as string) ?? "",
         fallbackModels: (c.fallbackModels as string[]) ?? [],
         cooldownSec: (c.cooldownSec as number) ?? 600,
+        clarify: c.clarify !== false,
       },
     );
     await head.init();

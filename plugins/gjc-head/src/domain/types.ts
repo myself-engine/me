@@ -11,6 +11,13 @@ export interface Thread {
   effort?: Effort | null;
   /** Access mode of this conversation; unset means the default in HeadSettings. */
   access?: AccessMode | null;
+  /** A delegate request waiting for the user's answer to its one clarification. */
+  pendingClarification?: {
+    original: string;
+    summary: Summary;
+    questions: { q: string; options: string[] }[];
+  };
+  answeredClarification?: { original: string; answer: string; summary: Summary };
   createdAt: string;
   updatedAt: string;
 }
@@ -75,6 +82,8 @@ export interface Summary {
   role?: string;
   /** Short English imperative git subject from summarize; "" when no work is needed. */
   commitSubject?: string;
+  ambiguous: boolean;
+  questions: { q: string; options: string[] }[];
 }
 
 export interface Judgement {

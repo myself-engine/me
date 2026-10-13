@@ -30,6 +30,8 @@ export interface HeadConfig {
   fallbackModels?: string[];
   /** Seconds a failed model stays out; default 600. */
   cooldownSec?: number;
+  /** Ask once when the summarizer finds a material ambiguity in a delegated request. Defaults to true. */
+  clarify?: boolean;
   /** Clock for cooldowns; defaults to Date.now. Tests inject a manual clock. */
   clock?: () => number;
 }
@@ -67,6 +69,8 @@ export interface SendParams extends Choice {
   threadId?: string;
   text: string;
   project?: string;
+  /** Initial title for a newly created thread. Ignored for existing threads. */
+  title?: string;
 }
 
 const now = () => new Date().toISOString();
@@ -176,7 +180,6 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   }
 
   /** Applies a choice to a thread; null clears it back to the default. */
-  /** Applies a choice to a thread; null clears it back to the default. */
   function applyChoice(thread: Thread, p: Choice, harness: HeadHarness) {
     checkHeadChoice(p, harness);
     if (p.model !== undefined) thread.model = p.model ? p.model.trim() : null;
@@ -190,6 +193,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
   }
 
   async function setThread(p: Choice & { threadId: string }) {
+    if (typeof p?.threadId !== "string" || !p.threadId.trim()) throw new Error("threadId is required");
     const thread = await store.getThread(p.threadId);
     if (!thread) throw new Error(`unknown thread ${p.threadId}`);
     applyChoice(thread, p, (await settings()).harness);
@@ -210,7 +214,7 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     }
     const t: Thread = {
       id: p.threadId ?? crypto.randomUUID(),
-      title: p.text.slice(0, 40),
+      title: p.title?.trim() || p.text.slice(0, 40),
       project: expandHome(p.project ?? config.defaultProject),
       sessionId: null,
       access: p.access ?? defaultAccess,
@@ -246,6 +250,38 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     await saveMessage(reply);
     turn.update({ kind: "message", userMessageId: user.id, messageId: reply.id });
 
+    // The next message answers the saved clarification; reuse its summary so this
+    // path does not make another model call or ask the same question again.
+    const pending = thread.pendingClarification;
+    const answered = !pending && thread.answeredClarification?.original === p.text ? thread.answeredClarification : null;
+    if (pending || answered) {
+      const clarification = pending ?? answered!;
+      const answer = pending ? p.text : answered!.answer;
+      delete thread.pendingClarification;
+      thread.answeredClarification = { original: clarification.original, answer, summary: clarification.summary };
+      const request = `${clarification.original}\n\n사용자 보충 답변: ${answer}`;
+      reply.route = "delegate";
+      reply.summary = {
+        ...clarification.summary,
+        brief: `${clarification.summary.brief}\n\nUser clarification: ${answer}`,
+      };
+      await saveMessage(reply);
+      try {
+        await delegate(thread, reply, turn, access, request);
+        reply.status = "done";
+      } catch (err: any) {
+        reply.status = "error";
+        reply.error = friendlyError(err, choice.harness);
+        turn.update({ kind: "error", message: reply.error });
+        await recordAlert(err, thread.id, reply.id, choice.harness);
+      }
+      thread.updatedAt = now();
+      await store.saveThread(thread);
+      await saveMessage(reply);
+      turn.phase?.("done", "완료", 1);
+      return { threadId: thread.id, messageId: reply.id, route: reply.route, status: reply.status };
+    }
+
     // Start the brain now; if the answer turns out to be direct, its startup is already done.
     let warm = brain.prepare?.({ sessionId: thread.sessionId, ...choice }) ?? null;
     try {
@@ -276,6 +312,28 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
       } else if (reply.route === "delegate") {
         turn.phase?.("summarizing", "지시서 작성 중");
         const summary = await summarizer.summarize({ original: p.text, normalized: understood.normalized, harnesses: config.harnesses, project: thread.project });
+        const questions = config.clarify === false || !Array.isArray(summary.questions) ? [] : summary.questions
+          .slice(0, 2)
+          .filter((question) => typeof question.q === "string" && question.q.trim() && Array.isArray(question.options))
+          .map((question) => ({ q: question.q.trim(), options: question.options.filter((option) => typeof option === "string" && option.trim()).slice(0, 4).map((option) => option.trim()) }))
+          .filter((question) => question.options.length >= 2);
+        if (config.clarify !== false && summary.ambiguous === true && questions.length) {
+          thread.pendingClarification = { original: p.text, summary, questions };
+          reply.summary = summary;
+          reply.text = questions.map((question, index) => [
+            `${index + 1}. ${question.q}`,
+            ...question.options.map((option, optionIndex) => `   ${optionIndex + 1}. ${option}${optionIndex === 0 ? " (추천)" : ""}`),
+          ].join("\n")).join("\n\n");
+          await store.saveThread(thread);
+          await saveMessage(reply);
+          turn.update({ kind: "clarification", threadId: thread.id, questions });
+          turn.phase?.("done", "답변 기다리는 중", 1);
+          reply.status = "done";
+          thread.updatedAt = now();
+          await store.saveThread(thread);
+          await saveMessage(reply);
+          return { threadId: thread.id, messageId: reply.id, route: reply.route, status: reply.status };
+        }
         reply.summary = summary;
         turn.update({ kind: "summary", ...summary });
       }

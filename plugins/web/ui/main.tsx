@@ -73,8 +73,9 @@ function App() {
   const send = async (text: string, choice?: HeadChoice) => {
     if (!conn) return;
     try {
-      const res = await conn.request<{ traceId: string }>("chat.send", { threadId: openId ?? undefined, text, project: project || undefined, ...choice });
-      if (!openId) setPendingTrace(res.traceId);
+      const res = await conn.request<{ traceId: string; threadId?: string }>("chat.send", { threadId: openId ?? undefined, text, project: project || undefined, ...choice });
+      if (!openId && res.threadId) replace(chatHref(res.threadId));
+      else if (!openId) setPendingTrace(res.traceId);
     } catch (err: any) {
       notify(err.message);
     }
