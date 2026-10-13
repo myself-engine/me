@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.9.4 (2026-10-13)
+
+- config: drop GJC; OMP fallback devin/deepseek-v4-1-flash-high; Cline as a worker harness (ea7f873)
+
 ## v0.9.3 (2026-10-12)
 
 - config: run the head, summarize, and jev on OMP; fall back to GJC deepseek-v4.1-flash (249a247)
