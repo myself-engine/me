@@ -99,6 +99,7 @@ const toolName = (harness: string) => TOOL_NAMES[harness.replace(/^local\./, "")
 const expandHome = (p: string) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 /** Read-only conversations never delegate: the delegate judgement becomes this direct reply. */
 const READ_ONLY_REPLY = "이 대화는 읽기 전용이라 위임하지 않았어요. 코드를 바꾸려면 입력창 옆의 모드에서 '프로젝트 쓰기' 또는 '전부 알아서'로 바꾸고 다시 말해 주세요.";
+const DELEGATE_SENTINEL = "[[DELEGATE]]";
 
 export function createHead(ports: HeadPorts, config: HeadConfig) {
   const { brain, normalizer, summarizer, recall, judge, approvals, delegator, store, events, models } = ports;
@@ -244,6 +245,39 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
     return { thread: t, created: true };
   }
 
+  /** Builds the normal delegation brief, including its one optional clarification. */
+  async function summarizeForDelegation(thread: Thread, reply: Message, turn: Turn, original: string, normalized: string): Promise<boolean> {
+    turn.phase?.("summarizing", "지시서 작성 중");
+    let projectNotes = "";
+    try { projectNotes = (await recall?.context({ project: thread.project, text: original }))?.text?.slice(0, 800) ?? ""; } catch { /* recall is optional; delegation proceeds without notes */ }
+    const summary = await summarizer.summarize({ original, normalized, harnesses: config.harnesses, project: thread.project, ...(projectNotes ? { projectNotes } : {}) });
+    const questions = config.clarify === false || !Array.isArray(summary.questions) ? [] : summary.questions
+      .slice(0, 2)
+      .filter((question) => typeof question.q === "string" && question.q.trim() && Array.isArray(question.options))
+      .map((question) => ({ q: question.q.trim(), options: question.options.filter((option) => typeof option === "string" && option.trim()).slice(0, 4).map((option) => option.trim()) }))
+      .filter((question) => question.options.length >= 2);
+    if (config.clarify !== false && summary.ambiguous === true && questions.length) {
+      thread.pendingClarification = { original, summary, questions };
+      reply.summary = summary;
+      reply.text = questions.map((question, index) => [
+        `${index + 1}. ${question.q}`,
+        ...question.options.map((option, optionIndex) => `   ${optionIndex + 1}. ${option}${optionIndex === 0 ? " (추천)" : ""}`),
+      ].join("\n")).join("\n\n");
+      await store.saveThread(thread);
+      await saveMessage(reply);
+      turn.update({ kind: "clarification", threadId: thread.id, questions });
+      turn.phase?.("done", "답변 기다리는 중", 1);
+      reply.status = "done";
+      thread.updatedAt = now();
+      await store.saveThread(thread);
+      await saveMessage(reply);
+      return true;
+    }
+    reply.summary = summary;
+    turn.update({ kind: "summary", ...summary });
+    return false;
+  }
+
   async function send(p: SendParams, turn: Turn) {
     if (!p.text?.trim()) throw new Error("text is required");
     checkAccess(p);
@@ -330,34 +364,10 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         reply.text = READ_ONLY_REPLY;
         turn.update({ kind: "access", mode: access, delegated: false });
       } else if (reply.route === "delegate") {
-        turn.phase?.("summarizing", "지시서 작성 중");
-        let projectNotes = "";
-        try { projectNotes = (await recall?.context({ project: thread.project, text: p.text }))?.text?.slice(0, 800) ?? ""; } catch { /* recall is optional; delegation proceeds without notes */ }
-        const summary = await summarizer.summarize({ original: p.text, normalized: understood.normalized, harnesses: config.harnesses, project: thread.project, ...(projectNotes ? { projectNotes } : {}) });
-        const questions = config.clarify === false || !Array.isArray(summary.questions) ? [] : summary.questions
-          .slice(0, 2)
-          .filter((question) => typeof question.q === "string" && question.q.trim() && Array.isArray(question.options))
-          .map((question) => ({ q: question.q.trim(), options: question.options.filter((option) => typeof option === "string" && option.trim()).slice(0, 4).map((option) => option.trim()) }))
-          .filter((question) => question.options.length >= 2);
-        if (config.clarify !== false && summary.ambiguous === true && questions.length) {
-          thread.pendingClarification = { original: p.text, summary, questions };
-          reply.summary = summary;
-          reply.text = questions.map((question, index) => [
-            `${index + 1}. ${question.q}`,
-            ...question.options.map((option, optionIndex) => `   ${optionIndex + 1}. ${option}${optionIndex === 0 ? " (추천)" : ""}`),
-          ].join("\n")).join("\n\n");
-          await store.saveThread(thread);
-          await saveMessage(reply);
-          turn.update({ kind: "clarification", threadId: thread.id, questions });
-          turn.phase?.("done", "답변 기다리는 중", 1);
-          reply.status = "done";
-          thread.updatedAt = now();
-          await store.saveThread(thread);
-          await saveMessage(reply);
+        const asked = await summarizeForDelegation(thread, reply, turn, p.text, understood.normalized);
+        if (asked) {
           return { threadId: thread.id, messageId: reply.id, route: reply.route, status: reply.status };
         }
-        reply.summary = summary;
-        turn.update({ kind: "summary", ...summary });
       }
       await saveMessage(reply);
 
@@ -366,9 +376,25 @@ export function createHead(ports: HeadPorts, config: HeadConfig) {
         const w = warm;
         warm = null;
         const usedFallback = await answerDirectly(thread, reply, p.text, turn, w, choice, { models: fbModels, cooldownSec: fbCooldownSec });
-        if (!usedFallback) await clearAlerts(["gjc-login", "omp-login", "model-refused", "model-unavailable"]);
+        if (reply.text.trim().startsWith(DELEGATE_SENTINEL)) {
+          if (access === "read") {
+            reply.text = READ_ONLY_REPLY;
+          } else {
+            reply.route = "delegate";
+            reply.text = "";
+            reply.status = "pending";
+            turn.update({ kind: "judgement", ...reply.judgement, route: reply.route, threshold });
+            await saveMessage(reply);
+            const asked = await summarizeForDelegation(thread, reply, turn, p.text, understood.normalized);
+            if (asked) {
+              return { threadId: thread.id, messageId: reply.id, route: reply.route, status: reply.status };
+            }
+            await saveMessage(reply);
+            await delegate(thread, reply, turn, access, p.text);
+          }
+        } else if (!usedFallback) await clearAlerts(["gjc-login", "omp-login", "model-refused", "model-unavailable"]);
       }
-      else if (!readOnly) {
+      else if (reply.route === "delegate" && !readOnly) {
         // Delegated: the warm brain will never get a prompt.
         warm?.cancel();
         warm = null;

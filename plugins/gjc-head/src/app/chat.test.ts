@@ -3,7 +3,7 @@ import type { HeadSettings, Message, Summary, Thread } from "../domain/types.ts"
 import type { ApprovalOutcome } from "../ports/index.ts";
 import { createHead, type HeadPorts } from "./chat.ts";
 
-function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean; brainError?: string; delegateError?: string; clarify?: boolean; projectNotes?: string; recallError?: boolean } = {}) {
+function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutcome, "approvalId">; simpleProb?: number; warm?: boolean; brainError?: string; directAnswer?: string; delegateError?: string; clarify?: boolean; projectNotes?: string; recallError?: boolean } = {}) {
   let saved: HeadSettings | null = null;
   const warmLog: string[] = [];
   const calls: Record<string, any[]> = { summarize: [], judge: [], approval: [], delegate: [], brain: [], recall: [] };
@@ -16,8 +16,9 @@ function setup(opts: { summary?: Partial<Summary>; decision?: Omit<ApprovalOutco
       reply: async (p) => {
         calls.brain!.push(p);
         if (opts.brainError && calls.brain!.length === 1) throw new Error(opts.brainError);
-        p.onUpdate({ kind: "text_delta", delta: "안녕!" });
-        return { text: "안녕!", sessionId: "s1", violation: null };
+        const text = opts.directAnswer ?? "안녕!";
+        p.onUpdate({ kind: "text_delta", delta: text });
+        return { text, sessionId: "s1", violation: null };
       },
       ...(opts.warm
         ? {
@@ -216,6 +217,38 @@ describe("chat.send", () => {
     expect(calls.summarize).toHaveLength(0);
     expect(calls.judge).toHaveLength(0);
     expect(updates.find((u) => u.kind === "judgement")).toMatchObject({ source: "fast-path", simpleProb: 1, route: "direct" });
+  });
+
+  test("the reported short login feature request is judged and delegated", async () => {
+    const { head, turn, calls } = setup();
+    const result = await head.send({ text: "여기에 로그인 기능 붙여 줘" }, turn);
+    expect(result.route).toBe("delegate");
+    expect(calls.judge).toHaveLength(1);
+    expect(calls.summarize).toHaveLength(1);
+    expect(calls.delegate).toHaveLength(1);
+    expect(calls.brain).toHaveLength(0);
+  });
+
+  test("a direct-answer sentinel re-routes the same project-mode turn through summarize and delegation", async () => {
+    const { head, turn, calls, messages } = setup({ simpleProb: 0.97, directAnswer: "  [[DELEGATE]]\n" });
+    const result = await head.send({ text: "여기에 로그인 기능 붙여 줘" }, turn);
+    expect(result.route).toBe("delegate");
+    expect(calls.brain).toHaveLength(1);
+    expect(calls.summarize).toHaveLength(1);
+    expect(calls.delegate).toHaveLength(1);
+    expect(messages.get(result.messageId)?.text).toContain("맡겼어요");
+    expect(messages.get(result.messageId)?.text).not.toContain("[[DELEGATE]]");
+  });
+
+  test("the direct-answer sentinel keeps read-mode replies read-only", async () => {
+    const { head, turn, calls, messages } = setup({ simpleProb: 0.97, directAnswer: "[[DELEGATE]]" });
+    await head.setDefaults({ access: "read" });
+    const result = await head.send({ text: "여기에 로그인 기능 붙여 줘" }, turn);
+    expect(result.route).toBe("direct");
+    expect(calls.summarize).toHaveLength(0);
+    expect(calls.delegate).toHaveLength(0);
+    expect(messages.get(result.messageId)?.text).toContain("읽기 전용");
+    expect(messages.get(result.messageId)?.text).not.toContain("[[DELEGATE]]");
   });
 
   test("project mode delegates at once: no approval, suggested harness, audit trail", async () => {
