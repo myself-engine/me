@@ -18,17 +18,16 @@
       "harness": "omp",
       "model": "openai-codex/gpt-5.6-luna",
       "models": { "gjc": "openai-codex/gpt-5.6-luna", "omp": "openai-codex/gpt-5.6-luna" },
-      "fallbackModels": ["gjc:opencode-go/deepseek-v4.1-flash"],
+      "fallbackModels": ["devin/deepseek-v4-1-flash-high"],
       "favoriteModels": ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-6-luna"],
       "workerModels": {
         "local.claude-code": ["opus", "sonnet"],
-        "local.codex": ["gpt-6.1-sol", "gpt-6-luna"],
-        "local.gjc": ["openai-codex/gpt-6.1-sol", "openai-codex/gpt-6-luna"]
+        "local.codex": ["gpt-6.1-sol", "gpt-6-luna"]
       },
       "harnesses": [
         "local.claude-code",
         "local.codex",
-        "local.gjc",
+        "local.cline",
         "local.opencode"
       ],
       "simpleThreshold": 0.8,
@@ -47,7 +46,7 @@
       "harnesses": [
         "local.claude-code",
         "local.codex",
-        "local.gjc",
+        "local.cline",
         "local.opencode"
       ]
     },
